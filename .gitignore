@@ -1,0 +1,57 @@
+# IDE
+.idea/
+.vscode/
+.learnings/
+.docx-build/
+*.iml
+.project
+.classpath
+.settings/
+
+# Java / Maven / Gradle
+**/target/
+**/build/
+.gradle/
+*.class
+
+# Node.js
+**/node_modules/
+**/dist/
+**/.vite/
+**/.nuxt/
+**/.next/
+
+# Python
+**/__pycache__/
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.venv/
+*.py[cod]
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+**/application-local.yml
+**/application-prod.yml
+**/application-local.properties
+**/application-prod.properties
+!**/application-*.example.yml
+*.pem
+*.key
+*.p12
+*.jks
+
+# Logs and generated data
+*.log
+logs/
+tmp/
+data/
+artifacts/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+docs/architecture/仓库架构说明.docx

@@ -16,6 +16,9 @@ public record TaskStatusResponse(
         ClarificationQuestion question,
         Map<String, Object> confirmation,
         QueryResult result,
-        Map<String, String> error
+        Map<String, String> error,
+        int repairAttempts,
+        int executionTimeoutSeconds,
+        boolean cancellable
 ) {
 }

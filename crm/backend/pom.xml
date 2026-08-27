@@ -13,9 +13,9 @@
 
     <groupId>com.boc</groupId>
     <artifactId>nl2sql-crm-backend</artifactId>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
     <name>nl2sql-crm-backend</name>
-    <description>个金营销 NL2SQL 平台后端 v1.0</description>
+    <description>个金营销 NL2SQL 平台后端 v1.1</description>
 
     <properties>
         <java.version>17</java.version>

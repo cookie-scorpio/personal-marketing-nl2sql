@@ -54,6 +54,7 @@ app:
       api-key: ${QWEN_API_KEY:}
       model: ${QWEN_MODEL:Qwen3-32B}
   query:
+    execution-timeout-seconds: ${QUERY_EXECUTION_TIMEOUT_SECONDS:60}
     max-result-rows: ${QUERY_MAX_RESULT_ROWS:100}
     max-clarification-rounds: ${QUERY_MAX_CLARIFICATION_ROUNDS:2}
   rag:

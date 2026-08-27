@@ -1,6 +1,10 @@
 # CRM 后端
 
-本目录是个金营销 NL2SQL 平台的 Spring Boot v1.0 后端。登录、自然语言解析、SQL规划、查询执行和历史记录位于同一进程，各模块按业务包隔离，通过 Java 接口直接调用。
+本目录是个金营销 NL2SQL 平台的 Spring Boot v1.1 后端。登录、自然语言解析、SQL规划、查询执行和历史记录位于同一进程，各模块按业务包隔离，通过 Java 接口直接调用。
+
+v1.1增加运行中取消、默认60秒SQL超时、最多两次模型修复与模板降级、时间口径确认和多指标多图分析。完整字段与接口见[实施说明](../../docs/v1.1实施说明与接口数据字典.md)。超时可通过`QUERY_EXECUTION_TIMEOUT_SECONDS`配置；数据库迁移新增V4。
+
+`mvn test`默认不连接数据库。使用本地模拟库进行取消、超时和降级验证时执行`mvn "-Dv11.mysql=true" test`，需要可用的local配置；该组测试不调用真实模型，会保留模拟任务与审计记录。
 
 ## 已实现功能
 
@@ -105,12 +109,25 @@ read-timeout-seconds: 60
 
 ```powershell
 cd D:\code\boc\0824nl2sql\crm\backend
+$env:JAVA_HOME = "D:\tools\jdk17" # 按本机 JDK 17 安装位置调整
+$env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 mvn test
 $env:SPRING_PROFILES_ACTIVE = "local"
 mvn spring-boot:run
 ```
 
 默认接口地址为 `http://127.0.0.1:8080`，健康检查为 `http://127.0.0.1:8080/actuator/health`。
+
+### 启动失败排查
+
+`Process terminated with exit code: 1` 只是 Maven 对后端退出的汇总，实际原因在它之前的 `APPLICATION FAILED TO START` 或最后一条 `Caused by` 中。
+
+- 日志显示 `No active profile set` 且 MySQL 返回 1045：确认在执行 Maven 的同一个 PowerShell 窗口设置了 `SPRING_PROFILES_ACTIVE`。也可直接执行 `mvn "-Dspring-boot.run.profiles=local" spring-boot:run`，不依赖窗口中的 profile 环境变量。
+- 日志显示 `Port 8080 was already in use`：先检查监听进程。Windows 上即使没有监听进程，系统保留的端口也可能无法绑定，可执行 `netsh interface ipv4 show excludedportrange protocol=tcp` 检查。
+
+本机排查时发现 8080、8081 均位于 Windows 保留的 7998–8097 区间，已在被 Git 忽略的 `application-local.yml` 中设置 `server.port: ${SERVER_PORT:18080}`，本地健康地址改为 `http://127.0.0.1:18080/actuator/health`。没有修改默认环境或系统保留规则；如果当前终端设置过 `SERVER_PORT`，它仍会覆盖本地默认端口。
+
+更换后端端口后，在 `crm/frontend/.env.development.local` 设置 `API_PROXY_TARGET=http://127.0.0.1:18080` 并重启 `npm run dev`。前端仍使用相对的 `/api` 路径，不需要改成跨域请求。本机这两个本地配置已同步。
 
 从仓库根目录执行`pwsh -File scripts/verify-model.ps1`可验收渠道转化比较、按月交易趋势和规则快速查询。前两条会调用真实模型API并消耗额度；该脚本不会自动确认高风险SQL。
 
@@ -143,4 +160,4 @@ mvn spring-boot:run
 - 生产环境必须替换默认JWT密钥、演示账号和数据库密码，并由统一认证中心接管登录。
 - 不要把完整Prompt、客户明细、实际SQL参数或密码写入日志。
 
-详细字段、接口示例、当前限制和后续计划见 [v1.0实施说明](../../docs/v1.0实施说明与接口数据字典.md)。
+详细字段、接口示例、当前限制和升级方式见 [v1.1实施说明](../../docs/v1.1实施说明与接口数据字典.md)。

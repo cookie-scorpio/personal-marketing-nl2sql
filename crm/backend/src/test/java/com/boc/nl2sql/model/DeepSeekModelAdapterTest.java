@@ -22,6 +22,24 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class DeepSeekModelAdapterTest {
+    @Test
+    void cancellationPreventsInitialResponseRetry() throws Exception {
+        try (var fixture = new Fixture(List.of(response("stop", "", "")))) {
+            var checks = new AtomicInteger();
+            assertThatThrownBy(() -> fixture.adapter().interpret("统计客户", user(), () -> checks.getAndIncrement() == 0))
+                    .isInstanceOf(com.boc.nl2sql.execution.QueryTerminatedException.class);
+            assertThat(fixture.requests).hasSize(1);
+        }
+    }
+    @Test
+    void repairMakesOnlyOneHttpCallEvenWhenResponseIsEmpty() throws Exception {
+        try (var fixture = new Fixture(List.of(response("stop", "", "")))) {
+            var user = new CurrentUser(1L, "manager01", "经理", RoleCode.CUSTOMER_MANAGER, "EAST", "B001", "M0001");
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> fixture.adapter().repair("统计客户", user, "SELECT bad FROM dim_customer LIMIT 100", "字段不存在"))
+                    .isInstanceOf(BusinessException.class);
+            assertThat(fixture.requests).hasSize(1);
+        }
+    }
     private static final String PLAN = """
             {"intent":"MARKETING_ANALYSIS","confidence":0.96,"needs_clarification":false,
              "clarification_question":"","clarification_options":[],"conflicts":[],

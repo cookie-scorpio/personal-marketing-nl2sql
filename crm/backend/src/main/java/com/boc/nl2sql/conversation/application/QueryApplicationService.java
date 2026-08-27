@@ -28,15 +28,23 @@ public class QueryApplicationService {
     private final SessionContextStore contextStore;
     private final AuditService auditService;
     private final ObjectMapper objectMapper;
+    private final TaskStateStore states;
+    private final com.boc.nl2sql.execution.QueryExecutionGateway execution;
+    private final com.boc.nl2sql.history.application.HistoryService history;
+    private final int timeoutSeconds;
 
     public QueryApplicationService(QueryTaskMapper taskMapper, QueryTaskProcessor processor,
                                    SessionContextStore contextStore, AuditService auditService,
-                                   ObjectMapper objectMapper) {
+                                   ObjectMapper objectMapper, TaskStateStore states,
+                                   com.boc.nl2sql.execution.QueryExecutionGateway execution,
+                                   com.boc.nl2sql.history.application.HistoryService history,
+                                   @org.springframework.beans.factory.annotation.Value("${app.query.execution-timeout-seconds:60}") int timeoutSeconds) {
         this.taskMapper = taskMapper;
         this.processor = processor;
         this.contextStore = contextStore;
         this.auditService = auditService;
         this.objectMapper = objectMapper;
+        this.states = states; this.execution = execution; this.history = history; this.timeoutSeconds = timeoutSeconds;
     }
 
     public SubmitQueryResponse submit(SubmitQueryRequest request, CurrentUser user, String requestId) {
@@ -51,6 +59,8 @@ public class QueryApplicationService {
         task.setProgress(0);
         task.setStageMessage("查询请求已接收");
         task.setClarificationRound(0);
+        task.setStateVersion(0L);
+        task.setRepairAttempts(0);
         task.setConfirmed(false);
         task.setCreatedAt(LocalDateTime.now());
         task.setUpdatedAt(LocalDateTime.now());
@@ -70,7 +80,8 @@ public class QueryApplicationService {
                 QueryStatus.CONFIRMING.name().equals(task.getStatusCode())
                         ? confirmation(task) : null,
                 read(task.getResultJson(), QueryResult.class),
-                task.getErrorMessage() == null ? null : Map.of("message", task.getErrorMessage()));
+                task.getErrorMessage() == null ? null : Map.of("message", task.getErrorMessage()),
+                task.getRepairAttempts(), timeoutSeconds, !QueryStatus.terminal(task.getStatusCode()));
     }
 
     private Map<String, Object> confirmation(QueryTaskEntity task) {
@@ -95,14 +106,15 @@ public class QueryApplicationService {
         if (question == null || !question.questionId().equals(request.questionId())) {
             throw new BusinessException(409002, "反问已失效，请刷新任务状态");
         }
-        String connector = "CONFLICT".equals(question.type()) ? "，最终条件为：" : "，补充条件：";
+        String connector = "CONFLICT".equals(question.type()) ? "，最终条件为："
+                : "TIME_BASIS".equals(question.type()) ? "，时间口径：" : "，补充条件：";
         task.setMergedQueryText(task.getMergedQueryText() + connector + answer);
         task.setClarificationRound(task.getClarificationRound() + 1);
         task.setQuestionJson(null);
         task.setStatusCode(QueryStatus.RECEIVED.name());
         task.setProgress(10);
         task.setStageMessage("已收到补充条件，正在重新解析");
-        taskMapper.updateById(task);
+        saveOrConflict(task);
         auditService.record(requestId, task.getTaskId(), user.userId(), "QUERY_CLARIFIED", question.type());
         processor.processAsync(task.getTaskId(), user, requestId);
         return new SubmitQueryResponse(task.getTaskId(), sessionId, task.getStatusCode(), task.getProgress(),
@@ -117,12 +129,7 @@ public class QueryApplicationService {
             throw new BusinessException(409003, "确认令牌无效或已过期");
         }
         if ("REJECT".equalsIgnoreCase(request.decision())) {
-            task.setStatusCode(QueryStatus.CANCELLED.name());
-            task.setProgress(100);
-            task.setStageMessage("查询已取消");
-            taskMapper.updateById(task);
-            auditService.record(requestId, taskId, user.userId(), "QUERY_REJECTED", "user rejected high scope query");
-            return status(taskId, user);
+            return cancel(taskId, user, requestId);
         }
         if (!"CONFIRM".equalsIgnoreCase(request.decision())) {
             throw new BusinessException(400003, "decision 仅支持 CONFIRM 或 REJECT");
@@ -131,10 +138,36 @@ public class QueryApplicationService {
         task.setConfirmationToken(null);
         task.setStatusCode(QueryStatus.RECEIVED.name());
         task.setStageMessage("已确认，准备执行查询");
-        taskMapper.updateById(task);
+        saveOrConflict(task);
         auditService.record(requestId, taskId, user.userId(), "QUERY_CONFIRMED", "user confirmed high scope query");
         processor.processAsync(taskId, user, requestId);
         return status(taskId, user);
+    }
+
+    public TaskStatusResponse cancel(String taskId, CurrentUser user, String requestId) {
+        QueryTaskEntity task = ownedTask(taskId, user);
+        int changed = taskMapper.update(null, Wrappers.<QueryTaskEntity>lambdaUpdate()
+                .eq(QueryTaskEntity::getTaskId, taskId).eq(QueryTaskEntity::getUserId, user.userId())
+                .notIn(QueryTaskEntity::getStatusCode, "SUCCESS", "FAILED", "CANCELLED", "TIMED_OUT", "DEGRADED")
+                .set(QueryTaskEntity::getStatusCode, "CANCELLED").set(QueryTaskEntity::getProgress, 100)
+                .set(QueryTaskEntity::getStageMessage, "查询已取消，不会继续修复或降级执行")
+                .set(QueryTaskEntity::getConfirmationToken, null).set(QueryTaskEntity::getQuestionJson, null)
+                .set(QueryTaskEntity::getUpdatedAt, LocalDateTime.now()).setSql("state_version = state_version + 1"));
+        if (changed == 1) {
+            execution.cancel(taskId);
+            try {
+                history.save(taskId, user.userId(), task.getQueryText(), task.getIntentCode(), "CANCELLED", task.getSqlText(), "查询已取消");
+                auditService.record(requestId, taskId, user.userId(), "QUERY_CANCELLED", "USER_REQUEST");
+            } catch (RuntimeException recordFailure) {
+                org.slf4j.LoggerFactory.getLogger(QueryApplicationService.class)
+                        .error("取消任务的附属记录写入失败：taskId={}", taskId);
+            }
+        }
+        return status(taskId, user);
+    }
+
+    private void saveOrConflict(QueryTaskEntity task) {
+        if (!states.trySave(task)) throw new BusinessException(409004, "任务状态已变更，请刷新后重试");
     }
 
     private QueryTaskEntity ownedTask(String taskId, CurrentUser user) {

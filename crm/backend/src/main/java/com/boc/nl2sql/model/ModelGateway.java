@@ -27,7 +27,16 @@ public class ModelGateway {
      * 这既降低模型调用量，也避免简单场景受模型输出波动影响。
      */
     public QueryInterpretation interpret(String queryText, CurrentUser user) {
+        return interpret(queryText, user, null);
+    }
+
+    public QueryInterpretation interpret(String queryText, CurrentUser user, java.util.function.BooleanSupplier active) {
+        if (active != null && !active.getAsBoolean()) throw new com.boc.nl2sql.execution.QueryTerminatedException(false);
         var ruleSemantic = ruleParser.parse(queryText);
+        var timeQuestion = new com.boc.nl2sql.nl2sql.application.TimeScopeClarifier().clarify(queryText, ruleSemantic);
+        if (timeQuestion.isPresent()) {
+            return new QueryInterpretation(ruleSemantic, "RULE", 1.0, null, null, "AUTO", timeQuestion.get());
+        }
         if (ruleParser.supportsDeterministicPlan(queryText, ruleSemantic)) {
             return QueryInterpretation.rule(ruleSemantic);
         }
@@ -40,10 +49,17 @@ public class ModelGateway {
             throw new BusinessException(503102,
                     "该问题超出规则快速查询范围，请配置 DeepSeek V4 Flash 后重试");
         }
-        return adapter.interpret(queryText, user);
+        return active == null ? adapter.interpret(queryText, user) : adapter.interpret(queryText, user, active);
     }
 
     public String activeProvider() {
         return configuredProvider;
+    }
+
+    /** 修复始终直达已配置模型，不再次走规则识别或无限重试。 */
+    public QueryInterpretation repair(String text, CurrentUser user, String failedSql, String reason) {
+        return adapters.stream().filter(adapter -> adapter.provider().equalsIgnoreCase(configuredProvider))
+                .findFirst().orElseThrow(() -> new BusinessException(503101, "模型适配器不可用"))
+                .repair(text, user, failedSql, reason);
     }
 }

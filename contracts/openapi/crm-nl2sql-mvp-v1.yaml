@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
-  title: 个金营销 NL2SQL v1.0 API
-  version: 1.0.0
+  title: 个金营销 NL2SQL v1.1 API
+  version: 1.1.0
   description: Vue工作台与Spring Boot模块化单体之间的接口契约。所有业务数据均为模拟数据。
 servers:
   - url: http://127.0.0.1:8080
@@ -121,6 +121,24 @@ paths:
                 reason: { type: string }
       responses:
         "200": { description: 确认结果 }
+  /api/v1/queries/{taskId}/cancel:
+    post:
+      summary: 取消本人尚未结束的任务；重复取消或已终态时返回实际状态
+      description: 无请求体。取消后不继续修复或模板降级；执行中的JDBC Statement将被取消。完成与取消竞争时以先提交的终态为准。
+      parameters:
+        - $ref: "#/components/parameters/TaskId"
+      responses:
+        "200":
+          description: 当前任务状态
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/TaskStatus" }
+        "404": { description: 任务不存在或不属于当前用户 }
   /api/v1/query-history:
     get:
       summary: 分页读取当前用户查询历史
@@ -173,17 +191,20 @@ components:
           example: AUTO
     TaskStatus:
       type: object
-      required: [task_id, session_id, status, progress, message, clarification_round]
+      required: [task_id, session_id, status, progress, message, clarification_round, repair_attempts, execution_timeout_seconds, cancellable]
       properties:
         task_id: { type: string, format: uuid }
         session_id: { type: string, format: uuid }
         status:
           type: string
-          enum: [RECEIVED, INTENT_ANALYZING, ASKING, SQL_GENERATING, VALIDATING, CONFIRMING, EXECUTING, PACKAGING, SUCCESS, FAILED, CANCELLED]
+          enum: [RECEIVED, INTENT_ANALYZING, ASKING, SQL_GENERATING, VALIDATING, CONFIRMING, EXECUTING, REPAIRING, FALLING_BACK, PACKAGING, SUCCESS, FAILED, CANCELLED, TIMED_OUT, DEGRADED]
         progress: { type: integer, minimum: 0, maximum: 100 }
         message: { type: string }
         intent: { type: [string, "null"] }
         clarification_round: { type: integer, minimum: 0 }
+        repair_attempts: { type: integer, minimum: 0, maximum: 2, description: 已消耗的SQL修复调用次数，不含首次规划的响应重试 }
+        execution_timeout_seconds: { type: integer, minimum: 1, default: 60 }
+        cancellable: { type: boolean }
         question: { $ref: "#/components/schemas/ClarificationQuestion" }
         confirmation: { $ref: "#/components/schemas/Confirmation" }
         result: { $ref: "#/components/schemas/QueryResult" }
@@ -195,7 +216,7 @@ components:
       type: [object, "null"]
       properties:
         question_id: { type: string, format: uuid }
-        type: { type: string, enum: [MISSING_TOPIC, MISSING_TIME_RANGE, CONFLICT, MODEL_CLARIFICATION] }
+        type: { type: string, enum: [MISSING_TOPIC, MISSING_TIME_RANGE, TIME_BASIS, CONFLICT, MODEL_CLARIFICATION] }
         prompt: { type: string }
         options: { type: array, items: { type: string } }
         recognized_slots: { type: object, additionalProperties: { type: string } }
@@ -225,14 +246,26 @@ components:
             properties:
               label: { type: string }
               value: {}
+              key: { type: string }
+              unit: { type: string }
+              aggregation: { type: string }
+              note: { type: string, description: 指标的实际聚合口径 }
         charts:
           type: array
           items: { $ref: "#/components/schemas/ChartSpec" }
         analysis: { $ref: "#/components/schemas/AnalysisSummary" }
         sql_preview: { type: string, readOnly: true }
         data_as_of: { type: string, format: date }
-        interpretation_source: { type: string, enum: [RULE, DEEPSEEK] }
+        interpretation_source: { type: string, enum: [RULE, DEEPSEEK, TEMPLATE_FALLBACK, FALLBACK] }
         confidence: { type: number, minimum: 0, maximum: 1 }
+        fallback: { $ref: "#/components/schemas/FallbackInfo" }
+    FallbackInfo:
+      type: [object, "null"]
+      properties:
+        reason: { type: string }
+        template_id: { type: [string, "null"] }
+        data_available: { type: boolean, description: 是否成功执行了模板；true时也可能是正常空结果 }
+        suggestions: { type: array, items: { type: string } }
     ColumnMeta:
       type: object
       properties:
@@ -240,12 +273,19 @@ components:
         label: { type: string }
         data_type: { type: string, enum: [TEXT, NUMBER, DATE] }
         sensitive: { type: boolean }
+        role: { type: string, enum: [DIMENSION, TIME, MEASURE] }
+        unit: { type: string }
+        aggregation: { type: string, enum: [SUM, AVERAGE, WEIGHTED_AVERAGE, NONE] }
+        weight_key: { type: [string, "null"] }
     ChartSpec:
       type: object
       properties:
-        type: { type: string, enum: [BAR, LINE, PIE] }
+        type: { type: string, enum: [BAR, LINE, AREA, PIE, SCATTER, HEATMAP] }
         title: { type: string }
         dimension_key: { type: string }
+        dimension_label: { type: string }
+        secondary_dimension_key: { type: [string, "null"] }
+        reason: { type: string }
         series:
           type: array
           items:
@@ -253,6 +293,7 @@ components:
             properties:
               key: { type: string }
               label: { type: string }
+              unit: { type: string }
     AnalysisSummary:
       type: object
       properties:

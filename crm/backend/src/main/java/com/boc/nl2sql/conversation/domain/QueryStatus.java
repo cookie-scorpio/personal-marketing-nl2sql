@@ -11,5 +11,13 @@ public enum QueryStatus {
     PACKAGING,
     SUCCESS,
     FAILED,
-    CANCELLED
+    CANCELLED,
+    TIMED_OUT,
+    REPAIRING,
+    FALLING_BACK,
+    DEGRADED;
+
+    public static boolean terminal(String status) {
+        return java.util.Set.of("SUCCESS", "FAILED", "CANCELLED", "TIMED_OUT", "DEGRADED").contains(status);
+    }
 }

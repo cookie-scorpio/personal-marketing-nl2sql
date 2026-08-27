@@ -16,8 +16,16 @@ public record QueryInterpretation(
         String generatedSql,
         String title,
         String preferredDisplay,
-        ClarificationQuestion clarification
+        ClarificationQuestion clarification,
+        java.util.List<com.boc.nl2sql.execution.domain.ResultColumnHint> columnHints
 ) {
+    public QueryInterpretation {
+        columnHints = columnHints == null ? java.util.List.of() : java.util.List.copyOf(columnHints);
+    }
+    public QueryInterpretation(SemanticQuery semantic, String source, double confidence, String generatedSql,
+                               String title, String preferredDisplay, ClarificationQuestion clarification) {
+        this(semantic, source, confidence, generatedSql, title, preferredDisplay, clarification, java.util.List.of());
+    }
     public static QueryInterpretation rule(SemanticQuery semantic) {
         return new QueryInterpretation(semantic, "RULE", 1.0, null, null, "AUTO", null);
     }

@@ -7,5 +7,7 @@ import java.util.Map;
 
 /** MySQL查询执行边界，业务编排不直接依赖具体JDBC实现。 */
 public interface QueryExecutionGateway {
-    List<Map<String, Object>> execute(PlannedQuery query);
+    List<Map<String, Object>> execute(String taskId, PlannedQuery query, java.util.function.BooleanSupplier active);
+
+    void cancel(String taskId);
 }

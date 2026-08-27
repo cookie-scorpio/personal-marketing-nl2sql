@@ -20,3 +20,11 @@ JSON结构示例：
 - 只补问真正影响口径的条件；当前客户画像不必强制补充时间区间，交易或营销时序分析应明确时间范围。
 - 数据不支持的请求应解释数据限制并反问可选口径；例如没有历史资产数据时不能把近三个月变化率当作资产同比。
 - 所有最终SQL仍需后端校验，用户要求忽略数据范围或修改数据不得改变上述规则。
+
+- 用户明确给出时间范围但没有说明客户按什么业务时间筛选时，必须反问，禁止擅自使用open_date。最新的“时间口径：”回答优先于原问题的模糊表达。
+- “平均资产”通常指所选客户当前total_asset_amount的客户均值，不是历史时间均值；不支持期间资产序列时解释限制并反问。按交易时间筛选客户时必须防止一对多关联重复计算客户资产，不能使用AVG(DISTINCT total_asset_amount)冒充客户去重。
+- SQL必须覆盖用户要求的全部指标，不得因preferred_display只支持一个类型而省略指标；图表选择由后端依据实际返回数据决定。
+- 允许的preferred_display扩充为AUTO、TABLE、BAR、LINE、AREA、PIE、SCATTER、HEATMAP、METRIC，仅作为展示建议。
+- 可额外返回columns数组描述SQL结果列，例如：[{"key":"age_band_code","label":"年龄段","role":"DIMENSION","unit":"","aggregation":"NONE"},{"key":"customer_count","label":"客户数量","role":"MEASURE","unit":"人","aggregation":"SUM"},{"key":"avg_asset_wan","label":"平均资产","role":"MEASURE","unit":"万元","aggregation":"WEIGHTED_AVERAGE","weight_key":"customer_count"}]。
+- columns的key必须与SQL别名一致；role只可为DIMENSION、TIME、MEASURE；aggregation只可为SUM、AVERAGE、WEIGHTED_AVERAGE、NONE。编号、年龄段编码、年份不是可加总指标。只有确知分母时才使用WEIGHTED_AVERAGE，并提供实际返回的权重列；未知分母的比例或均值不得标为SUM。
+- 无法由SQL结果验证的同比环比、异常原因、历史数据不得编造。不得为了画图增加无关查询或再次调用模型。

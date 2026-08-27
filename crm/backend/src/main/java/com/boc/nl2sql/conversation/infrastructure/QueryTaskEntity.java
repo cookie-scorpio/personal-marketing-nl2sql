@@ -22,6 +22,12 @@ public class QueryTaskEntity {
     private String interpretationSource;
     private Double interpretationConfidence;
     private String preferredDisplay;
+    private Long stateVersion;
+    private Integer repairAttempts;
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private String columnHintsJson;
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private String fallbackJson;
     private Integer clarificationRound;
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String questionJson;
@@ -38,6 +44,14 @@ public class QueryTaskEntity {
     private LocalDateTime updatedAt;
 
     public String getTaskId() { return taskId; }
+    public Long getStateVersion() { return stateVersion; }
+    public void setStateVersion(Long stateVersion) { this.stateVersion = stateVersion; }
+    public Integer getRepairAttempts() { return repairAttempts; }
+    public void setRepairAttempts(Integer repairAttempts) { this.repairAttempts = repairAttempts; }
+    public String getColumnHintsJson() { return columnHintsJson; }
+    public void setColumnHintsJson(String columnHintsJson) { this.columnHintsJson = columnHintsJson; }
+    public String getFallbackJson() { return fallbackJson; }
+    public void setFallbackJson(String fallbackJson) { this.fallbackJson = fallbackJson; }
     public void setTaskId(String taskId) { this.taskId = taskId; }
     public String getSessionId() { return sessionId; }
     public void setSessionId(String sessionId) { this.sessionId = sessionId; }

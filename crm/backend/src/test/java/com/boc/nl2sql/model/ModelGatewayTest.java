@@ -13,6 +13,26 @@ import static org.mockito.Mockito.*;
 
 class ModelGatewayTest {
     @Test
+    void ambiguousCustomerTimeIsClarifiedWithoutModelCall() {
+        ModelAdapter adapter = mock(ModelAdapter.class);
+        var gateway = new ModelGateway("deepseek", List.of(adapter), new RuleBasedSemanticParser());
+        var user = new CurrentUser(3L, "director01", "负责人", RoleCode.ORG_MANAGER, "EAST", null, null);
+        var result = gateway.interpret("分析近90天各年龄段客户数量和平均资产", user);
+        assertThat(result.clarification().type()).isEqualTo("TIME_BASIS");
+        verifyNoInteractions(adapter);
+    }
+
+    @Test
+    void explicitOpeningDateOrClarificationGoesToModel() {
+        ModelAdapter adapter = mock(ModelAdapter.class);
+        when(adapter.provider()).thenReturn("deepseek"); when(adapter.available()).thenReturn(true);
+        var gateway = new ModelGateway("deepseek", List.of(adapter), new RuleBasedSemanticParser());
+        var user = new CurrentUser(3L, "director01", "负责人", RoleCode.ORG_MANAGER, "EAST", null, null);
+        String text = "分析近90天各年龄段客户数量和平均资产，时间口径：按开户时间筛选，统计这些客户的当前资产";
+        gateway.interpret(text, user);
+        verify(adapter).interpret(text, user);
+    }
+    @Test
     void channelComparisonUsesModelInsteadOfFixedTemplate() {
         ModelAdapter adapter = mock(ModelAdapter.class);
         when(adapter.provider()).thenReturn("deepseek");

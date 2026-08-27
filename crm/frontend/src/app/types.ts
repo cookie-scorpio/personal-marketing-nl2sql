@@ -30,6 +30,10 @@ export interface ColumnMeta {
   label: string
   data_type: string
   sensitive: boolean
+  role?: 'DIMENSION' | 'TIME' | 'MEASURE'
+  unit?: string
+  aggregation?: string
+  weight_key?: string
 }
 
 export interface QueryResult {
@@ -38,7 +42,7 @@ export interface QueryResult {
   summary: string
   columns: ColumnMeta[]
   rows: Record<string, unknown>[]
-  metrics: Array<{ label: string; value: unknown }>
+  metrics: Array<{ key?: string; label: string; value: unknown; unit?: string; note?: string }>
   charts: ChartSpec[]
   analysis: {
     overview: string
@@ -49,13 +53,17 @@ export interface QueryResult {
   data_as_of: string
   interpretation_source: 'RULE' | 'DEEPSEEK' | string
   confidence: number
+  fallback?: { reason: string; template_id?: string; data_available: boolean; suggestions: string[] }
 }
 
 export interface ChartSpec {
-  type: 'BAR' | 'LINE' | 'PIE'
+  type: 'BAR' | 'LINE' | 'AREA' | 'PIE' | 'SCATTER' | 'HEATMAP'
   title: string
   dimension_key: string
-  series: Array<{ key: string; label: string }>
+  series: Array<{ key: string; label: string; unit?: string }>
+  dimension_label?: string
+  secondary_dimension_key?: string
+  reason?: string
 }
 
 export interface TaskStatus {
@@ -66,6 +74,9 @@ export interface TaskStatus {
   message: string
   intent?: string
   clarification_round: number
+  repair_attempts?: number
+  execution_timeout_seconds?: number
+  cancellable?: boolean
   question?: ClarificationQuestion
   confirmation?: {
     confirm_token: string

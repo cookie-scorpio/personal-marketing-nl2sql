@@ -10,6 +10,20 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class SqlPlannerTest {
+    @Test
+    void fallbackCoversConfirmedAgeAssetsButRejectsUnknownFiltersAndAmbiguousTime() {
+        var scope = new DataScopePolicy();
+        var fallback = new com.boc.nl2sql.execution.application.FallbackPlanner(new RuleBasedSemanticParser(), new SqlPlanner(scope, 100), scope, 100);
+        var user = new CurrentUser(1L, "manager01", "经理", RoleCode.CUSTOMER_MANAGER, "EAST", "B001", "M0001");
+        String text = "分析近90天各年龄段客户数量和平均资产";
+        assertThat(fallback.plan(text, user)).isEmpty();
+        var template = fallback.plan(text + "，时间口径：按开户时间筛选，统计这些客户的当前资产", user).orElseThrow();
+        assertThat(template.query().sql()).contains("AVG(c.total_asset_amount)", "c.open_date >= :startDate", "c.manager_id = :scopeManagerId");
+        assertThat(template.query().parameters()).containsEntry("scopeManagerId", "M0001");
+        assertThat(fallback.plan("分析南京各年龄段客户数量和平均资产", user)).isEmpty();
+        assertThat(fallback.plan("分析各年龄段客户数量和平均资产及同比", user)).isEmpty();
+        assertThat(fallback.plan(text + "，时间口径：不限定时间，统计当前客户与当前资产", user).orElseThrow().query().sql()).doesNotContain("c.open_date");
+    }
 
     @Test
     void forcesManagerScopeIntoPlannedSql() {

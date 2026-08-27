@@ -55,4 +55,11 @@ public class QueryController {
         return ApiResponse.success(service.confirm(taskId, body, user, WebRequestSupport.requestId(request)),
                 WebRequestSupport.requestId(request));
     }
+
+    @PostMapping("/queries/{taskId}/cancel")
+    public ApiResponse<TaskStatusResponse> cancel(@PathVariable String taskId,
+            @AuthenticationPrincipal CurrentUser user, HttpServletRequest request) {
+        return ApiResponse.success(service.cancel(taskId, user, WebRequestSupport.requestId(request)),
+                WebRequestSupport.requestId(request));
+    }
 }

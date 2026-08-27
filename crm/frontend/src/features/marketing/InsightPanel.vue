@@ -9,7 +9,7 @@ const activities = [
 <template>
   <aside class="insight-panel">
     <section class="side-card opportunity-card">
-      <div class="side-card-head"><div><span class="side-icon red"><MagicStick /></span><h3>提问建议</h3></div><span class="count-tag">V1.0</span></div>
+      <div class="side-card-head"><div><span class="side-icon red"><MagicStick /></span><h3>提问建议</h3></div><span class="count-tag">V1.1</span></div>
       <p class="guide-copy">说明对象、指标、时间和期望维度，通常能一次得到更准确的结果。</p>
       <div class="opportunity-list">
         <div><span class="list-icon amber"><TrendCharts /></span><span><strong>趋势分析</strong><small>近6个月各月交易金额变化</small></span></div>

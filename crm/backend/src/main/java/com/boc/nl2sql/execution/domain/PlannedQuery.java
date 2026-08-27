@@ -7,8 +7,15 @@ public record PlannedQuery(
         Map<String, Object> parameters,
         String resultType,
         String title,
-        QueryRisk risk
+        QueryRisk risk,
+        java.util.List<ResultColumnHint> columnHints
 ) {
+    public PlannedQuery {
+        columnHints = columnHints == null ? java.util.List.of() : java.util.List.copyOf(columnHints);
+    }
+    public PlannedQuery(String sql, Map<String, Object> parameters, String resultType, String title, QueryRisk risk) {
+        this(sql, parameters, resultType, title, risk, java.util.List.of());
+    }
     /** 兼容固定模板构造方式，后续还会由风险评估器补充SQL复杂度风险。 */
     public PlannedQuery(String sql, Map<String, Object> parameters, String resultType, String title,
                         boolean highRisk) {
@@ -21,6 +28,6 @@ public record PlannedQuery(
     }
 
     public PlannedQuery withRisk(QueryRisk assessedRisk) {
-        return new PlannedQuery(sql, parameters, resultType, title, assessedRisk);
+        return new PlannedQuery(sql, parameters, resultType, title, assessedRisk, columnHints);
     }
 }

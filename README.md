@@ -2,6 +2,8 @@
 
 本仓库用于统一管理个金营销 NL2SQL 项目的客户关系管理系统、大数据产品和大模型服务。三部分代码放在同一仓库中，接口、文档和发布规则保持一致，各应用仍可独立开发、测试和部署。
 
+当前MVP已经实现可运行的前后端主链路：Vue工作台通过Spring Boot完成数据库账号登录、自然语言规则解析、信息补充、矛盾澄清、受控SQL生成、MySQL查询和历史记录。真实大模型、BGE-M3、Milvus与Spark/Hive保留替换接口，不进入本期运行环境。
+
 ## 主要内容
 
 - `crm/`：客户关系管理系统，包含前端和 Spring Boot 后端。
@@ -21,6 +23,15 @@
 4. 本地完成测试后推送分支，并通过 Pull Request 合并到 `main`。
 
 各模块首次落代码时，应在对应目录补齐可执行的安装、配置、运行和测试命令。
+
+## MVP本地运行
+
+1. 按[本地基础服务说明](deploy/local/README.md)启动MySQL 8.4和Redis 7.x。
+2. 按[后端说明](crm/backend/README.md)配置密码并启动Spring Boot，Flyway会自动创建表和演示账号。
+3. 按[虚构数据生成说明](scripts/mock-data/README.md)生成1万名客户和相关营销数据。
+4. 按[前端说明](crm/frontend/README.md)启动Vue开发服务器。
+
+浏览器访问`http://127.0.0.1:5173`，可使用`manager01`、`leader01`或`director01`登录，演示密码为`Demo@123`。
 
 ## 配置与运行
 

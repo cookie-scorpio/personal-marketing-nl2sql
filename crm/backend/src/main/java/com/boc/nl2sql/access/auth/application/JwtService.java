@@ -1,0 +1,114 @@
+package com.boc.nl2sql.access.auth.application;
+
+import com.boc.nl2sql.authorization.domain.CurrentUser;
+import com.boc.nl2sql.authorization.domain.RoleCode;
+import com.boc.nl2sql.common.exception.BusinessException;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
+
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.time.Instant;
+import java.util.Base64;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+/**
+ * 使用 HMAC-SHA256 签发本地 JWT。
+ *
+ * <p>MVP 不依赖外部认证中心，但仍校验签名和过期时间；后期可整体替换为 OAuth2 Resource Server。</p>
+ */
+@Service
+public class JwtService {
+    private static final Base64.Encoder URL_ENCODER = Base64.getUrlEncoder().withoutPadding();
+    private static final Base64.Decoder URL_DECODER = Base64.getUrlDecoder();
+    private final ObjectMapper objectMapper;
+    private final byte[] secret;
+    private final long ttlSeconds;
+
+    public JwtService(ObjectMapper objectMapper,
+                      @Value("${app.security.jwt-secret}") String secret,
+                      @Value("${app.security.jwt-ttl-seconds}") long ttlSeconds) {
+        this.objectMapper = objectMapper;
+        this.secret = secret.getBytes(StandardCharsets.UTF_8);
+        this.ttlSeconds = ttlSeconds;
+    }
+
+    public String issue(CurrentUser user) {
+        Map<String, Object> claims = new LinkedHashMap<>();
+        claims.put("sub", user.userId());
+        claims.put("username", user.username());
+        claims.put("displayName", user.displayName());
+        claims.put("role", user.role().name());
+        claims.put("regionCode", user.regionCode());
+        claims.put("branchId", user.branchId());
+        claims.put("managerId", user.managerId());
+        claims.put("iat", Instant.now().getEpochSecond());
+        claims.put("exp", Instant.now().plusSeconds(ttlSeconds).getEpochSecond());
+        try {
+            String header = encodeJson(Map.of("alg", "HS256", "typ", "JWT"));
+            String payload = encodeJson(claims);
+            return header + "." + payload + "." + sign(header + "." + payload);
+        } catch (JacksonException exception) {
+            throw new IllegalStateException("JWT serialization failed", exception);
+        }
+    }
+
+    public CurrentUser verify(String token) {
+        try {
+            String[] parts = token.split("\\.");
+            if (parts.length != 3) {
+                throw invalidToken();
+            }
+            byte[] actual = URL_DECODER.decode(parts[2]);
+            byte[] expected = URL_DECODER.decode(sign(parts[0] + "." + parts[1]));
+            if (!MessageDigest.isEqual(actual, expected)) {
+                throw invalidToken();
+            }
+            @SuppressWarnings("unchecked")
+            Map<String, Object> claims = objectMapper.readValue(URL_DECODER.decode(parts[1]), Map.class);
+            long expiresAt = ((Number) claims.get("exp")).longValue();
+            if (Instant.now().getEpochSecond() >= expiresAt) {
+                throw new BusinessException(401001, "登录状态已过期，请重新登录");
+            }
+            return new CurrentUser(
+                    ((Number) claims.get("sub")).longValue(),
+                    (String) claims.get("username"),
+                    (String) claims.get("displayName"),
+                    RoleCode.valueOf((String) claims.get("role")),
+                    (String) claims.get("regionCode"),
+                    (String) claims.get("branchId"),
+                    (String) claims.get("managerId"));
+        } catch (BusinessException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw invalidToken();
+        }
+    }
+
+    public long ttlSeconds() {
+        return ttlSeconds;
+    }
+
+    private String encodeJson(Object value) throws JacksonException {
+        return URL_ENCODER.encodeToString(objectMapper.writeValueAsBytes(value));
+    }
+
+    private String sign(String value) {
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(secret, "HmacSHA256"));
+            return URL_ENCODER.encodeToString(mac.doFinal(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (Exception exception) {
+            throw new IllegalStateException("JWT signing failed", exception);
+        }
+    }
+
+    private BusinessException invalidToken() {
+        return new BusinessException(401001, "登录凭证无效，请重新登录");
+    }
+}

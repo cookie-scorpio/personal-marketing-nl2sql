@@ -1,0 +1,64 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: nl2sql-crm-backend
+  datasource:
+    url: ${MYSQL_URL:jdbc:mysql://127.0.0.1:3306/pf_nl2sql?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Hong_Kong&allowPublicKeyRetrieval=true&useSSL=false}
+    username: ${MYSQL_USER:nl2sql_app}
+    password: ${MYSQL_PASSWORD:nl2sql_dev_password}
+    hikari:
+      maximum-pool-size: 12
+      minimum-idle: 2
+      connection-timeout: 5000
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2s
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+    default-property-inclusion: non_null
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    banner: false
+
+app:
+  security:
+    # 仅用于本地 MVP。部署到其他环境时必须通过环境变量覆盖。
+    jwt-secret: ${JWT_SECRET:nl2sql-local-development-secret-change-before-sharing}
+    jwt-ttl-seconds: ${JWT_TTL_SECONDS:28800}
+  model:
+    provider: ${MODEL_PROVIDER:mock}
+    deepseek:
+      base-url: ${DEEPSEEK_BASE_URL:}
+      api-key: ${DEEPSEEK_API_KEY:}
+      model: ${DEEPSEEK_MODEL:}
+    qwen:
+      base-url: ${QWEN_BASE_URL:}
+      api-key: ${QWEN_API_KEY:}
+      model: ${QWEN_MODEL:Qwen3-32B}
+  query:
+    max-result-rows: ${QUERY_MAX_RESULT_ROWS:100}
+    max-clarification-rounds: ${QUERY_MAX_CLARIFICATION_ROUNDS:2}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%X{requestId:-}] %logger{36} - %msg%n"

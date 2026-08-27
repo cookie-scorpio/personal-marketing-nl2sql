@@ -17,7 +17,8 @@ public class SqlSafetyValidator {
             "dim_marketing_campaign", "fct_customer_marketing");
     private static final Set<String> FORBIDDEN = Set.of(
             " insert ", " update ", " delete ", " drop ", " alter ", " create ",
-            " truncate ", " grant ", " revoke ", " call ", " outfile ", " load_file");
+            " truncate ", " grant ", " revoke ", " call ", " outfile ", " load_file",
+            " sleep(", " benchmark(", " information_schema", " union ", "--", "/*", "#");
 
     public void validate(String sql) {
         String normalized = " " + sql.strip().toLowerCase(Locale.ROOT).replaceAll("\\s+", " ") + " ";
@@ -26,6 +27,9 @@ public class SqlSafetyValidator {
         }
         if (normalized.contains(";") || FORBIDDEN.stream().anyMatch(normalized::contains)) {
             throw new BusinessException(422101, "SQL安全校验未通过：检测到非只读或多语句操作");
+        }
+        if (normalized.matches("(?s).*\\bselect\\s+\\*.*")) {
+            throw new BusinessException(422101, "SQL安全校验未通过：禁止SELECT *，请明确查询字段");
         }
         Matcher matcher = TABLE_REFERENCE.matcher(sql);
         while (matcher.find()) {

@@ -2,6 +2,8 @@ package com.boc.nl2sql.conversation.infrastructure;
 
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 
 import java.time.LocalDateTime;
 
@@ -17,13 +19,20 @@ public class QueryTaskEntity {
     private Integer progress;
     private String stageMessage;
     private String intentCode;
+    private String interpretationSource;
+    private Double interpretationConfidence;
+    private String preferredDisplay;
     private Integer clarificationRound;
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String questionJson;
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String confirmationToken;
+    private String riskJson;
     private Boolean confirmed;
     private String sqlText;
     private String sqlParametersJson;
     private String resultJson;
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String errorMessage;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -46,12 +55,20 @@ public class QueryTaskEntity {
     public void setStageMessage(String stageMessage) { this.stageMessage = stageMessage; }
     public String getIntentCode() { return intentCode; }
     public void setIntentCode(String intentCode) { this.intentCode = intentCode; }
+    public String getInterpretationSource() { return interpretationSource; }
+    public void setInterpretationSource(String interpretationSource) { this.interpretationSource = interpretationSource; }
+    public Double getInterpretationConfidence() { return interpretationConfidence; }
+    public void setInterpretationConfidence(Double interpretationConfidence) { this.interpretationConfidence = interpretationConfidence; }
+    public String getPreferredDisplay() { return preferredDisplay; }
+    public void setPreferredDisplay(String preferredDisplay) { this.preferredDisplay = preferredDisplay; }
     public Integer getClarificationRound() { return clarificationRound; }
     public void setClarificationRound(Integer clarificationRound) { this.clarificationRound = clarificationRound; }
     public String getQuestionJson() { return questionJson; }
     public void setQuestionJson(String questionJson) { this.questionJson = questionJson; }
     public String getConfirmationToken() { return confirmationToken; }
     public void setConfirmationToken(String confirmationToken) { this.confirmationToken = confirmationToken; }
+    public String getRiskJson() { return riskJson; }
+    public void setRiskJson(String riskJson) { this.riskJson = riskJson; }
     public Boolean getConfirmed() { return confirmed; }
     public void setConfirmed(Boolean confirmed) { this.confirmed = confirmed; }
     public String getSqlText() { return sqlText; }

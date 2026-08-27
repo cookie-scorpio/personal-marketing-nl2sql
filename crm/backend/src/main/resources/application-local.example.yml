@@ -10,10 +10,21 @@ app:
   model:
     provider: mock
     deepseek:
-      base-url: ""
-      api-key: ""
-      model: ""
+      # 演示自由提问时将provider改为deepseek并填写密钥；固定高频问题仍优先走规则。
+      base-url: https://api.deepseek.com
+      api-key: "请填写DeepSeek API密钥"
+      model: deepseek-v4-flash
+      thinking-enabled: false
+      max-tokens: 4096
+      retry-max-tokens: 8192
+      read-timeout-seconds: 60
     qwen:
       base-url: ""
       api-key: ""
       model: Qwen3-32B
+  rag:
+    enabled: false
+    embedding-model: BCG-E3
+    embedding-base-url: ""
+    milvus-uri: ""
+    collection: nl2sql_business_knowledge

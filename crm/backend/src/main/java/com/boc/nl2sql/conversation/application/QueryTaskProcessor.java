@@ -7,11 +7,15 @@ import com.boc.nl2sql.conversation.infrastructure.QueryTaskEntity;
 import com.boc.nl2sql.conversation.infrastructure.QueryTaskMapper;
 import com.boc.nl2sql.execution.QueryExecutionGateway;
 import com.boc.nl2sql.execution.application.ResultAssembler;
+import com.boc.nl2sql.execution.application.GeneratedSqlScopeValidator;
 import com.boc.nl2sql.execution.application.SqlPlanner;
+import com.boc.nl2sql.execution.application.SqlRiskEvaluator;
+import com.boc.nl2sql.execution.application.SqlSafetyValidator;
 import com.boc.nl2sql.execution.domain.PlannedQuery;
 import com.boc.nl2sql.execution.domain.QueryResult;
 import com.boc.nl2sql.history.application.HistoryService;
 import com.boc.nl2sql.model.ModelGateway;
+import com.boc.nl2sql.model.QueryInterpretation;
 import com.boc.nl2sql.nl2sql.application.CompletenessValidator;
 import com.boc.nl2sql.nl2sql.domain.ClarificationQuestion;
 import com.boc.nl2sql.nl2sql.domain.SemanticQuery;
@@ -33,6 +37,9 @@ public class QueryTaskProcessor {
     private final ModelGateway modelGateway;
     private final CompletenessValidator completenessValidator;
     private final SqlPlanner sqlPlanner;
+    private final SqlRiskEvaluator riskEvaluator;
+    private final SqlSafetyValidator safetyValidator;
+    private final GeneratedSqlScopeValidator generatedSqlScopeValidator;
     private final QueryExecutionGateway executionGateway;
     private final ResultAssembler resultAssembler;
     private final HistoryService historyService;
@@ -42,6 +49,8 @@ public class QueryTaskProcessor {
 
     public QueryTaskProcessor(QueryTaskMapper taskMapper, ModelGateway modelGateway,
                               CompletenessValidator completenessValidator, SqlPlanner sqlPlanner,
+                              SqlRiskEvaluator riskEvaluator, SqlSafetyValidator safetyValidator,
+                              GeneratedSqlScopeValidator generatedSqlScopeValidator,
                               QueryExecutionGateway executionGateway, ResultAssembler resultAssembler,
                               HistoryService historyService, AuditService auditService, ObjectMapper objectMapper,
                               @Value("${app.query.max-clarification-rounds:2}") int maxClarificationRounds) {
@@ -49,6 +58,9 @@ public class QueryTaskProcessor {
         this.modelGateway = modelGateway;
         this.completenessValidator = completenessValidator;
         this.sqlPlanner = sqlPlanner;
+        this.riskEvaluator = riskEvaluator;
+        this.safetyValidator = safetyValidator;
+        this.generatedSqlScopeValidator = generatedSqlScopeValidator;
         this.executionGateway = executionGateway;
         this.resultAssembler = resultAssembler;
         this.historyService = historyService;
@@ -62,12 +74,24 @@ public class QueryTaskProcessor {
         QueryTaskEntity task = taskMapper.selectById(taskId);
         if (task == null) return;
         try {
+            // 用户确认的是已经展示过风险的计划。确认后直接执行持久化SQL，禁止再次调用模型生成另一条SQL。
+            if (Boolean.TRUE.equals(task.getConfirmed()) && task.getSqlText() != null) {
+                executeConfirmedPlan(task, user, requestId);
+                return;
+            }
             stage(task, QueryStatus.INTENT_ANALYZING, 20, "正在识别业务意图和查询条件");
-            SemanticQuery semantic = modelGateway.interpret(task.getMergedQueryText());
+            QueryInterpretation interpretation = modelGateway.interpret(task.getMergedQueryText(), user);
+            SemanticQuery semantic = interpretation.semantic();
             task.setIntentCode(semantic.intent().name());
+            task.setInterpretationSource(interpretation.source());
+            task.setInterpretationConfidence(interpretation.confidence());
+            task.setPreferredDisplay(interpretation.preferredDisplay());
             taskMapper.updateById(task);
 
-            var question = completenessValidator.validate(semantic);
+            // 模型可发现开放问题中的缺失条件；确定性规则仍负责统一的矛盾与必填项兜底。
+            var question = interpretation.clarification() == null
+                    ? completenessValidator.validate(semantic, interpretation.hasGeneratedSql())
+                    : java.util.Optional.of(interpretation.clarification());
             if (question.isPresent()) {
                 if (task.getClarificationRound() >= maxClarificationRounds) {
                     fail(task, "补充条件后仍无法形成唯一查询，请重新描述问题", requestId);
@@ -80,13 +104,21 @@ public class QueryTaskProcessor {
             }
 
             stage(task, QueryStatus.SQL_GENERATING, 45, "正在生成受控查询计划");
-            PlannedQuery planned = sqlPlanner.plan(semantic, user);
+            PlannedQuery planned = interpretation.hasGeneratedSql()
+                    ? new PlannedQuery(interpretation.generatedSql(), Map.of(), interpretation.preferredDisplay(),
+                    interpretation.title(), false)
+                    : sqlPlanner.plan(semantic, user);
+            planned = planned.withRisk(riskEvaluator.assess(planned));
+            task.setPreferredDisplay(planned.resultType());
             task.setSqlText(planned.sql());
             task.setSqlParametersJson(objectMapper.writeValueAsString(planned.parameters()));
+            task.setRiskJson(objectMapper.writeValueAsString(planned.risk()));
             task.setQuestionJson(null);
             taskMapper.updateById(task);
 
             stage(task, QueryStatus.VALIDATING, 60, "正在执行只读、权限和对象白名单校验");
+            safetyValidator.validate(planned.sql());
+            if (interpretation.hasGeneratedSql()) generatedSqlScopeValidator.validate(planned.sql(), user);
             if (planned.highRisk() && !Boolean.TRUE.equals(task.getConfirmed())) {
                 task.setConfirmationToken(UUID.randomUUID().toString().replace("-", ""));
                 stage(task, QueryStatus.CONFIRMING, 65, "查询范围较大，需要确认后执行");
@@ -94,19 +126,36 @@ public class QueryTaskProcessor {
                 return;
             }
 
-            stage(task, QueryStatus.EXECUTING, 75, "正在查询已授权的营销数据");
-            List<Map<String, Object>> rows = executionGateway.execute(planned);
-            stage(task, QueryStatus.PACKAGING, 90, "正在脱敏并整理查询结果");
-            QueryResult result = resultAssembler.assemble(planned, rows);
-            task.setResultJson(objectMapper.writeValueAsString(result));
-            task.setErrorMessage(null);
-            stage(task, QueryStatus.SUCCESS, 100, result.summary());
-            historyService.save(taskId, user.userId(), task.getQueryText(), task.getIntentCode(),
-                    QueryStatus.SUCCESS.name(), compactSql(planned.sql()), result.summary());
-            auditService.record(requestId, taskId, user.userId(), "QUERY_SUCCESS", "resultRows=" + rows.size());
+            executePlan(task, planned, user, requestId, interpretation.source(), interpretation.confidence());
         } catch (Exception exception) {
             fail(task, safeMessage(exception), requestId);
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void executeConfirmedPlan(QueryTaskEntity task, CurrentUser user, String requestId) {
+        Map<String, Object> parameters = task.getSqlParametersJson() == null ? Map.of()
+                : objectMapper.readValue(task.getSqlParametersJson(), Map.class);
+        PlannedQuery stored = new PlannedQuery(task.getSqlText(), parameters,
+                task.getPreferredDisplay() == null ? "AUTO" : task.getPreferredDisplay(), "已确认查询结果", false);
+        safetyValidator.validate(stored.sql());
+        if ("DEEPSEEK".equals(task.getInterpretationSource())) generatedSqlScopeValidator.validate(stored.sql(), user);
+        executePlan(task, stored, user, requestId, task.getInterpretationSource(),
+                task.getInterpretationConfidence() == null ? 1.0 : task.getInterpretationConfidence());
+    }
+
+    private void executePlan(QueryTaskEntity task, PlannedQuery planned, CurrentUser user,
+                             String requestId, String source, double confidence) {
+        stage(task, QueryStatus.EXECUTING, 75, "正在查询已授权的营销数据");
+        List<Map<String, Object>> rows = executionGateway.execute(planned);
+        stage(task, QueryStatus.PACKAGING, 90, "正在整理图表与数据分析");
+        QueryResult result = resultAssembler.assemble(planned, rows, source, confidence);
+        task.setResultJson(objectMapper.writeValueAsString(result));
+        task.setErrorMessage(null);
+        stage(task, QueryStatus.SUCCESS, 100, result.summary());
+        historyService.save(task.getTaskId(), user.userId(), task.getQueryText(), task.getIntentCode(),
+                QueryStatus.SUCCESS.name(), compactSql(planned.sql()), result.summary());
+        auditService.record(requestId, task.getTaskId(), user.userId(), "QUERY_SUCCESS", "resultRows=" + rows.size());
     }
 
     private void stage(QueryTaskEntity task, QueryStatus status, int progress, String message) {

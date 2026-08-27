@@ -29,4 +29,12 @@ class SqlSafetyValidatorTest {
         assertThatThrownBy(() -> validator.validate("SELECT customer_id FROM dim_customer"))
                 .isInstanceOf(BusinessException.class);
     }
+
+    @Test
+    void rejectsWildcardAndDangerousFunctions() {
+        assertThatThrownBy(() -> validator.validate("SELECT * FROM dim_customer LIMIT 10"))
+                .isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> validator.validate("SELECT sleep(3) FROM dim_customer LIMIT 1"))
+                .isInstanceOf(BusinessException.class);
+    }
 }

@@ -4,9 +4,10 @@ import {
   ArrowRight, Check, Clock, CopyDocument, DataAnalysis, Delete, Document,
   MagicStick, Promotion, Refresh, Search, TrendCharts, WarningFilled,
 } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { ApiError, apiRequest } from '../../app/api'
 import type { HistoryItem, PageResult, SubmitQueryResponse, TaskStatus } from '../../app/types'
+import ResultChart from './ResultChart.vue'
 
 type ViewState = 'welcome' | 'running' | 'asking' | 'confirming' | 'success' | 'failed'
 
@@ -19,6 +20,7 @@ const selectedAnswer = ref('')
 const customAnswer = ref('')
 const errorMessage = ref('')
 const showSql = ref(false)
+const resultTab = ref<'analysis' | 'table'>('analysis')
 const historyVisible = ref(false)
 const historyLoading = ref(false)
 const historyItems = ref<HistoryItem[]>([])
@@ -46,10 +48,11 @@ function useExample(text: string) {
 }
 
 async function submitQuery() {
-  if (!query.value.trim() || submitting.value) return
+  if (!query.value.trim() || submitting.value || viewState.value === 'running') return
   submitting.value = true
   errorMessage.value = ''
   showSql.value = false
+  resultTab.value = 'analysis'
   currentTask.value = null
   viewState.value = 'running'
   try {
@@ -71,6 +74,7 @@ async function beginPolling(taskId: string) {
   while (generation === pollGeneration) {
     try {
       const status = await apiRequest<TaskStatus>(`/api/v1/queries/${taskId}/status`)
+      if (generation !== pollGeneration) return
       currentTask.value = status
       if (terminalStatuses.has(status.status)) {
         syncViewState(status)
@@ -181,9 +185,16 @@ function reuseHistory(item: HistoryItem) {
 }
 
 async function deleteHistory(item: HistoryItem) {
-  await apiRequest(`/api/v1/query-history/${item.history_id}`, { method: 'DELETE' })
-  historyItems.value = historyItems.value.filter(candidate => candidate.history_id !== item.history_id)
-  ElMessage.success('历史记录已删除')
+  try {
+    await ElMessageBox.confirm('删除后该记录将不再出现在查询历史中，任务与审计记录仍会保留。', '删除查询历史', {
+      confirmButtonText: '删除记录', cancelButtonText: '保留', type: 'warning',
+    })
+    await apiRequest(`/api/v1/query-history/${item.history_id}`, { method: 'DELETE' })
+    historyItems.value = historyItems.value.filter(candidate => candidate.history_id !== item.history_id)
+    ElMessage.success('历史记录已删除')
+  } catch (exception) {
+    if (exception instanceof ApiError) ElMessage.error(exception.message)
+  }
 }
 
 onUnmounted(() => { pollGeneration += 1 })
@@ -234,8 +245,7 @@ onUnmounted(() => { pollGeneration += 1 })
           <button v-for="option in currentTask.question.options" :key="option" type="button"
                   :class="{ selected: selectedAnswer === option }" @click="selectedAnswer = option; customAnswer = ''">{{ option }}</button>
         </div>
-        <el-input v-if="!currentTask.question.options.length || currentTask.question.type === 'CONFLICT'"
-                  v-model="customAnswer" placeholder="请输入最终采用的条件" maxlength="200" />
+        <el-input v-model="customAnswer" placeholder="也可以自行输入补充条件" maxlength="200" />
         <el-button type="primary" :disabled="!selectedAnswer && !customAnswer.trim()" @click="submitClarification">补充后继续</el-button>
       </div>
       <aside class="recognized-slots">
@@ -247,24 +257,42 @@ onUnmounted(() => { pollGeneration += 1 })
     <div v-else-if="viewState === 'confirming' && currentTask?.confirmation" class="risk-panel">
       <span class="risk-icon"><WarningFilled /></span>
       <div><p class="section-kicker">执行前确认</p><h3>该查询涉及较大的数据范围</h3><p>{{ currentTask.confirmation.message }}</p></div>
+      <ul v-if="currentTask.confirmation.reasons?.length" class="risk-reasons"><li v-for="reason in currentTask.confirmation.reasons" :key="reason">{{ reason }}</li></ul>
       <div class="risk-actions"><el-button @click="decide('REJECT')">取消查询</el-button><el-button type="danger" @click="decide('CONFIRM')">确认并执行</el-button></div>
     </div>
 
     <div v-else-if="viewState === 'success' && currentTask?.result" class="result-panel">
       <div class="result-heading">
         <div><p class="section-kicker"><Check /> 查询完成</p><h3>{{ currentTask.result.title }}</h3><p>{{ currentTask.result.summary }}</p></div>
-        <span>数据截至 {{ currentTask.result.data_as_of }}</span>
+        <span>数据截至 {{ currentTask.result.data_as_of }} · {{ currentTask.result.interpretation_source === 'RULE' ? '规则快速识别' : 'DeepSeek智能识别' }} {{ Math.round(currentTask.result.confidence * 100) }}%</span>
       </div>
       <div v-if="currentTask.result.metrics.length" class="metric-grid">
         <div v-for="metric in currentTask.result.metrics" :key="metric.label"><span>{{ metric.label }}</span><strong>{{ metric.value }}</strong></div>
       </div>
-      <div class="result-toolbar"><strong>查询结果</strong><button type="button" @click="showSql = !showSql"><CopyDocument />{{ showSql ? '收起 SQL' : '查看 SQL' }}</button></div>
-      <div v-if="showSql" class="sql-panel"><div><span>已通过只读、权限和白名单校验</span><button type="button" @click="copySql">复制 SQL</button></div><pre>{{ currentTask.result.sql_preview }}</pre></div>
-      <div class="table-wrap">
+      <div class="result-tabs" role="tablist" aria-label="结果展示方式">
+        <button type="button" :class="{ active: resultTab === 'analysis' }" @click="resultTab = 'analysis'">图表与分析</button>
+        <button type="button" :class="{ active: resultTab === 'table' }" @click="resultTab = 'table'">数据明细</button>
+      </div>
+      <div v-if="resultTab === 'analysis'" class="analysis-layout" :class="{ 'no-chart': !currentTask.result.charts.length }">
+        <section v-if="currentTask.result.charts.length" class="chart-card">
+          <div class="content-card-head"><strong>{{ currentTask.result.charts[0].title }}</strong><span>{{ currentTask.result.charts[0].type }}</span></div>
+          <ResultChart :chart="currentTask.result.charts[0]" :rows="currentTask.result.rows" />
+        </section>
+        <section class="analysis-card">
+          <div class="content-card-head"><strong>数据分析</strong><span>确定性计算</span></div>
+          <p>{{ currentTask.result.analysis.overview }}</p>
+          <ul><li v-for="insight in currentTask.result.analysis.insights" :key="insight">{{ insight }}</li></ul>
+          <div class="analysis-suggestion"><TrendCharts /><span>{{ currentTask.result.analysis.suggestions[0] }}</span></div>
+        </section>
+        <div v-if="!currentTask.result.charts.length" class="chart-empty">当前结果以单项指标或明细为主，暂不适合绘制图表。</div>
+      </div>
+      <div v-else class="table-wrap">
         <el-table :data="currentTask.result.rows" stripe empty-text="当前条件下没有匹配数据">
           <el-table-column v-for="column in currentTask.result.columns" :key="column.key" :prop="column.key" :label="column.label" min-width="128" show-overflow-tooltip />
         </el-table>
       </div>
+      <div class="result-toolbar"><strong>查询依据</strong><button type="button" @click="showSql = !showSql"><CopyDocument />{{ showSql ? '收起 SQL' : '查看 SQL' }}</button></div>
+      <div v-if="showSql" class="sql-panel"><div><span>已通过只读、权限和白名单校验</span><button type="button" @click="copySql">复制 SQL</button></div><pre>{{ currentTask.result.sql_preview }}</pre></div>
       <div class="result-foot"><span><Check /> 返回内容已按当前身份过滤并脱敏</span><el-button @click="reset">开始新的查询</el-button></div>
     </div>
 

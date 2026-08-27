@@ -1,7 +1,7 @@
 package com.boc.nl2sql.model;
 
+import com.boc.nl2sql.authorization.domain.CurrentUser;
 import com.boc.nl2sql.nl2sql.application.RuleBasedSemanticParser;
-import com.boc.nl2sql.nl2sql.domain.SemanticQuery;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -18,7 +18,7 @@ public class MockModelAdapter implements ModelAdapter {
     }
 
     @Override
-    public SemanticQuery interpret(String queryText) {
-        return parser.parse(queryText);
+    public QueryInterpretation interpret(String queryText, CurrentUser user) {
+        return QueryInterpretation.rule(parser.parse(queryText));
     }
 }

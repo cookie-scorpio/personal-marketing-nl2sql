@@ -41,4 +41,31 @@ class RuleBasedSemanticParserTest {
         assertThat(resolved.conflicts()).isEmpty();
         assertThat(resolved.startDate()).isNotNull();
     }
+
+    @Test
+    void routesUnsupportedCustomerDimensionToModel() {
+        var query = parser.parse("分析各年龄段客户数量分布");
+
+        assertThat(query.intent()).isEqualTo(IntentType.CUSTOMER_FILTER);
+        assertThat(parser.supportsDeterministicPlan("分析各年龄段客户数量分布", query)).isFalse();
+    }
+
+    @Test
+    void routesUnconsumedFiltersAndUnsupportedTemplateShapesToModel() {
+        for (String text : java.util.List.of("找出南京客户名单", "统计近30天交易金额超过5万元的客户",
+                "统计近30天各机构理财交易金额", "列出近30天客户交易明细", "统计上个月各机构客户交易金额",
+                "分析各机构持有理财产品的客户和持有规模", "找出近半年开户的高净值客户名单")) {
+            assertThat(parser.supportsDeterministicPlan(text, parser.parse(text))).as(text).isFalse();
+        }
+    }
+
+    @Test
+    void keepsVerifiedDemoQuestionsOnRulePath() {
+        for (String text : java.util.List.of("找出资产超过50万元的高净值客户名单", "统计近30天各机构客户交易金额",
+                "分析持有理财产品的客户和持有规模", "分析本季度营销活动的触达和转化效果",
+                "找出所有客户名单", "统计各机构客户交易金额，补充条件：近30天",
+                "统计近30天和近半年客户交易金额，最终条件为：近30天")) {
+            assertThat(parser.supportsDeterministicPlan(text, parser.parse(text))).as(text).isTrue();
+        }
+    }
 }

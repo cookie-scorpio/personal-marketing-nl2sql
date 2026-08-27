@@ -39,9 +39,16 @@ app:
   model:
     provider: ${MODEL_PROVIDER:mock}
     deepseek:
-      base-url: ${DEEPSEEK_BASE_URL:}
+      # DeepSeek支持OpenAI兼容的/chat/completions接口；演示时只需填写API密钥即可。
+      base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
       api-key: ${DEEPSEEK_API_KEY:}
-      model: ${DEEPSEEK_MODEL:}
+      model: ${DEEPSEEK_MODEL:deepseek-v4-flash}
+      # V4默认开启思考；短JSON规划显式关闭，防止思考耗尽输出额度而无最终content。
+      thinking-enabled: ${DEEPSEEK_THINKING_ENABLED:false}
+      max-tokens: ${DEEPSEEK_MAX_TOKENS:4096}
+      # 仅空回复或截断时重试一次，避免无界增加调用量。
+      retry-max-tokens: ${DEEPSEEK_RETRY_MAX_TOKENS:8192}
+      read-timeout-seconds: ${DEEPSEEK_READ_TIMEOUT_SECONDS:60}
     qwen:
       base-url: ${QWEN_BASE_URL:}
       api-key: ${QWEN_API_KEY:}
@@ -49,6 +56,13 @@ app:
   query:
     max-result-rows: ${QUERY_MAX_RESULT_ROWS:100}
     max-clarification-rounds: ${QUERY_MAX_CLARIFICATION_ROUNDS:2}
+  rag:
+    # V1.0只保留外置RAG配置，不创建Milvus连接，也不调用Embedding服务。
+    enabled: ${RAG_ENABLED:false}
+    embedding-model: ${EMBEDDING_MODEL:BCG-E3}
+    embedding-base-url: ${EMBEDDING_BASE_URL:}
+    milvus-uri: ${MILVUS_URI:}
+    collection: ${MILVUS_COLLECTION:nl2sql_business_knowledge}
 
 management:
   endpoints:

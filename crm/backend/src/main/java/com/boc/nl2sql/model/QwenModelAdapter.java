@@ -1,7 +1,7 @@
 package com.boc.nl2sql.model;
 
+import com.boc.nl2sql.authorization.domain.CurrentUser;
 import com.boc.nl2sql.nl2sql.application.RuleBasedSemanticParser;
-import com.boc.nl2sql.nl2sql.domain.SemanticQuery;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -23,11 +23,12 @@ public class QwenModelAdapter implements ModelAdapter {
     }
 
     @Override
-    public SemanticQuery interpret(String queryText) {
-        return fallback.parse(queryText);
+    public QueryInterpretation interpret(String queryText, CurrentUser user) {
+        return QueryInterpretation.rule(fallback.parse(queryText));
     }
 
-    public boolean apiConfigured() {
+    @Override
+    public boolean available() {
         return baseUrl != null && !baseUrl.isBlank();
     }
 }

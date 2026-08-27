@@ -1,0 +1,12 @@
+# Redis Cluster环境示例。当前本地Docker仍使用单节点Redis，部署集群时复制并改名为application-redis-cluster.yml。
+spring:
+  data:
+    redis:
+      password: ${REDIS_PASSWORD}
+      timeout: 2s
+      cluster:
+        max-redirects: 3
+        nodes:
+          - ${REDIS_NODE_1:127.0.0.1:7001}
+          - ${REDIS_NODE_2:127.0.0.1:7002}
+          - ${REDIS_NODE_3:127.0.0.1:7003}

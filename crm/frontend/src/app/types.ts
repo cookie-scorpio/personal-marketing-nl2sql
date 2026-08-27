@@ -39,8 +39,23 @@ export interface QueryResult {
   columns: ColumnMeta[]
   rows: Record<string, unknown>[]
   metrics: Array<{ label: string; value: unknown }>
+  charts: ChartSpec[]
+  analysis: {
+    overview: string
+    insights: string[]
+    suggestions: string[]
+  }
   sql_preview: string
   data_as_of: string
+  interpretation_source: 'RULE' | 'DEEPSEEK' | string
+  confidence: number
+}
+
+export interface ChartSpec {
+  type: 'BAR' | 'LINE' | 'PIE'
+  title: string
+  dimension_key: string
+  series: Array<{ key: string; label: string }>
 }
 
 export interface TaskStatus {
@@ -56,6 +71,7 @@ export interface TaskStatus {
     confirm_token: string
     risk_level: string
     message: string
+    reasons: string[]
   }
   result?: QueryResult
   error?: { message: string }

@@ -14,6 +14,11 @@ import java.util.UUID;
 public class CompletenessValidator {
 
     public Optional<ClarificationQuestion> validate(SemanticQuery query) {
+        return validate(query, false);
+    }
+
+    /** 自由查询的必填项由模型结合元数据判断，但条件矛盾仍进入统一校验。 */
+    public Optional<ClarificationQuestion> validate(SemanticQuery query, boolean modelGenerated) {
         if (!query.conflicts().isEmpty()) {
             return Optional.of(new ClarificationQuestion(UUID.randomUUID().toString(), "CONFLICT",
                     "检测到条件矛盾：" + String.join("；", query.conflicts()) + "。请明确最终条件。",
@@ -24,10 +29,10 @@ public class CompletenessValidator {
                     "你希望分析哪一类营销数据？", List.of("客户筛选", "交易分析", "产品持有", "营销活动"),
                     query.recognizedSlots()));
         }
-        if ((query.intent() == IntentType.TRANSACTION_ANALYSIS || query.intent() == IntentType.MARKETING_ANALYSIS)
+        if (!modelGenerated && (query.intent() == IntentType.TRANSACTION_ANALYSIS || query.intent() == IntentType.MARKETING_ANALYSIS)
                 && query.startDate() == null) {
             return Optional.of(new ClarificationQuestion(UUID.randomUUID().toString(), "MISSING_TIME_RANGE",
-                    "还需要确认时间范围，补充后才能按正确分区查询。",
+                    "还需要确认时间范围，补充后才能按正确口径查询。",
                     List.of("近7天", "近30天", "本季度", "今年以来"), query.recognizedSlots()));
         }
         return Optional.empty();

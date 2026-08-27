@@ -16,9 +16,9 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * MVP 的确定性语义解析器。
+ * 高频营销问题的确定性语义解析器。
  *
- * <p>它只识别经过验收的营销业务表达，保证 Mock 模式可重复测试；真实模型接入后仍需输出同一 SemanticQuery。</p>
+ * <p>只有整句条件都在规则支持范围内才使用固定模板，其余问题交给模型，避免静默丢失限定条件。</p>
  */
 @Component
 public class RuleBasedSemanticParser {
@@ -83,6 +83,65 @@ public class RuleBasedSemanticParser {
                 dateRange == null ? null : dateRange.endDate(),
                 customerLevel, minAsset, maxAsset, assetDropRate, productCategory, campaignKeyword,
                 detailRequested, broadRequested, List.copyOf(conflicts), Map.copyOf(slots));
+    }
+
+    /**
+     * 判断当前问题是否可以由固定模板完整回答。
+     *
+     * <p>这里只接受边界明确的高频问法。诸如“年龄分布”“按月趋势”等虽然能识别出客户或交易主题，
+     * 但固定模板无法保证回答正确，因此必须交给大模型结合数据库元数据生成 SQL。</p>
+     */
+    public boolean supportsDeterministicPlan(String rawText, SemanticQuery query) {
+        String text = rawText == null ? "" : rawText;
+        // 这些维度、统计方式和比较要求不属于固定模板，不能仅因出现“交易金额”等关键词就拦截为规则查询。
+        if (containsAny(text, "年龄", "性别", "按月", "各月", "每月", "按日", "每日", "趋势", "同比", "环比",
+                "渠道", "排名", "前10", "前十", "top", "中位数", "占比", "到期", "职业")) return false;
+        // 当前客户/持有模板查询当前快照，不能把用户指定的历史区间悄悄丢掉。
+        if ((query.intent() == IntentType.CUSTOMER_FILTER || query.intent() == IntentType.PRODUCT_HOLDING)
+                && query.startDate() != null) return false;
+        if ((query.intent() == IntentType.TRANSACTION_ANALYSIS || query.intent() == IntentType.MARKETING_ANALYSIS)
+                && query.detailRequested()) return false;
+        if (query.intent() == IntentType.PRODUCT_HOLDING
+                && containsAny(text, "各机构", "各网点", "各分行")) return false;
+        if (query.intent() == IntentType.MARKETING_ANALYSIS
+                && containsAny(text, "各机构", "各网点", "各分行")) return false;
+        if (query.productCategory() != null && query.intent() != IntentType.PRODUCT_HOLDING) return false;
+        if (!hasOnlySupportedExpressions(text, query.intent())) return false;
+        return switch (query.intent()) {
+            case CUSTOMER_FILTER -> query.detailRequested() || query.customerLevel() != null
+                    || query.minAsset() != null || query.maxAsset() != null || query.assetDropRate() != null
+                    || containsAny(text, "各机构客户", "各网点客户", "各分行客户");
+            case TRANSACTION_ANALYSIS -> containsAny(text, "各机构", "交易金额", "交易额", "交易笔数");
+            case PRODUCT_HOLDING -> query.detailRequested() || query.productCategory() != null
+                    || containsAny(text, "持有规模", "持仓规模", "产品分布");
+            case MARKETING_ANALYSIS -> containsAny(text, "触达", "转化", "响应", "活动效果");
+            case GENERIC_ANALYSIS, UNKNOWN -> false;
+        };
+    }
+
+    /**
+     * 对已识别的值和模板词逐项消耗；仍有剩余文本就视为未知约束。
+     * 例如“南京客户名单”“交易金额超过5万元”不能只保留客户/交易主题后直接执行。
+     */
+    private boolean hasOnlySupportedExpressions(String text, IntentType intent) {
+        String remainder = RELATIVE_TIME.matcher(text).replaceAll("");
+        remainder = MIN_ASSET.matcher(remainder).replaceAll("");
+        remainder = MAX_ASSET.matcher(remainder).replaceAll("");
+        remainder = DROP_RATE.matcher(remainder).replaceAll("");
+        if (intent == IntentType.MARKETING_ANALYSIS) remainder = CAMPAIGN_NAME.matcher(remainder).replaceAll("");
+        remainder = remainder.replaceAll("今年以来|本年度|本季度|本月|今年|最终条件为|补充条件", "");
+        remainder = remainder.replaceAll("高净值客户|高净客户|高净客群|高端客户|黄金客户|普通客户|大众客户|金卡", "");
+        remainder = remainder.replaceAll("全部客户|所有客户|全量客户|不限范围|各机构|各网点|各分行", "");
+        String topicWords = switch (intent) {
+            case CUSTOMER_FILTER -> "客户列表|客户名单|客户数量|客户数|客户|客群|资产规模|总资产|资产";
+            case TRANSACTION_ANALYSIS -> "交易金额|交易笔数|交易额|交易分析|客户数量|客户数|客户";
+            case PRODUCT_HOLDING -> "持有规模|持仓规模|持有市值|产品分布|持有|持仓|理财|基金|存款|产品|客户";
+            case MARKETING_ANALYSIS -> "营销活动|营销|活动效果|活动|触达人数|转化人数|响应人数|转化率|响应率|触达|转化|响应|效果|客户";
+            default -> "(?!)";
+        };
+        remainder = remainder.replaceAll(topicWords, "");
+        remainder = remainder.replaceAll("帮我|请问|请|查询|统计|分析|查看|筛选|找出|列出|哪些|名单|明细|列表|汇总|情况|的|和|及|与|元", "");
+        return remainder.replaceAll("[\\s，。！？、：,.:!?]", "").isBlank();
     }
 
     private IntentType detectIntent(String text) {
@@ -209,6 +268,7 @@ public class RuleBasedSemanticParser {
             case TRANSACTION_ANALYSIS -> "交易分析";
             case PRODUCT_HOLDING -> "产品持有分析";
             case MARKETING_ANALYSIS -> "营销活动分析";
+            case GENERIC_ANALYSIS -> "自由数据分析";
             case UNKNOWN -> "待识别";
         };
     }

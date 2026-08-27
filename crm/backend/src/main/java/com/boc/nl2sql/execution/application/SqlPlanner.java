@@ -32,7 +32,7 @@ public class SqlPlanner {
             case TRANSACTION_ANALYSIS -> transactionQuery(query, user);
             case PRODUCT_HOLDING -> holdingQuery(query, user);
             case MARKETING_ANALYSIS -> marketingQuery(query, user);
-            case UNKNOWN -> throw new IllegalArgumentException("Unknown intent cannot be planned");
+            case GENERIC_ANALYSIS, UNKNOWN -> throw new IllegalArgumentException("自由问题必须携带模型生成的SQL");
         };
     }
 
@@ -158,7 +158,10 @@ public class SqlPlanner {
         StringBuilder where = new StringBuilder("c.status_code = 'ACTIVE' AND ")
                 .append(dataScopePolicy.condition("c", user, parameters));
         if (query.customerLevel() != null) {
-            where.append(" AND c.customer_level_code = :customerLevel");
+            // “高净值”同时覆盖资产达到100万元和白金等级客户，与business_term中的口径保持一致。
+            where.append("PLATINUM".equals(query.customerLevel())
+                    ? " AND (c.customer_level_code = :customerLevel OR c.total_asset_amount >= 1000000)"
+                    : " AND c.customer_level_code = :customerLevel");
             parameters.put("customerLevel", query.customerLevel());
         }
         if (query.minAsset() != null) {

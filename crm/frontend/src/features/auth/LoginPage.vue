@@ -39,15 +39,15 @@ async function submit() {
 <template>
   <main class="login-page">
     <section class="login-intro">
-      <div class="login-brand"><span>知</span><strong>知客</strong></div>
+      <div class="login-brand"><span>中</span><strong>中银智析</strong></div>
       <div class="intro-copy">
         <p class="section-kicker">个金营销智能平台</p>
-        <h1>把业务问题，变成可信的数据答案</h1>
-        <p>面向客户经理的自然语言查询工作台。系统会补全条件、澄清矛盾、校验权限，并解释每一份结果的数据口径。</p>
+        <h1>让营销问题，直接得到数据答案</h1>
+        <p>面向个人金融营销人员的自然语言查询工作台。系统会补全条件、澄清矛盾，并用表格、图表和分析结论解释查询结果。</p>
       </div>
       <div class="trust-list">
         <span><DataAnalysis /> 受控 SQL 与数据范围校验</span>
-        <span><Lock /> 敏感字段脱敏与操作审计</span>
+        <span><Lock /> 模拟数据与执行风险确认</span>
       </div>
     </section>
 

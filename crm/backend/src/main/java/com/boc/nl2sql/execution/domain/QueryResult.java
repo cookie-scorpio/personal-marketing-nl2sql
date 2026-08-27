@@ -11,7 +11,11 @@ public record QueryResult(
         List<ColumnMeta> columns,
         List<Map<String, Object>> rows,
         List<Map<String, Object>> metrics,
+        List<ChartSpec> charts,
+        AnalysisSummary analysis,
         String sqlPreview,
-        LocalDate dataAsOf
+        LocalDate dataAsOf,
+        String interpretationSource,
+        double confidence
 ) {
 }

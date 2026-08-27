@@ -28,8 +28,8 @@ public class HistoryController {
 
     @GetMapping
     public ApiResponse<PageResult<QueryHistoryEntity>> page(
-            @RequestParam(defaultValue = "1") int pageNo,
-            @RequestParam(defaultValue = "20") int pageSize,
+            @RequestParam(name = "page_no", defaultValue = "1") int pageNo,
+            @RequestParam(name = "page_size", defaultValue = "20") int pageSize,
             @RequestParam(required = false) String keyword,
             @AuthenticationPrincipal CurrentUser user,
             HttpServletRequest request) {

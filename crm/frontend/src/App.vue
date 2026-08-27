@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import {
-  Bell, ChatDotRound, Collection, DataAnalysis, Discount, Fold, Plus,
-  QuestionFilled, Setting, SwitchButton, User,
+  ChatDotRound, Fold, Plus, SwitchButton,
 } from '@element-plus/icons-vue'
 import { useAuth } from './app/auth'
 import LoginPage from './features/auth/LoginPage.vue'
@@ -13,12 +12,9 @@ const { user, restoring, authenticated, restore, logout } = useAuth()
 const sidebarOpen = ref(false)
 const activeNav = ref('智能问数')
 const conversationKey = ref(0)
+const serviceHealthy = ref<boolean | null>(null)
 const primaryNav = [
   { label: '智能问数', icon: ChatDotRound },
-  { label: '客户洞察', icon: DataAnalysis },
-  { label: '营销活动', icon: Discount },
-  { label: '客户群管理', icon: User },
-  { label: '指标中心', icon: Collection },
 ]
 
 const roleLabel = computed(() => ({
@@ -43,16 +39,25 @@ function newQuery() {
   sidebarOpen.value = false
 }
 
-onMounted(restore)
+onMounted(async () => {
+  await restore()
+  try {
+    const response = await fetch('/actuator/health')
+    const health = await response.json()
+    serviceHealthy.value = response.ok && health.status === 'UP'
+  } catch {
+    serviceHealthy.value = false
+  }
+})
 </script>
 
 <template>
-  <div v-if="restoring" class="app-loading"><span class="brand-seal">知</span><p>正在恢复工作台…</p></div>
+  <div v-if="restoring" class="app-loading"><span class="brand-seal">中</span><p>正在恢复工作台…</p></div>
   <LoginPage v-else-if="!authenticated" />
   <div v-else class="app-shell">
     <div v-if="sidebarOpen" class="mobile-mask" @click="sidebarOpen = false" />
     <aside class="sidebar" :class="{ 'is-open': sidebarOpen }">
-      <div class="brand"><span class="brand-seal">知</span><div><strong>知客</strong><small>个金营销智能平台</small></div></div>
+      <div class="brand"><span class="brand-seal">中</span><div><strong>中银智析</strong><small>个金营销智能问数</small></div></div>
       <button class="new-query-button" type="button" @click="newQuery"><Plus /> 发起新查询</button>
       <nav class="nav-list" aria-label="主导航">
         <button v-for="item in primaryNav" :key="item.label" type="button" class="nav-item"
@@ -65,7 +70,6 @@ onMounted(restore)
         <p>查询范围由登录身份决定，前端无法修改。</p>
       </div>
       <div class="sidebar-footer">
-        <button class="nav-item" type="button"><Setting /><span>系统设置</span></button>
         <div class="user-card">
           <el-avatar :size="36">{{ user?.display_name.slice(0, 1) }}</el-avatar>
           <div><strong>{{ user?.display_name }}</strong><small>{{ roleLabel }}</small></div>
@@ -81,9 +85,7 @@ onMounted(restore)
           <div><h1>{{ activeNav }}</h1><p>用业务语言发现客户机会 · 数据范围：{{ scopeLabel }}</p></div>
         </div>
         <div class="topbar-actions">
-          <span class="service-status"><i /> 服务状态正常</span>
-          <el-tooltip content="使用帮助"><button class="icon-button" type="button" aria-label="使用帮助"><QuestionFilled /></button></el-tooltip>
-          <el-badge is-dot><button class="icon-button" type="button" aria-label="通知"><Bell /></button></el-badge>
+          <span class="service-status" :class="{ unavailable: serviceHealthy === false }"><i />{{ serviceHealthy === null ? '正在连接服务' : serviceHealthy ? '服务状态正常' : '服务暂不可用' }}</span>
         </div>
       </header>
 
@@ -91,13 +93,6 @@ onMounted(restore)
         <ConversationWorkspace :key="conversationKey" />
         <InsightPanel />
       </div>
-      <section v-else class="placeholder-page">
-        <span class="placeholder-icon"><component :is="primaryNav.find(item => item.label === activeNav)?.icon" /></span>
-        <p class="section-kicker">MVP 后续模块</p>
-        <h2>{{ activeNav }}</h2>
-        <p>当前版本优先验证 NL2SQL 主链路，此入口将在后续版本接入完整业务功能。</p>
-        <el-button type="primary" @click="navigate('智能问数')">返回智能问数</el-button>
-      </section>
     </main>
   </div>
 </template>

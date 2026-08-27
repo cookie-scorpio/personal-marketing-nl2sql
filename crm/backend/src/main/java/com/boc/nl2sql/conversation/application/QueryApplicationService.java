@@ -68,10 +68,19 @@ public class QueryApplicationService {
                 task.getProgress(), task.getStageMessage(), task.getIntentCode(), task.getClarificationRound(),
                 read(task.getQuestionJson(), ClarificationQuestion.class),
                 QueryStatus.CONFIRMING.name().equals(task.getStatusCode())
-                        ? Map.of("confirm_token", task.getConfirmationToken(), "risk_level", "HIGH_SCOPE",
-                                "message", "该查询请求全量或大范围数据，请确认业务必要性。") : null,
+                        ? confirmation(task) : null,
                 read(task.getResultJson(), QueryResult.class),
                 task.getErrorMessage() == null ? null : Map.of("message", task.getErrorMessage()));
+    }
+
+    private Map<String, Object> confirmation(QueryTaskEntity task) {
+        @SuppressWarnings("unchecked")
+        Map<String, Object> risk = read(task.getRiskJson(), Map.class);
+        Object level = risk == null ? "MEDIUM" : risk.getOrDefault("level", "MEDIUM");
+        Object reasons = risk == null ? java.util.List.of("查询范围较大")
+                : risk.getOrDefault("reasons", java.util.List.of("查询范围较大"));
+        return Map.of("confirm_token", task.getConfirmationToken(), "risk_level", level,
+                "message", "该SQL可能涉及大量数据或较长查询时延，请确认后执行。", "reasons", reasons);
     }
 
     public SubmitQueryResponse clarify(String sessionId, ClarificationRequest request,

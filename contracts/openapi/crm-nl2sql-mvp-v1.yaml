@@ -1,11 +1,24 @@
 openapi: 3.1.0
 info:
-  title: 个金营销 NL2SQL MVP API
+  title: 个金营销 NL2SQL v1.0 API
   version: 1.0.0
-  description: Vue工作台与Spring Boot模块化单体之间的接口契约。
+  description: Vue工作台与Spring Boot模块化单体之间的接口契约。所有业务数据均为模拟数据。
 servers:
   - url: http://127.0.0.1:8080
 paths:
+  /actuator/health:
+    get:
+      summary: 服务健康状态
+      security: []
+      responses:
+        "200":
+          description: 服务健康
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: UP }
   /api/v1/auth/login:
     post:
       summary: 本地数据库账号登录
@@ -21,13 +34,21 @@ paths:
                 username: { type: string, maxLength: 64 }
                 password: { type: string, maxLength: 128 }
       responses:
-        "200": { description: 登录成功 }
+        "200":
+          description: 登录成功
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiResponse" }
         "401": { description: 用户名或密码错误 }
   /api/v1/auth/me:
     get:
       summary: 获取当前登录用户和数据范围
       responses:
-        "200": { description: 当前用户 }
+        "200":
+          description: 当前用户
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiResponse" }
   /api/v1/queries:
     post:
       summary: 提交自然语言查询任务
@@ -38,14 +59,27 @@ paths:
             schema:
               $ref: "#/components/schemas/SubmitQuery"
       responses:
-        "200": { description: 已创建查询任务 }
+        "200":
+          description: 已创建查询任务
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiResponse" }
   /api/v1/queries/{taskId}/status:
     get:
       summary: 获取任务阶段、反问、确认信息或最终结果
       parameters:
         - $ref: "#/components/parameters/TaskId"
       responses:
-        "200": { description: 任务状态 }
+        "200":
+          description: 任务状态；根据阶段返回question、confirmation或result
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/TaskStatus" }
         "404": { description: 任务不存在或不属于当前用户 }
   /api/v1/conversations/{sessionId}/messages:
     post:
@@ -119,12 +153,111 @@ components:
       required: true
       schema: { type: string, format: uuid }
   schemas:
+    ApiResponse:
+      type: object
+      required: [code, message, request_id]
+      properties:
+        code: { type: integer, example: 0 }
+        message: { type: string, example: 处理成功 }
+        data: {}
+        request_id: { type: string }
     SubmitQuery:
       type: object
       required: [session_id, query_text]
       properties:
         session_id: { type: string, format: uuid }
         query_text: { type: string, minLength: 1, maxLength: 1000 }
-        preferred_display: { type: string, enum: [AUTO, TABLE, CHART, CARD] }
+        preferred_display:
+          type: string
+          description: 兼容保留字段，当前由服务端依据结果自动决定展示方式。
+          example: AUTO
+    TaskStatus:
+      type: object
+      required: [task_id, session_id, status, progress, message, clarification_round]
+      properties:
+        task_id: { type: string, format: uuid }
+        session_id: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [RECEIVED, INTENT_ANALYZING, ASKING, SQL_GENERATING, VALIDATING, CONFIRMING, EXECUTING, PACKAGING, SUCCESS, FAILED, CANCELLED]
+        progress: { type: integer, minimum: 0, maximum: 100 }
+        message: { type: string }
+        intent: { type: [string, "null"] }
+        clarification_round: { type: integer, minimum: 0 }
+        question: { $ref: "#/components/schemas/ClarificationQuestion" }
+        confirmation: { $ref: "#/components/schemas/Confirmation" }
+        result: { $ref: "#/components/schemas/QueryResult" }
+        error:
+          type: [object, "null"]
+          properties:
+            message: { type: string }
+    ClarificationQuestion:
+      type: [object, "null"]
+      properties:
+        question_id: { type: string, format: uuid }
+        type: { type: string, enum: [MISSING_TOPIC, MISSING_TIME_RANGE, CONFLICT, MODEL_CLARIFICATION] }
+        prompt: { type: string }
+        options: { type: array, items: { type: string } }
+        recognized_slots: { type: object, additionalProperties: { type: string } }
+    Confirmation:
+      type: [object, "null"]
+      properties:
+        confirm_token: { type: string }
+        risk_level: { type: string, enum: [MEDIUM, HIGH] }
+        message: { type: string }
+        reasons: { type: array, items: { type: string } }
+    QueryResult:
+      type: [object, "null"]
+      properties:
+        result_type: { type: string, example: AUTO }
+        title: { type: string }
+        summary: { type: string }
+        columns:
+          type: array
+          items: { $ref: "#/components/schemas/ColumnMeta" }
+        rows:
+          type: array
+          items: { type: object, additionalProperties: true }
+        metrics:
+          type: array
+          items:
+            type: object
+            properties:
+              label: { type: string }
+              value: {}
+        charts:
+          type: array
+          items: { $ref: "#/components/schemas/ChartSpec" }
+        analysis: { $ref: "#/components/schemas/AnalysisSummary" }
+        sql_preview: { type: string, readOnly: true }
+        data_as_of: { type: string, format: date }
+        interpretation_source: { type: string, enum: [RULE, DEEPSEEK] }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+    ColumnMeta:
+      type: object
+      properties:
+        key: { type: string }
+        label: { type: string }
+        data_type: { type: string, enum: [TEXT, NUMBER, DATE] }
+        sensitive: { type: boolean }
+    ChartSpec:
+      type: object
+      properties:
+        type: { type: string, enum: [BAR, LINE, PIE] }
+        title: { type: string }
+        dimension_key: { type: string }
+        series:
+          type: array
+          items:
+            type: object
+            properties:
+              key: { type: string }
+              label: { type: string }
+    AnalysisSummary:
+      type: object
+      properties:
+        overview: { type: string }
+        insights: { type: array, items: { type: string } }
+        suggestions: { type: array, items: { type: string } }
 security:
   - bearerAuth: []

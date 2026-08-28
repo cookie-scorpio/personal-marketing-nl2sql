@@ -1,20 +1,21 @@
 可查询的 MySQL 8.4 数据对象如下：
 1. dim_customer c：客户画像快照。customer_id客户编号，customer_name_masked脱敏姓名，gender_code性别，age年龄，
-   age_band_code年龄段，customer_level_code客户等级(NORMAL/GOLD/PLATINUM)，vip_flag贵宾标识，
+   age_band_code年龄段，mobile_masked脱敏手机号，customer_level_code客户等级(NORMAL/GOLD/PLATINUM)，vip_flag贵宾标识，
    risk_level_code风险等级，occupation_code职业，region_code区域，branch_id机构，manager_id客户经理，
    total_asset_amount总资产(元)，asset_change_3m_rate近三个月资产变化率(小数)，open_date开户日期，
    status_code状态，snapshot_date快照日期。
-2. fct_transaction t：交易事实。customer_id客户编号，product_id产品编号，transaction_time交易时间，
+2. fct_transaction t：交易事实。transaction_id交易编号，customer_id客户编号，product_id产品编号，transaction_time交易时间，
    transaction_date交易日期，transaction_type_code交易类型，debit_credit_flag借贷标识，
    currency_code币种，amount_cny折人民币金额(元)，branch_id机构，status_code交易状态。
-3. fct_product_holding h：产品持有快照。customer_id客户编号，product_id产品编号，product_name产品名称，
+3. fct_product_holding h：产品持有快照。holding_id持有记录编号，customer_id客户编号，product_id产品编号，product_name产品名称，
    product_category_code产品分类(DEPOSIT/WEALTH/FUND)，holding_amount持有份额，market_value_amount市值(元)，
    profit_amount收益(元)，maturity_date到期日，risk_level_code产品风险等级，snapshot_date快照日期。
 4. dim_marketing_campaign p：营销活动。campaign_id活动编号，campaign_name活动名称，campaign_type_code活动类型，
    campaign_status_code活动状态，product_id产品编号，target_customer_segment_code目标客群，channel_code渠道，
    owner_org_id负责机构，owner_manager_id负责人，start_time开始时间，end_time结束时间，budget_amount预算，target_count目标人数。
-5. fct_customer_marketing m：营销触达转化事实。campaign_id活动编号，customer_id客户编号，contact_time触达时间，
-   contact_channel_code触达渠道，response_flag是否响应，conversion_flag是否转化，conversion_amount转化金额(元)。
+5. fct_customer_marketing m：营销触达转化事实。relation_id触达关系编号，campaign_id活动编号，customer_id客户编号，
+   contact_time触达时间（可为空），contact_channel_code实际触达渠道（可为空），response_flag是否响应，
+   conversion_flag是否转化，conversion_amount转化金额(元)。
 关联关系：t/h/m.customer_id = c.customer_id；m.campaign_id = p.campaign_id。
 业务口径：高净值客户指total_asset_amount>=1000000或customer_level_code='PLATINUM'；
 营销转化率=转化人数/触达人数；AUM指客户总资产；只统计status_code='ACTIVE'客户和status_code='SUCCESS'交易。
@@ -26,4 +27,6 @@
 - 同一客户可能被多次触达；人数口径按customer_id去重，转化人数只统计conversion_flag=true的去重客户。
 - 营销时间按m.contact_time过滤；本季度指当前季度第一天到当前日期。
 
-- 存款余额：fct_product_holding中product_category_code='DEPOSIT'的market_value_amount按客户合计（元）；holding_amount为份额，不等于统一金额口径。无存款持有的客户可按存款余额0处理，使用受限客户LEFT JOIN后COALESCE；当前持有表为每客户每产品一条快照，不是历史流水。
+- 存款余额：fct_product_holding中product_category_code='DEPOSIT'的market_value_amount按客户合计（元）；holding_amount为份额，不等于统一金额口径。无存款持有的客户可按存款余额0处理，使用受限客户LEFT JOIN后COALESCE；该表按customer_id、product_id、snapshot_date唯一，允许存在多个历史快照，查询当前持有情况时必须明确快照日期或最新快照口径，不得把它当作交易流水。
+
+字段边界：数据库物理上还存在dim_customer.customer_name（V5新增的虚构完整姓名），但该字段仅供后端客户定位使用，不属于自由SQL字段白名单；不得在模型生成的SQL中读取或通过别名、子查询绕过限制。dim_customer_manager和business_term也属于数据库表，但前者不在自由SQL查询白名单，后者由后端读取后作为业务术语上下文提供给模型。

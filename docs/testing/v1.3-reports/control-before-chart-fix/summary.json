@@ -1,0 +1,30 @@
+{
+  "timestamp": "2026-08-28T14:38:04.311169+08:00",
+  "mode": "model",
+  "cases": 3,
+  "passed": 1,
+  "model_requests": 3,
+  "model_requests_total": 19,
+  "metrics": {
+    "behavior_correct": {
+      "passed": 1,
+      "total": 3,
+      "rate": 0.3333333333333333
+    },
+    "result_correct": {
+      "passed": 1,
+      "total": 3,
+      "rate": 0.3333333333333333
+    },
+    "chart_correct": {
+      "passed": 1,
+      "total": 3,
+      "rate": 0.3333333333333333
+    },
+    "sql_executed": {
+      "passed": 1,
+      "total": 3,
+      "rate": 0.3333333333333333
+    }
+  }
+}

@@ -25,3 +25,5 @@
 - 渠道营销转化率默认按m.contact_channel_code（触达渠道）分组；仅在用户明确询问活动投放渠道时使用p.channel_code。
 - 同一客户可能被多次触达；人数口径按customer_id去重，转化人数只统计conversion_flag=true的去重客户。
 - 营销时间按m.contact_time过滤；本季度指当前季度第一天到当前日期。
+
+- 存款余额：fct_product_holding中product_category_code='DEPOSIT'的market_value_amount按客户合计（元）；holding_amount为份额，不等于统一金额口径。无存款持有的客户可按存款余额0处理，使用受限客户LEFT JOIN后COALESCE；当前持有表为每客户每产品一条快照，不是历史流水。

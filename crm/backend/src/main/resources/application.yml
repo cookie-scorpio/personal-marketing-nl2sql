@@ -40,7 +40,11 @@ app:
     jwt-ttl-seconds: ${JWT_TTL_SECONDS:28800}
   model:
     provider: ${MODEL_PROVIDER:mock}
+    request-budget-file: ${MODEL_REQUEST_BUDGET_FILE:}
+    request-budget: ${MODEL_REQUEST_BUDGET:50}
     deepseek:
+      tools-enabled: ${DEEPSEEK_TOOLS_ENABLED:true}
+      max-tool-rounds: ${DEEPSEEK_MAX_TOOL_ROUNDS:3}
       # DeepSeek支持OpenAI兼容的/chat/completions接口；演示时只需填写API密钥即可。
       base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
       api-key: ${DEEPSEEK_API_KEY:}

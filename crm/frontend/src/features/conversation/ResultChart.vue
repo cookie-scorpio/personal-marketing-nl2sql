@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { BarChart, LineChart, PieChart, ScatterChart, HeatmapChart } from 'echarts/charts'
 import { GridComponent, LegendComponent, TooltipComponent, VisualMapComponent, DataZoomComponent, AriaComponent } from 'echarts/components'
 import { init, use, type ECharts, type EChartsCoreOption } from 'echarts/core'
@@ -14,6 +14,16 @@ let instance: ECharts | undefined
 let observer: ResizeObserver | undefined
 const motion = window.matchMedia('(prefers-reduced-motion: reduce)')
 const palette = ['#b4232d', '#466a8d', '#39715a', '#b28a45']
+const width = ref(0)
+const pieItems = computed(() => {
+  const measure = props.chart.series[0]
+  if (props.chart.type !== 'PIE' || !measure) return []
+  const rows = props.rows.filter(row => number(row[measure.key]) !== null)
+  const sum = rows.reduce((total, row) => total + (number(row[measure.key]) || 0), 0)
+  return rows.map((row, index) => ({ name: label(row[props.chart.dimension_key]), value: number(row[measure.key])!,
+    percent: sum > 0 ? ((number(row[measure.key])! / sum) * 100).toFixed(2) : '0.00', color: palette[index % palette.length] }))
+})
+const compactPie = computed(() => width.value < 520 || pieItems.value.length > 6)
 function number(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null
   const parsed = Number(value)
@@ -32,9 +42,11 @@ function buildOption(): EChartsCoreOption {
     legend: { type: 'scroll', top: 0, textStyle: { color: '#69615d', fontSize: 11 } } }
   if (!measure) return base
   if (chart.type === 'PIE') return {
-    ...base, tooltip: { trigger: 'item', confine: true }, legend: { bottom: 0, type: 'scroll' },
-    series: [{ name: measure.label, type: 'pie', radius: ['40%', '65%'], center: ['50%', '43%'],
-      label: { formatter: '{b}\n{d}%' },
+    ...base, tooltip: { trigger: 'item', confine: true, renderMode: 'richText' }, legend: { show: false },
+    series: [{ name: measure.label, type: 'pie', radius: compactPie.value ? ['38%', '66%'] : ['30%', '52%'], center: ['50%', '50%'],
+      avoidLabelOverlap: true, labelLayout: { hideOverlap: true },
+      label: { show: !compactPie.value, formatter: '{b}\n{d}%', alignTo: 'edge', edgeDistance: 8, overflow: 'break', width: Math.max(60, Math.min(140, width.value * .2)), fontSize: 11 },
+      labelLine: { show: !compactPie.value, length: 12, length2: 8 },
       data: props.rows.filter(row => number(row[measure.key]) !== null)
         .map(row => ({ name: label(row[dimension]), value: number(row[measure.key]) })) }],
   }
@@ -95,18 +107,25 @@ function buildOption(): EChartsCoreOption {
 async function render() {
   await nextTick()
   if (!host.value) return
+  width.value = host.value.clientWidth
   instance ||= init(host.value, undefined, { renderer: 'canvas' })
+  instance.resize()
   instance.setOption(buildOption(), true)
 }
 onMounted(() => {
   render()
   motion.addEventListener('change', render)
-  if (host.value) { observer = new ResizeObserver(() => instance?.resize()); observer.observe(host.value) }
+  if (host.value) { observer = new ResizeObserver(() => { void render() }); observer.observe(host.value) }
 })
 watch(() => [props.chart, props.rows], render, { deep: true })
 onBeforeUnmount(() => { motion.removeEventListener('change', render); observer?.disconnect(); instance?.dispose() })
 </script>
 
 <template>
+  <div class="responsive-chart">
   <div ref="host" class="result-chart" role="img" :aria-label="chart.title + '。可切换到数据明细查看完整数值。'" />
+  <ul v-if="chart.type === 'PIE'" class="pie-readable-legend" aria-label="饼图完整分类与占比">
+    <li v-for="(item, index) in pieItems" :key="index"><i :style="{ backgroundColor: item.color }" /><span>{{ item.name }}</span><strong>{{ item.value.toLocaleString('zh-CN') }}{{ chart.series[0]?.unit || '' }} · {{ item.percent }}%</strong></li>
+  </ul>
+  </div>
 </template>

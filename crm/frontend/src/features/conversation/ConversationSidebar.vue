@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue'
-import { ChatDotRound, Loading, Refresh } from '@element-plus/icons-vue'
+import { ChatDotRound, Loading, Refresh, Delete } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { apiRequest } from '../../app/api'
 import type { ConversationSummary } from '../../app/types'
 
 const props = defineProps<{ activeSessionId?: string; disabled: boolean; refreshVersion: number }>()
-defineEmits<{ select: [id: string] }>()
+const emit = defineEmits<{ select: [id: string]; deleted: [id: string] }>()
+const deleting = ref('')
 const sessions = ref<ConversationSummary[]>([])
 const loading = ref(false), error = ref(''), moreAvailable = ref(false)
 const pageSize = 30
@@ -17,7 +19,7 @@ const groups = computed(() => {
   const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1)
   const result: { label: string; sessions: ConversationSummary[] }[] = []
   for (const item of sessions.value) {
-    const time = new Date(item.updated_at).getTime()
+    const time = new Date(item.created_at).getTime()
     const label = time >= today.getTime() ? '今天' : time >= yesterday.getTime() ? '昨天' : '更早'
     let group = result.find(entry => entry.label === label)
     if (!group) { group = { label, sessions: [] }; result.push(group) }
@@ -52,6 +54,20 @@ async function load(more = false) {
   }
 }
 
+async function remove(item: ConversationSummary) {
+  if (props.disabled || deleting.value) return
+  try {
+    await ElMessageBox.confirm(`删除会话“${item.title}”？删除后无法再打开，后台仍保留审计记录。`, '删除会话', { confirmButtonText: '删除会话', cancelButtonText: '保留会话', type: 'warning', confirmButtonClass: 'el-button--danger' })
+  } catch { return }
+  deleting.value = item.session_id
+  try {
+    await apiRequest(`/api/v1/conversations/${item.session_id}`, { method: 'DELETE' })
+    sessions.value = sessions.value.filter(row => row.session_id !== item.session_id)
+    emit('deleted', item.session_id); ElMessage.success('会话已删除'); await load()
+  } catch (error) { ElMessage.error(error instanceof Error ? error.message : '删除失败，请重试') }
+  finally { deleting.value = '' }
+}
+
 watch(() => props.refreshVersion, () => { void load() }, { immediate: true })
 onUnmounted(() => controller?.abort())
 </script>
@@ -70,14 +86,17 @@ onUnmounted(() => controller?.abort())
       <p v-else-if="!sessions.length && !error" class="sidebar-list-state">暂无会话记录<span>发送第一个问题后，会话会保存在这里。</span></p>
       <section v-for="group in groups" :key="group.label" class="sidebar-conversation-group" :aria-label="group.label">
         <h3>{{ group.label }}</h3>
-        <button v-for="item in group.sessions" :key="item.session_id" type="button" class="sidebar-session"
+        <div v-for="item in group.sessions" :key="item.session_id" class="sidebar-session-row" :class="{ active: activeSessionId === item.session_id }">
+        <button type="button" class="sidebar-session"
                 :class="{ active: activeSessionId === item.session_id }" :disabled="disabled"
                 :aria-current="activeSessionId === item.session_id ? 'page' : undefined"
-                :title="`${item.title} · ${new Date(item.updated_at).toLocaleString('zh-CN')}${item.active_task_id ? ' · 有待处理查询' : ''}`"
+                :title="`${item.title} · ${new Date(item.created_at).toLocaleString('zh-CN')}${item.active_task_id ? ' · 有待处理查询' : ''}`"
                 @click="$emit('select', item.session_id)">
           <ChatDotRound /><span>{{ item.title || '未命名会话' }}</span>
           <i v-if="item.active_task_id" class="session-pending" aria-label="有待处理查询" />
         </button>
+        <button type="button" class="session-delete" :disabled="disabled || !!deleting || !!item.active_task_id" :aria-label="`删除会话：${item.title}`" :title="item.active_task_id ? '请先完成或取消查询，再删除会话' : '删除会话'" @click.stop="remove(item)"><Loading v-if="deleting === item.session_id" class="spinning" /><Delete v-else /></button>
+        </div>
       </section>
       <button v-if="moreAvailable" type="button" class="sidebar-load-more" :disabled="loading" @click="load(true)">{{ loading ? '正在加载…' : '加载更多会话' }}</button>
     </nav>

@@ -1,6 +1,6 @@
 const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
 export const apiUrl = (path: string) => `${API_BASE}${path}`
-const TOKEN_KEY = 'nl2sql_access_token'
+export const TOKEN_KEY = 'nl2sql_access_token'
 
 interface ApiEnvelope<T> {
   code: number
@@ -47,6 +47,8 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
     throw new ApiError('无法连接后端服务，请确认 Spring Boot 已启动。', 0)
   }
   const envelope = (await response.json().catch(() => null)) as ApiEnvelope<T> | null
+  // 其他标签页/账号切换后，旧身份请求不得把结果或401副作用带入新账号。
+  if (token !== getToken()) throw new ApiError('账号已切换，已丢弃旧账号请求', 409009)
   if (!response.ok || !envelope || envelope.code !== 0) {
     if (response.status === 401) clearToken()
     throw new ApiError(envelope?.message || '请求处理失败', envelope?.code || response.status, envelope?.request_id)

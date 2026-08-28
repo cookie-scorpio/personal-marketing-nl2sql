@@ -17,7 +17,7 @@ from typing import Iterable, Sequence
 
 DEFAULT_SEED = 20260826
 SURNAMES = "赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦许何吕施张孔曹严华金魏陶姜" 
-GIVEN_MARKS = "一二三四五六七八九甲乙丙丁"
+GIVEN_NAMES = "安柏博辰承初楚淳达丹冬恩帆芳飞枫歌涵航和衡恒宏泓华嘉佳江锦靖景静君俊凯康岚朗乐礼林霖凌明铭沐宁诺佩平启清秋然仁荣瑞若山杉尚诗书思松苏棠天庭彤桐宛维文闻溪希夏贤向晓心欣新星修轩雪雅言彦阳尧一依宜亦逸奕音盈颖瑜雨语宇羽远悦云泽知致中舟竹卓梓"
 OCCUPATIONS = ["FINANCE", "EDUCATION", "HEALTHCARE", "TECH", "MANUFACTURING", "RETAIL", "OTHER"]
 RISK_LEVELS = ["R1", "R2", "R3", "R4", "R5"]
 TRANSACTION_TYPES = ["CONSUME", "TRANSFER", "DEPOSIT", "WITHDRAW", "INTEREST"]
@@ -84,12 +84,17 @@ def build_customers(settings: Settings, rng: random.Random) -> list[tuple]:
     today = date.today()
     managers = build_managers()
     rows = []
+    capacity=len(SURNAMES)*len(GIVEN_NAMES)**2
+    if settings.customers>capacity:
+        raise ValueError(f"唯一虚构姓名支持最多{capacity}名客户")
+    name_codes=random.Random(settings.seed).sample(range(capacity),settings.customers)
     for index in range(1, settings.customers + 1):
         manager_id, _, branch_id, region_code, _ = managers[(index - 1) % len(managers)]
         level = rng.choices(["NORMAL", "GOLD", "PLATINUM"], weights=[68, 22, 10], k=1)[0]
         age = rng.randint(20, 72)
         age_band = "A18_25" if age <= 25 else "A26_35" if age <= 35 else "A36_45" if age <= 45 else "A46_60" if age <= 60 else "A60_PLUS"
-        full_name = f"{rng.choice(SURNAMES)}{rng.choice(['明', '华', '晓明', '文博', '思远', '小雨', '嘉宁', '安'])}"
+        code=name_codes[index-1]
+        full_name=SURNAMES[code // len(GIVEN_NAMES)**2]+GIVEN_NAMES[code // len(GIVEN_NAMES) % len(GIVEN_NAMES)]+GIVEN_NAMES[code % len(GIVEN_NAMES)]
         synthetic_name = full_name[0] + '*' * max(1, len(full_name) - 1)
         # 900 开头不构造真实中国手机号，末四位只用于演示脱敏格式。
         mobile_masked = f"900****{index % 10_000:04d}"

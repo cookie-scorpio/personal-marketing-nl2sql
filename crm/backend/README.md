@@ -1,13 +1,14 @@
 # CRM 后端
 
-本目录是个金营销 NL2SQL 平台的 Spring Boot v1.2 后端。登录、自然语言解析、SQL规划、查询执行和历史记录位于同一进程，各模块按业务包隔离，通过 Java 接口直接调用。
+本目录是个金营销 NL2SQL 平台的 Spring Boot v1.3 后端。登录、自然语言解析、SQL规划、查询执行和历史记录位于同一进程，各模块按业务包隔离，通过 Java 接口直接调用。
 
-v1.2增加持久化会话、客户身份澄清、默认开启的每任务思考开关、SSE、提交幂等、并发保护、复杂SQL AST校验和SQL核查日志；沿用取消、60秒SQL超时、最多两次修复及模板降级。完整字段与接口见[实施说明](../../docs/v1.2实施说明与接口数据字典.md)。超时可通过`QUERY_EXECUTION_TIMEOUT_SECONDS`配置；数据库迁移新增V5。
+v1.3增加带类型的身份补充、明确的SQL权限诊断、DeepSeek原生SQL规划工具、三类文件日志、会话逻辑删除、消息导航目录及更丰富的模拟姓名。自由统计由模型生成SQL，最终执行仍经过账号权限/客户/只读校验和风险确认。完整字段与接口见[实施说明](../../docs/v1.3实施说明与接口数据字典.md)，新增V6/V7/V8迁移；V7会更新模拟姓名，必须先备份，不能对真实姓名库直接应用。
 
-`mvn test`默认不连接数据库。使用本地模拟库进行取消、超时和降级验证时执行`mvn "-Dv11.mysql=true" test`，需要可用的local配置；该组测试不调用真实模型，会保留模拟任务与审计记录。
+`mvn test`默认不连接数据库。使用真实MySQL测试时必须按[隔离库评测说明](../../scripts/evaluation/README.md)显式覆盖数据源，不能在用户库直接开启v11.mysql；该组测试不调用真实模型，会保留模拟任务与审计记录。
 
 ## 已实现功能
 
+- V8恢复旧任务已保存的助手结果；会话按创建时间稳定倒序、消息按时间与编号分页，回复评价持久化并校验所有者。
 - 本地数据库账号登录、BCrypt密码校验和JWT签发。
 - 客户经理、团队负责人、机构负责人三级数据范围。
 - 客户筛选、交易分析、产品持有、营销活动四类语义解析。
@@ -97,6 +98,8 @@ thinking-enabled: true
 max-tokens: 16384
 retry-max-tokens: 32768
 read-timeout-seconds: 120
+tools-enabled: true
+max-tool-rounds: 3
 ```
 
 已有local配置若仍指定旧的token和超时值，需要手工调整非敏感项。以上配置与`base-url`、`api-key`、`model`同级，不要重复声明`app`节点。默认值已经生效，不必改动现有密钥。若显式启用思考，需要为思考与最终JSON一起预留足够的输出额度。
@@ -148,6 +151,8 @@ mvn spring-boot:run
 - `POST /api/v1/queries`：提交自然语言问题，必须提供稳定的`Idempotency-Key`，支持`thinking_enabled`。
 - `GET /api/v1/queries/{taskId}/events`：SSE，支持`Last-Event-ID`。
 - `GET /api/v1/conversations`及`/{sessionId}`：会话列表与消息恢复。
+- `DELETE /api/v1/conversations/{sessionId}`：逻辑删除会话，活动任务必须先结束。
+- `GET /api/v1/conversations/{sessionId}/anchors`：分页读取用户输入目录。
 - `POST /api/v1/queries/{taskId}/cancel`：取消当前任务。
 - `GET /api/v1/queries/{taskId}/status`：查询任务状态和结果。
 - `POST /api/v1/conversations/{sessionId}/messages`：补充或澄清条件。
@@ -159,8 +164,8 @@ mvn spring-boot:run
 
 - 当前及后续SQL执行统一使用MySQL，不使用Spark SQL或Hive。
 - BCG-E3和Milvus不进入本期运行环境，仅保留`EmbeddingClient`、`VectorStore`和外部配置。
-- Redis Cluster配置见`application-redis-cluster.example.yml`；当前Docker仍是单节点Redis。
+- 本版只使用单节点Redis 7.x，不要求Redis Cluster。
 - 生产环境必须替换默认JWT密钥、演示账号和数据库密码，并由统一认证中心接管登录。
-- 不记录完整Prompt、客户明细、思考正文或密码。业务SQL及脱敏绑定参数写入`logs/sql-review.log`，由`SQL_REVIEW_LOG_DIR`修改目录；按20MB/每天滚动，保留14天，上限1GB。日志仅供授权人员核查虚构数据。
+- conversation.log保存基础脱敏后的用户输入和助手阶段；application.log保存运行诊断。不记录完整Prompt、查询明细、思考正文或密码，但自由文本脱敏不等于生产级隐私治理。业务SQL及脱敏绑定参数写入`logs/sql-review.log`，由`SQL_REVIEW_LOG_DIR`修改目录；按20MB/每天滚动，保留14天，上限1GB。日志仅供授权人员核查虚构数据。
 
-详细字段、接口示例、当前限制和升级方式见 [v1.2实施说明](../../docs/v1.2实施说明与接口数据字典.md)。
+详细字段、接口示例、当前限制和升级方式见 [v1.3实施说明](../../docs/v1.3实施说明与接口数据字典.md)。

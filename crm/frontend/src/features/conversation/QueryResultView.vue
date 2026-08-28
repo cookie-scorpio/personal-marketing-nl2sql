@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { QueryResult } from '../../app/types'
 import ResultChart from './ResultChart.vue'
-defineProps<{ result: QueryResult }>()
-const tab = ref('analysis')
+import { normalizeResult } from './messageText'
+const props = defineProps<{ result: QueryResult }>()
+const result = computed(() => normalizeResult(props.result))
+const tab = ref(props.result.result_type === 'TABLE' ? 'table' : 'analysis')
+const sourceLabels: Record<string, string> = { RULE: '规则查询', DEEPSEEK: '模型规划', TEMPLATE_FALLBACK: '受控降级' }
 const labels: Record<string, string> = { BAR: '柱状图', LINE: '折线图', AREA: '面积图', PIE: '构成图', SCATTER: '散点图', HEATMAP: '热力图' }
 const format = (value: unknown) => typeof value === 'number' ? new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 }).format(value) : value ?? '—'
 async function copy(sql: string) { try { await navigator.clipboard.writeText(sql); ElMessage.success('SQL 已复制') } catch { ElMessage.error('复制失败，可以手动选择 SQL 文本') } }
@@ -30,6 +33,6 @@ async function copy(sql: string) { try { await navigator.clipboard.writeText(sql
     </div>
     <div v-else class="table-wrap" role="tabpanel"><el-table :data="result.rows" stripe empty-text="当前条件下没有匹配数据"><el-table-column v-for="column in result.columns" :key="column.key" :prop="column.key" :label="column.label + (column.unit && !column.label.includes(column.unit) ? `（${column.unit}）` : '')" min-width="128" show-overflow-tooltip /></el-table></div>
     <details v-if="result.sql_preview" class="query-sql"><summary>查看 SQL 依据</summary><button @click="copy(result.sql_preview)">复制 SQL</button><pre>{{ result.sql_preview }}</pre></details>
-    <p class="result-meta">结果生成于 {{ result.data_as_of }} · {{ result.interpretation_source === 'RULE' ? '规则查询' : result.interpretation_source === 'DEEPSEEK' ? '模型规划' : '受控降级' }} · 仅反映本次返回数据；业务日期以结果字段为准</p>
+    <p class="result-meta">{{ result.data_as_of ? `结果生成于 ${result.data_as_of}` : '旧版未记录结果日期' }} · {{ sourceLabels[result.interpretation_source] || '旧版未记录结果来源' }} · 仅反映本次返回数据；业务日期以结果字段为准</p>
   </section>
 </template>

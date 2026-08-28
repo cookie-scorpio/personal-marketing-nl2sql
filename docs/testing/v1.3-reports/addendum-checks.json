@@ -1,0 +1,36 @@
+{
+  "timestamp": "2026-08-28T15:33:14+08:00",
+  "backend": {
+    "tests": 115,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "frontend_tests": {
+    "tests": 4,
+    "failures": 0
+  },
+  "python_comparator_tests": {
+    "tests": 5,
+    "failures": 0
+  },
+  "frontend_build": "passed",
+  "database": "pf_nl2sql_v13_test",
+  "flyway_versions": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8"
+  ],
+  "document_json_examples": 24,
+  "openapi_internal_refs": 32,
+  "database_tables": 14,
+  "missing_database_columns": [],
+  "external_model_requests_added": 0,
+  "external_model_requests_total": 44,
+  "frontend_warning": "Element Plus/ECharts chunks exceed 500 kB"
+}

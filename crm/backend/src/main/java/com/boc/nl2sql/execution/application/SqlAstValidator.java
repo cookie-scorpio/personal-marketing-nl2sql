@@ -200,9 +200,11 @@ public final class SqlAstValidator {
                 }
             }
         }
-        for(Binding b:scope.bindings.values()){
-            if(user!=null&&!b.authorized)fail(403104,"SQL某个数据源缺少有效的账号范围限制");
-            if(customer!=null&&!b.bound)fail(403105,"SQL未完整保留已确认的客户限制");
+        for(var entry:scope.bindings.entrySet()){
+            Binding b=entry.getValue();
+            String source="数据源 "+b.base+"（别名 "+entry.getKey()+"，来源编号 "+b.id+"）";
+            if(user!=null&&!b.authorized)fail(403104,source+"缺少可证明的账号范围限制。当前账号要求 dim_customer."+scopeColumn+" = '"+scopeValue+"'；请在该查询块的WHERE中限制客户，并通过customer_id关联事实表。CTE或派生表的授权不会自动传递给新关联的事实表；OR/NOT中的条件不能作为授权依据。此SQL未执行，无需用户补充账号权限");
+            if(customer!=null&&!b.bound)fail(403105,source+"未保留已确认的customer_id限制；所有客户来源必须限定为已确认客户，此SQL未执行");
         }
     }
     private void propagate(Set<Object> set,List<Edge> edges){for(int i=0;i<edges.size()+1;i++){boolean changed=false;for(Edge e:edges)if(set.contains(e.from))changed|=set.add(e.to);if(!changed)break;}}

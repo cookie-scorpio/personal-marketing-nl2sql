@@ -67,7 +67,8 @@ public class QueryTaskProcessor {
     public void processAsync(String taskId, CurrentUser user, String requestId) {
         QueryTaskEntity task = taskMapper.selectById(taskId);
         if (task == null || !QueryStatus.RECEIVED.name().equals(task.getStatusCode())) return;
-        try {
+        org.slf4j.MDC.put("taskId",taskId);org.slf4j.MDC.put("requestId",requestId);
+        try (var context=com.boc.nl2sql.model.ModelCallContext.open(()->states.active(taskId),task::getResolvedCustomerId)) {
             boolean confirmed = Boolean.TRUE.equals(task.getConfirmed()) && task.getSqlText() != null;
             // 第一次版本提交同时认领任务，同一个已确认请求只能执行一次。
             stage(task, QueryStatus.INTENT_ANALYZING, 20, confirmed ? "正在恢复已确认的查询计划" : "正在识别业务意图和查询条件");
@@ -90,7 +91,8 @@ public class QueryTaskProcessor {
                 if(direct.isPresent()){
                     task.setIntentCode("CUSTOMER_FILTER");task.setInterpretationSource("RULE");task.setInterpretationConfidence(1.0);
                     stage(task,QueryStatus.SQL_GENERATING,45,"客户已确认，正在生成查询计划");
-                    if(acceptPlan(task,direct.get(),user,requestId))executePlan(task,direct.get(),user,requestId);return;
+                    var chosen=requestedDisplay(task,direct.get());
+                    if(acceptPlan(task,chosen,user,requestId))executePlan(task,chosen,user,requestId);return;
                 }
             }
             String modelText=modelText(task);
@@ -111,14 +113,21 @@ public class QueryTaskProcessor {
             stage(task, QueryStatus.SQL_GENERATING, 45, "正在生成受控查询计划");
             PlannedQuery plan = interpretation.hasGeneratedSql() ? fromInterpretation(interpretation)
                     : planner.plan(interpretation.semantic(), user);
+            plan=requestedDisplay(task,plan);
             if (acceptPlan(task, plan, user, requestId)) executePlan(task, plan, user, requestId);
         } catch (TaskStateStore.TaskChangedException ignored) {
             // 取消或其他请求已经赢得状态提交，旧工作不得继续更新/执行。
         } catch (QueryTerminatedException stopped) {
             finishStopped(task, stopped, requestId);
         } catch (Exception exception) {
+            log.warn("任务失败：taskId={}, exceptionType={}, reason={}",taskId,exception.getClass().getSimpleName(),safeMessage(exception));
             fail(task, safeMessage(exception), requestId);
-        }
+        } finally {org.slf4j.MDC.remove("taskId");org.slf4j.MDC.remove("requestId");}
+    }
+
+    private PlannedQuery requestedDisplay(QueryTaskEntity task,PlannedQuery plan){
+        String requested=task.getPreferredDisplay();
+        return requested==null || "AUTO".equals(requested)?plan:new PlannedQuery(plan.sql(),plan.parameters(),requested,plan.title(),plan.risk(),plan.columnHints());
     }
 
     private PlannedQuery fromInterpretation(QueryInterpretation interpretation) {
@@ -143,7 +152,7 @@ public class QueryTaskProcessor {
         try {
             validate(plan, user, task.getInterpretationSource());
             if(task.getResolvedCustomerId()!=null)scope.validateCustomer(plan.sql(),plan.parameters(),task.getResolvedCustomerId());
-        } catch(RuntimeException rejected){review(task,requestId,"REJECTED",plan,rejected instanceof BusinessException b?Integer.toString(b.code()):"VALIDATION_ERROR");throw rejected;}
+        } catch(RuntimeException rejected){review(task,requestId,"REJECTED",plan,rejected instanceof BusinessException b?b.code()+" "+b.getMessage():"VALIDATION_ERROR");throw rejected;}
         QueryRisk risk = risks.assess(plan);
         task.setSqlText(plan.sql());
         task.setSqlParametersJson(json.writeValueAsString(plan.parameters()));
@@ -207,7 +216,7 @@ public class QueryTaskProcessor {
                         fallback(task, user, requestId, "模型修复未形成可执行计划，已停止模型调用。");
                         return;
                     }
-                    plan = fromInterpretation(repaired);
+                    plan = requestedDisplay(task,fromInterpretation(repaired));
                     if (!acceptPlan(task, plan, user, requestId)) return;
                 } catch (BusinessException invalidRepair) {
                     fallback(task, user, requestId, "SQL修复响应不可用或未通过安全校验，已停止模型调用。");

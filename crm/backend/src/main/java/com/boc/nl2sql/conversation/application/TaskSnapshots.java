@@ -30,7 +30,7 @@ public class TaskSnapshots {
                 task.getStageMessage(),task.getIntentCode(),task.getClarificationRound(),read(task.getQuestionJson(),ClarificationQuestion.class),
                 confirmation,read(task.getResultJson(),QueryResult.class),task.getErrorMessage()==null?null:Map.of("message",task.getErrorMessage()),
                 task.getRepairAttempts()==null?0:task.getRepairAttempts(),timeout,!QueryStatus.terminal(task.getStatusCode()),
-                task.getStateVersion(),Boolean.TRUE.equals(task.getThinkingEnabled()),task.getDisplayQuery());
+                task.getStateVersion(),Boolean.TRUE.equals(task.getThinkingEnabled()),task.getDisplayQuery(),task.getCreatedAt(),task.getUpdatedAt());
     }
     private <T>T read(String value,Class<T> type){return value==null?null:json.readValue(value,type);}
 }

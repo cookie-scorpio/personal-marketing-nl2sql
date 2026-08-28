@@ -86,6 +86,23 @@ public class CustomerResolver {
             task.setMergedQueryText(base+"，客户定位信息："+answer);
         }
     }
+    public void answer(QueryTaskEntity task,CurrentUser user,ClarificationQuestion question,String answer,String identityType){
+        if("CUSTOMER_SELECTION".equals(question.type())) {
+            if(!answer.matches("(?i)C[0-9]{8}"))throw new BusinessException(400006,"请从本轮候选客户中选择");
+        } else {
+            if(identityType==null)throw new BusinessException(400006,"请先选择客户编号、客户虚拟姓名或手机号后四位");
+            boolean valid=switch(identityType){
+                case "CUSTOMER_ID" -> answer.matches("(?i)C[0-9]{8}");
+                case "CUSTOMER_NAME" -> answer.matches("[\\p{IsHan}]{2,4}");
+                case "MOBILE_SUFFIX" -> answer.matches("[0-9]{4}");
+                default -> false;
+            };
+            if(!valid)throw new BusinessException(400006,"输入内容与所选身份类型不符：编号为C加8位数字，虚拟姓名为2至4个汉字，手机尾号为4位数字");
+            if("MOBILE_SUFFIX".equals(identityType) && mention(task.getMergedQueryText().split("，客户定位信息：",2)[0])==null)
+                throw new BusinessException(400006,"仅手机号后四位不足以定位，请改用客户编号或虚拟姓名");
+        }
+        answer(task,user,question,answer);
+    }
     private String safeText(String text,Mention mention){
         String base=text.split("，客户定位信息：",2)[0];Mention original=mention(base);
         return original==null?base:base.replace(original.text(),"已确认客户");

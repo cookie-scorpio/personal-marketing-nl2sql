@@ -49,6 +49,7 @@ public class HistoryService {
                 Wrappers.<QueryHistoryEntity>lambdaQuery()
                         .eq(QueryHistoryEntity::getUserId, userId)
                         .eq(QueryHistoryEntity::getDeleted, false)
+                        .notInSql(QueryHistoryEntity::getTaskId,"SELECT q.task_id FROM query_task q JOIN conversation_session s ON s.session_id=q.session_id WHERE s.deleted_at IS NOT NULL")
                         .like(keyword != null && !keyword.isBlank(), QueryHistoryEntity::getQueryText, keyword)
                         .orderByDesc(QueryHistoryEntity::getCreatedAt));
         return new PageResult<>(page.getRecords(), page.getTotal(), pageNo, pageSize);

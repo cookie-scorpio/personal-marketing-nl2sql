@@ -1,0 +1,11 @@
+[
+  {"id":"identity_surname","mode":"rules","question":"帮我查找一下陈先生的交易记录","expected_status":"ASKING","question_types":["CUSTOMER_IDENTITY","CUSTOMER_SELECTION"],"user":"director01"},
+  {"id":"identity_missing","mode":"rules","question":"帮我查找一下C99999999的资产信息","expected_status":"ASKING","question_types":["CUSTOMER_NOT_FOUND"],"user":"manager01"},
+  {"id":"rule_transaction","mode":"rules","question":"统计近30天各机构客户交易金额","expected_status":"SUCCESS","user":"manager01","comparator":"transaction"},
+  {"id":"deposit_original","mode":"model","question":"从零到一千万，统计一下每一百万存款的人数比例，结果以饼状图展示","expected_status":"SUCCESS","user":"director01","comparator":"deposit","upper":10000000,"step":1000000,"chart":"PIE"},
+  {"id":"deposit_variable","mode":"model","question":"统计当前存款余额从0到600万元、每50万元一档的客户人数及占比，左闭右开、最后一档包含600万元，包含没有存款的客户，分母是该范围客户总数，用饼图展示","expected_status":"SUCCESS","user":"manager01","comparator":"deposit","upper":6000000,"step":500000,"chart":"PIE"},
+  {"id":"deposit_leader","mode":"model","question":"在我可查询的客户里，按每位客户存款余额合计，统计0到1000万元每100万元的客户人数和比例，无存款按零、最后一档包含1000万元，比例以这些档位客户为分母，以饼状图展示","expected_status":"SUCCESS","user":"leader01","comparator":"deposit","upper":10000000,"step":1000000,"chart":"PIE"},
+  {"id":"gender_pie","mode":"model","question":"统计当前不同性别的客户人数，用饼状图展示","expected_status":"SUCCESS","user":"director01","comparator":"gender","chart":"PIE"},
+  {"id":"gender_table","mode":"model","question":"统计当前不同性别的客户人数，只用表格展示","expected_status":"SUCCESS","user":"manager01","comparator":"gender","chart":"TABLE"},
+  {"id":"missing_history","mode":"model","question":"统计去年每个月的客户历史存款余额变化","expected_status":"ASKING","user":"director01"}
+]

@@ -15,6 +15,8 @@ app:
       api-key: "请填写DeepSeek API密钥"
       model: deepseek-v4-flash
       thinking-enabled: true
+      tools-enabled: true
+      max-tool-rounds: 3
       max-tokens: 16384
       retry-max-tokens: 32768
       read-timeout-seconds: 120

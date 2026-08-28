@@ -33,6 +33,7 @@ public class QueryEventsController {
         scheduled.set(scheduler.scheduleWithFixedDelay(()->{
             if(done.get())return;
             try{
+                service.status(id,user); // 每次回放前重新验证会话未被删除
                 var batch=store.events(id,cursor.get());
                 for(var row:batch){
                     long event=((Number)row.get("event_id")).longValue();String payload=row.get("payload_json").toString();

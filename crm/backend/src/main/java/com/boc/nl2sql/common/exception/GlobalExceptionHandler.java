@@ -46,7 +46,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> unknown(Exception exception, HttpServletRequest request) {
-        log.error("Unhandled request error", exception);
+        log.error("Unhandled request error: type={}, frames={}", exception.getClass().getName(), java.util.Arrays.toString(exception.getStackTrace()));
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(ApiResponse.error(500000, "系统暂时无法处理该请求，请稍后重试", WebRequestSupport.requestId(request)));
     }

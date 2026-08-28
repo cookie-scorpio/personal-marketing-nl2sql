@@ -23,6 +23,7 @@ export interface ClarificationQuestion {
   prompt: string
   options: string[]
   recognized_slots: Record<string, string>
+  input_types?: string[]
   candidates?: Array<{ customer_id: string; name: string; branch_id: string; mobile: string }>
 }
 
@@ -90,6 +91,10 @@ export interface TaskStatus {
   state_version: number
   thinking_enabled: boolean
   display_query?: string
+  legacy_recovered?: boolean
+  legacy_notice?: string
+  created_at?: string
+  updated_at?: string
 }
 
 export interface ConversationMessage {
@@ -99,8 +104,10 @@ export interface ConversationMessage {
   content: string
   payload?: TaskStatus
   created_at?: string
+  updated_at?: string
+  feedback?: 'LIKE' | 'DISLIKE' | 'NONE' | null
 }
-export interface ConversationSummary { session_id: string; title: string; active_task_id?: string; updated_at: string }
+export interface ConversationSummary { session_id: string; title: string; active_task_id?: string; created_at: string; updated_at: string }
 export interface ConversationDetail extends ConversationSummary {
   messages: ConversationMessage[]
   has_more: boolean

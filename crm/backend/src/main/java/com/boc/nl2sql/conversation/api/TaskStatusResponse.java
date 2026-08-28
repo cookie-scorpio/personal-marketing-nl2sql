@@ -22,6 +22,8 @@ public record TaskStatusResponse(
         boolean cancellable,
         long stateVersion,
         boolean thinkingEnabled,
-        String displayQuery
+        String displayQuery,
+        java.time.LocalDateTime createdAt,
+        java.time.LocalDateTime updatedAt
 ) {
 }

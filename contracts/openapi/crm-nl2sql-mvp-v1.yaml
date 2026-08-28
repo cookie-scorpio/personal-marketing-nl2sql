@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: 个金营销 NL2SQL v1.2 API
-  version: 1.2.0
+  version: 1.3.0
   description: Vue工作台与Spring Boot模块化单体之间的接口契约。所有业务数据均为模拟数据。
 servers:
   - url: http://127.0.0.1:8080
@@ -96,7 +96,7 @@ paths:
         - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 30 } }
       responses:
         "200":
-          description: data为会话数组，无total，按更新时间倒序
+          description: data为本人会话数组，无total，按created_at及session_id倒序，切换账号/读取/反馈不会改变顺序
           content:
             application/json:
               schema:
@@ -106,15 +106,36 @@ paths:
                     properties:
                       data: { type: array, items: { $ref: "#/components/schemas/ConversationSummary" } }
   /api/v1/conversations/{sessionId}:
+    delete:
+      summary: 逻辑删除本人会话，保留后台审计，不支持恢复
+      parameters:
+        - { name: sessionId, in: path, required: true, schema: { type: string, maxLength: 36 } }
+      responses:
+        "200":
+          description: 已删除或此前已删除；禁止重新访问会话、任务、SSE、提交重放和旧历史
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          session_id: { type: string }
+                          deleted: { type: boolean, const: true }
+        "404": { description: 不存在或他人会话 }
+        "409": { description: 409007，存在未结束查询，须先完成或取消 }
     get:
       summary: 本人会话、上下文及最近消息
       parameters:
         - { name: sessionId, in: path, required: true, schema: { type: string, maxLength: 36 } }
-        - { name: before_message_id, in: query, schema: { type: integer, format: int64, default: 0 }, description: 小于此编号的更早消息，非正数取最新一页 }
+        - { name: before_message_id, in: query, schema: { type: integer, format: int64, default: 0 }, description: 以此消息的created_at及message_id作为复合游标读取更早消息；非正数取最新页 }
         - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 100 } }
       responses:
         "200":
-          description: 本页消息按编号升序，has_more表示本页达到数量上限
+          description: 本页消息按created_at、message_id升序；before游标对应同会话消息的时间与编号，has_more表示满页
           content:
             application/json:
               schema:
@@ -124,6 +145,65 @@ paths:
                     properties:
                       data: { $ref: "#/components/schemas/ConversationDetail" }
         "404": { description: 会话不存在或不属于当前用户 }
+  /api/v1/conversations/{sessionId}/messages/{messageId}/feedback:
+    post:
+      summary: 评价本人会话中的助手回复，点赞/点踩互斥且可取消
+      parameters:
+        - { name: sessionId, in: path, required: true, schema: { type: string, maxLength: 36 } }
+        - { name: messageId, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [feedback]
+              properties:
+                feedback: { type: string, enum: [LIKE, DISLIKE, NONE] }
+      responses:
+        "200":
+          description: 已保存；data为message_id和feedback，不改变会话顺序/消息时间，不调用模型
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          message_id: { type: integer, format: int64 }
+                          feedback: { type: string, enum: [LIKE, DISLIKE, NONE] }
+        "400": { description: 反馈类型无效 }
+        "404": { description: 他人/已删除会话、消息不存在或不是助手回复 }
+        "409": { description: 409008，回复尚未完成 }
+  /api/v1/conversations/{sessionId}/anchors:
+    get:
+      summary: 获取本人会话用户输入目录，用于快速跳转
+      parameters:
+        - { name: sessionId, in: path, required: true, schema: { type: string, maxLength: 36 } }
+        - { name: after_message_id, in: query, schema: { type: integer, format: int64, minimum: 0, default: 0 } }
+        - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 100 } }
+      responses:
+        "200":
+          description: data为用户消息编号、内容与created_at数组，按created_at和message_id升序；满页可继续，不包含助手结果
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            message_id: { type: integer, format: int64 }
+                            content: { type: string }
+                          created_at: { type: string }
+        "404": { description: 不存在、已删除或他人会话 }
   /api/v1/queries/{taskId}/status:
     get:
       summary: 获取任务阶段、反问、确认信息或最终结果
@@ -160,6 +240,7 @@ paths:
                 task_id: { type: string, format: uuid }
                 question_id: { type: string, format: uuid }
                 answer_text: { type: string }
+                identity_type: { type: string, enum: [CUSTOMER_ID, CUSTOMER_NAME, MOBILE_SUFFIX], description: 客户身份补充必填，候选选择不需要；与answer_text分开解释 }
                 selected_options: { type: array, items: { type: string } }
       responses:
         "200": { description: 已重新进入解析流程 }
@@ -248,12 +329,16 @@ components:
         thinking_enabled: { type: boolean, default: true, description: 本任务固定设置，澄清和SQL修复沿用；规则路径不调用模型 }
         preferred_display:
           type: string
-          description: 兼容保留字段，当前由服务端依据结果自动决定展示方式。
+          description: 非AUTO时优先采用请求展示形式；否则使用模型建议及实际数据适配，非法数据形态不会强行绘图。
           example: AUTO
     TaskStatus:
       type: object
       required: [task_id, session_id, status, progress, message, clarification_round, repair_attempts, execution_timeout_seconds, cancellable, state_version, thinking_enabled]
       properties:
+        created_at: { type: string, description: 任务创建时间 }
+        updated_at: { type: string, description: 最近阶段更新时间 }
+        legacy_recovered: { type: boolean, description: 仅旧回答恢复快照出现 }
+        legacy_notice: { type: string, description: 历史结果恢复或缺失说明 }
         task_id: { type: string, format: uuid }
         session_id: { type: string, format: uuid }
         status:
@@ -285,6 +370,7 @@ components:
         options: { type: array, items: { type: string } }
         recognized_slots: { type: object, additionalProperties: { type: string } }
         candidates: { type: array, maxItems: 10, items: { $ref: "#/components/schemas/CustomerCandidate" } }
+        input_types: { type: array, items: { type: string, enum: [CUSTOMER_ID, CUSTOMER_NAME, MOBILE_SUFFIX] }, description: 身份补充允许的输入类型；普通澄清和候选选择为空 }
     CustomerCandidate:
       type: object
       required: [customer_id, name, branch_id, mobile]
@@ -320,8 +406,24 @@ components:
         payload:
           anyOf:
             - $ref: "#/components/schemas/TaskStatus"
+            - $ref: "#/components/schemas/LegacyTaskSnapshot"
             - { type: "null" }
         created_at: { type: string }
+        updated_at: { type: string, description: 回复最后生成时间，不随反馈变化 }
+        feedback: { type: [string, "null"], enum: [LIKE, DISLIKE, NONE, null] }
+    LegacyTaskSnapshot:
+      type: object
+      description: V8从旧任务保存内容恢复的只读快照；不保证旧版本存在所有新TaskStatus/QueryResult字段，不重跑SQL。
+      required: [task_id, session_id, status, legacy_recovered, legacy_notice]
+      properties:
+        task_id: { type: string }
+        session_id: { type: string }
+        status: { type: string }
+        legacy_recovered: { const: true }
+        legacy_notice: { type: string }
+        cancellable: { const: false }
+        result: { type: [object, "null"], additionalProperties: true, description: 原样保存的旧版结果，前端仅补空展示容器 }
+      additionalProperties: true
     ConversationDetail:
       allOf:
         - $ref: "#/components/schemas/ConversationSummary"

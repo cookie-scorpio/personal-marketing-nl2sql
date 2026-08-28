@@ -83,6 +83,7 @@ public class QueryApplicationService {
     }
     private QueryTaskEntity findSubmission(long user,String key){return taskMapper.selectOne(Wrappers.<QueryTaskEntity>lambdaQuery().eq(QueryTaskEntity::getUserId,user).eq(QueryTaskEntity::getIdempotencyKey,key));}
     private SubmitQueryResponse replay(QueryTaskEntity task,String fingerprint){
+        conversations.visible(task.getSessionId(),task.getUserId());
         if(!fingerprint.equals(task.getRequestHash()))throw new BusinessException(409005,"同一幂等键不能用于不同请求，请为新问题创建新的提交");
         return new SubmitQueryResponse(task.getTaskId(),task.getSessionId(),task.getStatusCode(),task.getProgress(),"/api/v1/queries/"+task.getTaskId()+"/status");
     }
@@ -93,6 +94,9 @@ public class QueryApplicationService {
         task.setSessionId(request.sessionId());
         task.setUserId(user.userId());
         task.setQueryText(customers.redact(request.queryText().trim()));
+        String display=request.preferredDisplay()==null?"AUTO":request.preferredDisplay().toUpperCase(java.util.Locale.ROOT);
+        if(!java.util.Set.of("AUTO","TABLE","BAR","LINE","AREA","PIE","SCATTER","HEATMAP","METRIC").contains(display))throw new BusinessException(400001,"preferred_display不是支持的展示类型");
+        task.setPreferredDisplay(display);
         var previous=conversations.context(session);
         boolean inherit=followups.followup(request.queryText()) && !customers.explicitIdentity(request.queryText());
         task.setMergedQueryText(inherit?followups.merge(request.queryText().trim(),previous):request.queryText().trim());
@@ -151,11 +155,12 @@ public class QueryApplicationService {
         }
         String connector = "CONFLICT".equals(question.type()) ? "，最终条件为："
                 : "TIME_BASIS".equals(question.type()) ? "，时间口径：" : "，补充条件：";
-        if(question.type().startsWith("CUSTOMER_"))customers.answer(task,user,question,answer);
+        if(question.type().startsWith("CUSTOMER_"))customers.answer(task,user,question,answer,request.identityType());
         else if("FOLLOWUP_CONTEXT".equals(question.type()))task.setMergedQueryText(answer);
         else task.setMergedQueryText(task.getMergedQueryText() + connector + answer);
         task.setDisplayQuery(customers.redact(task.getMergedQueryText()));
-        conversations.userMessage(task,"answer-"+question.questionId(),customers.redact(answer));
+        String visibleAnswer="CUSTOMER_NAME".equals(request.identityType())?CustomerResolver.mask(answer):customers.redact(answer);
+        conversations.userMessage(task,"answer-"+question.questionId(),request.identityType()==null?visibleAnswer:request.identityType()+"："+visibleAnswer);
         task.setClarificationRound(task.getClarificationRound() + 1);
         task.setQuestionJson(null);
         task.setStatusCode(QueryStatus.RECEIVED.name());
@@ -252,6 +257,7 @@ public class QueryApplicationService {
                 // FOR UPDATE是当前读，避免REPEATABLE READ复用等待会话锁之前的快照。
                 .last(lock?"LIMIT 1 FOR UPDATE":"LIMIT 1"));
         if (task == null) throw new BusinessException(404001, "查询任务不存在");
+        conversations.own(task.getSessionId(),user);
         return task;
     }
 

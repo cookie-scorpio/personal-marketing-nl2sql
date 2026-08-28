@@ -45,8 +45,16 @@ public class ResultAssembler {
         List<Map<String, Object>> metrics = buildMetrics(columns, normalized);
         String summary = normalized.isEmpty() ? "没有找到符合当前条件的数据，可以调整范围后重试。"
                 : "查询完成，共返回 " + normalized.size() + " 行模拟业务数据。";
+        var charts=buildCharts(planned,columns,normalized);
+        var analysis=analyze(columns,normalized,summary);
+        if(planned.resultType()!=null && Set.of("PIE","LINE","AREA","BAR","SCATTER","HEATMAP").contains(planned.resultType())
+                && charts.stream().noneMatch(chart->chart.type().equals(planned.resultType()))) {
+            var insights=new ArrayList<>(analysis.insights());
+            insights.add("本次要求的"+planned.resultType()+"未绘制：结果为空、维度不唯一或指标不适合该图形。饼图需要一个互斥分类和非负、可加总且合计大于零的数值；比例请同时返回对应人数。已保留实际数据与可用展示。");
+            analysis=new AnalysisSummary(analysis.overview(),insights,analysis.suggestions());
+        }
         return new QueryResult(planned.resultType(), planned.title(), summary, columns, normalized, metrics,
-                buildCharts(planned, columns, normalized), analyze(columns, normalized, summary),
+                charts, analysis,
                 planned.sql() == null ? "" : planned.sql().strip().replaceAll("\\s+", " "),
                 LocalDate.now(), interpretationSource, confidence, null);
     }
@@ -80,7 +88,8 @@ public class ResultAssembler {
             weight = hint.weightKey() == null ? null : hint.weightKey().toLowerCase(java.util.Locale.ROOT);
         }
         // 已知均值/比率不得被模型标成合计。没有可靠分母时只展示清楚标记的分组均值。
-        if (key.contains("avg") || key.contains("average") || key.contains("rate")) {
+        if (key.contains("avg") || key.contains("average") || key.contains("rate")
+                || key.contains("ratio") || key.contains("percent") || key.contains("proportion") || "%".equals(unit)) {
             if ("SUM".equals(aggregation)) aggregation = "AVERAGE";
             if (weight == null && key.matches(".*(?:avg|average).*asset.*") && hasKey(rows, "customer_count")) weight = "customer_count";
             if (weight == null && key.equals("conversion_rate") && hasKey(rows, "contact_count")) weight = "contact_count";
@@ -159,7 +168,7 @@ public class ResultAssembler {
 
     /** 覆盖全部有效指标，优先用分图区分计量单位；建议类型不符合数据形态时自动纠正。 */
     private List<ChartSpec> buildCharts(PlannedQuery planned, List<ColumnMeta> columns, List<Map<String, Object>> rows) {
-        if (rows.size() < 2 || "TABLE".equalsIgnoreCase(planned.resultType())) return List.of();
+        if (rows.isEmpty() || rows.size()<2 && !"PIE".equalsIgnoreCase(planned.resultType()) || "TABLE".equalsIgnoreCase(planned.resultType())) return List.of();
         List<ColumnMeta> dimensions = columns.stream().filter(column -> !"MEASURE".equals(column.role()))
                 .filter(column -> !Set.of("customer_id","customer_name","snapshot_date").contains(column.key())
                         || rows.stream().map(row->row.get(column.key())).distinct().count()>1).toList();
@@ -167,15 +176,25 @@ public class ResultAssembler {
                 .filter(column -> rows.stream().anyMatch(row -> numeric(row.get(column.key())))).toList();
         if (numbers.isEmpty()) return List.of();
         String requested = planned.resultType() == null ? "AUTO" : planned.resultType().toUpperCase(java.util.Locale.ROOT);
+        // 分组标签与数值排序号常一起返回。显式饼图可忽略与标签一一对应的排序维度，
+        // 但不能丢弃重复标签下的独立分类（例如机构×产品），也不修改原始表格。
+        if ("PIE".equals(requested) && dimensions.size() > 1) {
+            var labels = dimensions.stream().filter(c -> "TEXT".equals(c.dataType())).toList();
+            boolean oneToOne = dimensions.stream().allMatch(c -> rows.stream().allMatch(r -> r.get(c.key()) != null)
+                    && rows.stream().map(r -> r.get(c.key())).distinct().count() == rows.size());
+            if (labels.size() == 1 && oneToOne && dimensions.stream().allMatch(c -> c == labels.get(0) || "NUMBER".equals(c.dataType())))
+                dimensions = List.of(labels.get(0));
+        }
         List<ChartSpec> charts = new ArrayList<>();
         if ((dimensions.isEmpty() || "SCATTER".equals(requested)) && numbers.size() >= 2) {
             charts.add(chart("SCATTER", numbers.get(0), numbers.get(1), null, "比较两个数值指标的分布，不作因果推断"));
             if (dimensions.isEmpty()) return charts;
         }
         if (dimensions.size() == 2) {
+            var axes = dimensions;
             var seen = new java.util.HashSet<List<Object>>();
             boolean unique = rows.stream().allMatch(row -> seen.add(java.util.Arrays.asList(
-                    row.get(dimensions.get(0).key()), row.get(dimensions.get(1).key()))));
+                    row.get(axes.get(0).key()), row.get(axes.get(1).key()))));
             if(unique){
                 var time=dimensions.stream().filter(d->"TIME".equals(d.role())).findFirst();
                 if(time.isPresent()){
@@ -192,14 +211,16 @@ public class ResultAssembler {
         for (var measure : numbers) {
             boolean time = "TIME".equals(dimension.role());
             boolean nonnegative = rows.stream().allMatch(row -> numeric(row.get(measure.key())) && number(row.get(measure.key())) >= 0);
-            String type = time ? ("AREA".equals(requested) && nonnegative ? "AREA" : "LINE") : "BAR";
-            charts.add(chart(type, dimension, measure, null,
-                    time ? "按时间顺序展示变化；缺失值保留为空" : "按分组比较此指标，独立标注计量单位"));
-            boolean share = !time && rows.size() <= 8 && "SUM".equals(measure.aggregation()) && nonnegative
+            String type = "BAR".equals(requested)?"BAR":"LINE".equals(requested)?"LINE":time ? ("AREA".equals(requested) && nonnegative ? "AREA" : "LINE") : "BAR";
+            boolean share = !time && ("PIE".equals(requested) || rows.size() <= 8) && "SUM".equals(measure.aggregation()) && nonnegative
                     && rows.stream().mapToDouble(row -> number(row.get(measure.key()))).sum() > 0
                     && ("PIE".equals(requested) || dimension.key().contains("category") || dimension.key().contains("level")
                     || "AUTO".equals(requested)&&(dimension.key().contains("gender")||dimension.key().contains("channel")));
-            if (share) charts.add(chart("PIE", dimension, measure, null, "展示当前返回分组的构成比例，不代表全库总体"));
+            if (share && "PIE".equals(requested)) charts.add(chart("PIE",dimension,measure,null,"按要求展示授权范围内本次返回分组的构成比例"));
+            else {
+                charts.add(chart(type,dimension,measure,null,time?"按时间顺序展示变化；缺失值保留为空":"按分组比较此指标，独立标注计量单位"));
+                if(share)charts.add(chart("PIE",dimension,measure,null,"展示本次返回分组的构成比例"));
+            }
         }
         return charts;
     }

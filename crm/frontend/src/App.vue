@@ -32,6 +32,11 @@ const scopeLabel = computed(() => {
   return `区域 ${user.value.region_code}`
 })
 
+function deletedSession(id: string) {
+  if (workspace.value?.sessionId === id) workspace.value.newConversation()
+  sessionRevision.value++
+}
+
 function newQuery() {
   if (workspace.value?.newConversation()) sidebarOpen.value = false
 }
@@ -63,7 +68,7 @@ onUnmounted(() => sidebarMedia.removeEventListener('change', resizeSidebar))
       <div class="brand"><span class="brand-seal">中</span><div><strong>中银智析</strong><small>个金营销智能问数</small></div><button class="sidebar-close mobile-only" type="button" aria-label="关闭会话侧栏" @click="closeSidebar"><Close /></button></div>
       <button ref="newSessionButton" class="new-query-button" type="button" :disabled="workspace?.navigationBusy" @click="newQuery"><Plus /> 新建会话</button>
       <ConversationSidebar :key="user?.user_id" :active-session-id="workspace?.sessionId"
-                           :disabled="!!workspace?.navigationBusy" :refresh-version="sessionRevision" @select="selectSession" />
+                           :disabled="!!workspace?.navigationBusy" :refresh-version="sessionRevision" @select="selectSession" @deleted="deletedSession" />
       <div class="sidebar-note">
         <span>当前数据范围</span><strong>{{ scopeLabel }}</strong>
         <p>查询范围由登录身份决定，前端无法修改。</p>

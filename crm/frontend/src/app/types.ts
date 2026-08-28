@@ -23,6 +23,7 @@ export interface ClarificationQuestion {
   prompt: string
   options: string[]
   recognized_slots: Record<string, string>
+  candidates?: Array<{ customer_id: string; name: string; branch_id: string; mobile: string }>
 }
 
 export interface ColumnMeta {
@@ -86,6 +87,24 @@ export interface TaskStatus {
   }
   result?: QueryResult
   error?: { message: string }
+  state_version: number
+  thinking_enabled: boolean
+  display_query?: string
+}
+
+export interface ConversationMessage {
+  message_id: number | string
+  task_id: string
+  role_code: 'USER' | 'ASSISTANT'
+  content: string
+  payload?: TaskStatus
+  created_at?: string
+}
+export interface ConversationSummary { session_id: string; title: string; active_task_id?: string; updated_at: string }
+export interface ConversationDetail extends ConversationSummary {
+  messages: ConversationMessage[]
+  has_more: boolean
+  context?: { query: string; customer_id?: string; source_task_id?: string }
 }
 
 export interface SubmitQueryResponse {

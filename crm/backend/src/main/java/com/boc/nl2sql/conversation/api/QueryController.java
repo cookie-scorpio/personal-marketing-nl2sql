@@ -27,7 +27,7 @@ public class QueryController {
     public ApiResponse<SubmitQueryResponse> submit(@Valid @RequestBody SubmitQueryRequest body,
                                                    @AuthenticationPrincipal CurrentUser user,
                                                    HttpServletRequest request) {
-        return ApiResponse.success(service.submit(body, user, WebRequestSupport.requestId(request)),
+        return ApiResponse.success(service.submit(body, user, WebRequestSupport.requestId(request),request.getHeader("Idempotency-Key")),
                 WebRequestSupport.requestId(request));
     }
 

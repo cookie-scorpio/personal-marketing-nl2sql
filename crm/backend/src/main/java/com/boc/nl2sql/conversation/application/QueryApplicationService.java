@@ -32,6 +32,12 @@ public class QueryApplicationService {
     private final com.boc.nl2sql.execution.QueryExecutionGateway execution;
     private final com.boc.nl2sql.history.application.HistoryService history;
     private final int timeoutSeconds;
+    @org.springframework.beans.factory.annotation.Autowired private ConversationStore conversations;
+    @org.springframework.beans.factory.annotation.Autowired private TaskSnapshots snapshots;
+    @org.springframework.beans.factory.annotation.Autowired private CustomerResolver customers;
+    @org.springframework.beans.factory.annotation.Autowired private FollowupResolver followups;
+    @org.springframework.beans.factory.annotation.Autowired private IdempotencyCache idempotency;
+    @org.springframework.beans.factory.annotation.Autowired private org.springframework.transaction.PlatformTransactionManager transactions;
 
     public QueryApplicationService(QueryTaskMapper taskMapper, QueryTaskProcessor processor,
                                    SessionContextStore contextStore, AuditService auditService,
@@ -48,13 +54,54 @@ public class QueryApplicationService {
     }
 
     public SubmitQueryResponse submit(SubmitQueryRequest request, CurrentUser user, String requestId) {
+        return submit(request,user,requestId,UUID.randomUUID().toString());
+    }
+
+    public SubmitQueryResponse submit(SubmitQueryRequest request, CurrentUser user, String requestId,String key) {
+        if(key==null||!key.matches("[A-Za-z0-9._:-]{8,128}"))throw new BusinessException(400004,"请提供8至128位有效 Idempotency-Key");
+        String fingerprint=IdempotencyCache.hash(objectMapper.writeValueAsString(java.util.List.of(request.sessionId(),request.queryText().trim(),request.preferredDisplay()==null?"AUTO":request.preferredDisplay(),request.thinkingEnabled()==null||request.thinkingEnabled())));
+        String cached=idempotency.get(user.userId(),key);
+        if(cached!=null){QueryTaskEntity old=taskMapper.selectById(cached);if(old!=null&&old.getUserId().equals(user.userId())&&key.equals(old.getIdempotencyKey()))return replay(old,fingerprint);}
+        SubmitQueryResponse response;
+        try {
+            var template=new org.springframework.transaction.support.TransactionTemplate(transactions);
+            template.setIsolationLevel(org.springframework.transaction.TransactionDefinition.ISOLATION_READ_COMMITTED);
+            response=template.execute(tx->{
+                var old=findSubmission(user.userId(),key);if(old!=null)return replay(old,fingerprint);
+                var session=conversations.lock(request.sessionId(),user,customers.redact(request.queryText().trim()));
+                old=findSubmission(user.userId(),key);if(old!=null)return replay(old,fingerprint);
+                if(session.get("active_task_id")!=null){
+                    var active=taskMapper.selectById(session.get("active_task_id").toString());
+                    if(active!=null&&!QueryStatus.terminal(active.getStatusCode()))throw new BusinessException(409006,"本会话仍有未结束的查询，请先完成补充、确认或取消");
+                }
+                return create(request,user,requestId,key,fingerprint,session);
+            });
+        }catch(org.springframework.dao.DuplicateKeyException collision){
+            var old=findSubmission(user.userId(),key);if(old==null)throw collision;response=replay(old,fingerprint);
+        }
+        idempotency.put(user.userId(),key,response.taskId());return response;
+    }
+    private QueryTaskEntity findSubmission(long user,String key){return taskMapper.selectOne(Wrappers.<QueryTaskEntity>lambdaQuery().eq(QueryTaskEntity::getUserId,user).eq(QueryTaskEntity::getIdempotencyKey,key));}
+    private SubmitQueryResponse replay(QueryTaskEntity task,String fingerprint){
+        if(!fingerprint.equals(task.getRequestHash()))throw new BusinessException(409005,"同一幂等键不能用于不同请求，请为新问题创建新的提交");
+        return new SubmitQueryResponse(task.getTaskId(),task.getSessionId(),task.getStatusCode(),task.getProgress(),"/api/v1/queries/"+task.getTaskId()+"/status");
+    }
+    private SubmitQueryResponse create(SubmitQueryRequest request,CurrentUser user,String requestId,String key,String fingerprint,Map<String,Object> session){
         String taskId = UUID.randomUUID().toString();
         QueryTaskEntity task = new QueryTaskEntity();
         task.setTaskId(taskId);
         task.setSessionId(request.sessionId());
         task.setUserId(user.userId());
-        task.setQueryText(request.queryText().trim());
-        task.setMergedQueryText(request.queryText().trim());
+        task.setQueryText(customers.redact(request.queryText().trim()));
+        var previous=conversations.context(session);
+        boolean inherit=followups.followup(request.queryText()) && !customers.explicitIdentity(request.queryText());
+        task.setMergedQueryText(inherit?followups.merge(request.queryText().trim(),previous):request.queryText().trim());
+        if(task.getMergedQueryText().length()>8000)throw new BusinessException(400005,"当前上下文过长，请新建会话并明确需要保留的条件");
+        task.setResolvedCustomerId(inherit?previous.customerId():null);
+        task.setContextJson(objectMapper.writeValueAsString(inherit?previous:com.boc.nl2sql.conversation.domain.ConversationContext.empty()));
+        task.setDisplayQuery(customers.redact(task.getMergedQueryText()));
+        task.setThinkingEnabled(request.thinkingEnabled()==null||request.thinkingEnabled());
+        task.setIdempotencyKey(key);task.setRequestHash(fingerprint);
         task.setStatusCode(QueryStatus.RECEIVED.name());
         task.setProgress(0);
         task.setStageMessage("查询请求已接收");
@@ -65,23 +112,17 @@ public class QueryApplicationService {
         task.setCreatedAt(LocalDateTime.now());
         task.setUpdatedAt(LocalDateTime.now());
         taskMapper.insert(task);
-        contextStore.rememberTask(user.userId(), request.sessionId(), taskId);
+        conversations.activate(task.getSessionId(),taskId);
+        conversations.userMessage(task,"query",task.getQueryText());conversations.record(task);
         auditService.record(requestId, taskId, user.userId(), "QUERY_RECEIVED", "provider request accepted");
-        processor.processAsync(taskId, user, requestId);
+        enqueue(taskId,user,requestId);
         return new SubmitQueryResponse(taskId, request.sessionId(), QueryStatus.RECEIVED.name(), 0,
                 "/api/v1/queries/" + taskId + "/status");
     }
 
     public TaskStatusResponse status(String taskId, CurrentUser user) {
         QueryTaskEntity task = ownedTask(taskId, user);
-        return new TaskStatusResponse(task.getTaskId(), task.getSessionId(), task.getStatusCode(),
-                task.getProgress(), task.getStageMessage(), task.getIntentCode(), task.getClarificationRound(),
-                read(task.getQuestionJson(), ClarificationQuestion.class),
-                QueryStatus.CONFIRMING.name().equals(task.getStatusCode())
-                        ? confirmation(task) : null,
-                read(task.getResultJson(), QueryResult.class),
-                task.getErrorMessage() == null ? null : Map.of("message", task.getErrorMessage()),
-                task.getRepairAttempts(), timeoutSeconds, !QueryStatus.terminal(task.getStatusCode()));
+        return snapshots.of(task);
     }
 
     private Map<String, Object> confirmation(QueryTaskEntity task) {
@@ -94,9 +135,11 @@ public class QueryApplicationService {
                 "message", "该SQL可能涉及大量数据或较长查询时延，请确认后执行。", "reasons", reasons);
     }
 
+    @org.springframework.transaction.annotation.Transactional
     public SubmitQueryResponse clarify(String sessionId, ClarificationRequest request,
                                        CurrentUser user, String requestId) {
         QueryTaskEntity task = ownedTask(request.taskId(), user);
+        conversations.lockTask(task);task=ownedTaskForUpdate(request.taskId(),user);
         if (!task.getSessionId().equals(sessionId) || !QueryStatus.ASKING.name().equals(task.getStatusCode())) {
             throw new BusinessException(409001, "当前任务不在等待补充状态");
         }
@@ -108,7 +151,11 @@ public class QueryApplicationService {
         }
         String connector = "CONFLICT".equals(question.type()) ? "，最终条件为："
                 : "TIME_BASIS".equals(question.type()) ? "，时间口径：" : "，补充条件：";
-        task.setMergedQueryText(task.getMergedQueryText() + connector + answer);
+        if(question.type().startsWith("CUSTOMER_"))customers.answer(task,user,question,answer);
+        else if("FOLLOWUP_CONTEXT".equals(question.type()))task.setMergedQueryText(answer);
+        else task.setMergedQueryText(task.getMergedQueryText() + connector + answer);
+        task.setDisplayQuery(customers.redact(task.getMergedQueryText()));
+        conversations.userMessage(task,"answer-"+question.questionId(),customers.redact(answer));
         task.setClarificationRound(task.getClarificationRound() + 1);
         task.setQuestionJson(null);
         task.setStatusCode(QueryStatus.RECEIVED.name());
@@ -116,14 +163,16 @@ public class QueryApplicationService {
         task.setStageMessage("已收到补充条件，正在重新解析");
         saveOrConflict(task);
         auditService.record(requestId, task.getTaskId(), user.userId(), "QUERY_CLARIFIED", question.type());
-        processor.processAsync(task.getTaskId(), user, requestId);
+        enqueue(task.getTaskId(), user, requestId);
         return new SubmitQueryResponse(task.getTaskId(), sessionId, task.getStatusCode(), task.getProgress(),
                 "/api/v1/queries/" + task.getTaskId() + "/status");
     }
 
+    @org.springframework.transaction.annotation.Transactional
     public TaskStatusResponse confirm(String taskId, ConfirmationRequest request,
                                       CurrentUser user, String requestId) {
         QueryTaskEntity task = ownedTask(taskId, user);
+        conversations.lockTask(task);task=ownedTaskForUpdate(taskId,user);
         if (!QueryStatus.CONFIRMING.name().equals(task.getStatusCode())
                 || !request.confirmToken().equals(task.getConfirmationToken())) {
             throw new BusinessException(409003, "确认令牌无效或已过期");
@@ -138,14 +187,17 @@ public class QueryApplicationService {
         task.setConfirmationToken(null);
         task.setStatusCode(QueryStatus.RECEIVED.name());
         task.setStageMessage("已确认，准备执行查询");
+        conversations.userMessage(task,"confirm-"+request.confirmToken(),"确认并执行");
         saveOrConflict(task);
         auditService.record(requestId, taskId, user.userId(), "QUERY_CONFIRMED", "user confirmed high scope query");
-        processor.processAsync(taskId, user, requestId);
+        enqueue(taskId, user, requestId);
         return status(taskId, user);
     }
 
+    @org.springframework.transaction.annotation.Transactional
     public TaskStatusResponse cancel(String taskId, CurrentUser user, String requestId) {
         QueryTaskEntity task = ownedTask(taskId, user);
+        conversations.lockTask(task);task=ownedTaskForUpdate(taskId,user);
         int changed = taskMapper.update(null, Wrappers.<QueryTaskEntity>lambdaUpdate()
                 .eq(QueryTaskEntity::getTaskId, taskId).eq(QueryTaskEntity::getUserId, user.userId())
                 .notIn(QueryTaskEntity::getStatusCode, "SUCCESS", "FAILED", "CANCELLED", "TIMED_OUT", "DEGRADED")
@@ -154,7 +206,8 @@ public class QueryApplicationService {
                 .set(QueryTaskEntity::getConfirmationToken, null).set(QueryTaskEntity::getQuestionJson, null)
                 .set(QueryTaskEntity::getUpdatedAt, LocalDateTime.now()).setSql("state_version = state_version + 1"));
         if (changed == 1) {
-            execution.cancel(taskId);
+            conversations.record(taskMapper.selectById(taskId));
+            afterCommit(()->execution.cancel(taskId));
             try {
                 history.save(taskId, user.userId(), task.getQueryText(), task.getIntentCode(), "CANCELLED", task.getSqlText(), "查询已取消");
                 auditService.record(requestId, taskId, user.userId(), "QUERY_CANCELLED", "USER_REQUEST");
@@ -166,15 +219,38 @@ public class QueryApplicationService {
         return status(taskId, user);
     }
 
+    private void enqueue(String id,CurrentUser user,String requestId){afterCommit(()->{
+        try{processor.processAsync(id,user,requestId);}catch(org.springframework.core.task.TaskRejectedException rejected){
+            // afterCommit时原事务资源尚未解绑，队列拒绝后的状态必须在独立事务提交。
+            var failureTx=new org.springframework.transaction.support.TransactionTemplate(transactions);
+            failureTx.setPropagationBehavior(org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+            failureTx.executeWithoutResult(tx->{QueryTaskEntity task=taskMapper.selectById(id);task.setStatusCode("FAILED");task.setProgress(100);task.setStageMessage("查询队列繁忙，请重新提交");task.setErrorMessage("查询队列繁忙，请重新提交");states.trySave(task);});
+        }
+    });}
+    private void afterCommit(Runnable work){
+        if(org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive())
+            org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(new org.springframework.transaction.support.TransactionSynchronization(){@Override public void afterCommit(){work.run();}});
+        else work.run();
+    }
+
     private void saveOrConflict(QueryTaskEntity task) {
         if (!states.trySave(task)) throw new BusinessException(409004, "任务状态已变更，请刷新后重试");
     }
 
     private QueryTaskEntity ownedTask(String taskId, CurrentUser user) {
+        return ownedTask(taskId,user,false);
+    }
+
+    private QueryTaskEntity ownedTaskForUpdate(String taskId,CurrentUser user){
+        return ownedTask(taskId,user,true);
+    }
+
+    private QueryTaskEntity ownedTask(String taskId,CurrentUser user,boolean lock){
         QueryTaskEntity task = taskMapper.selectOne(Wrappers.<QueryTaskEntity>lambdaQuery()
                 .eq(QueryTaskEntity::getTaskId, taskId)
                 .eq(QueryTaskEntity::getUserId, user.userId())
-                .last("LIMIT 1"));
+                // FOR UPDATE是当前读，避免REPEATABLE READ复用等待会话锁之前的快照。
+                .last(lock?"LIMIT 1 FOR UPDATE":"LIMIT 1"));
         if (task == null) throw new BusinessException(404001, "查询任务不存在");
         return task;
     }

@@ -14,10 +14,10 @@ app:
       base-url: https://api.deepseek.com
       api-key: "请填写DeepSeek API密钥"
       model: deepseek-v4-flash
-      thinking-enabled: false
-      max-tokens: 4096
-      retry-max-tokens: 8192
-      read-timeout-seconds: 60
+      thinking-enabled: true
+      max-tokens: 16384
+      retry-max-tokens: 32768
+      read-timeout-seconds: 120
     qwen:
       base-url: ""
       api-key: ""

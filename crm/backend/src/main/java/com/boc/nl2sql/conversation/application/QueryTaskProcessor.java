@@ -45,13 +45,17 @@ public class QueryTaskProcessor {
     private final AuditService audit;
     private final ObjectMapper json;
     private final int maxClarifications;
+    @org.springframework.beans.factory.annotation.Autowired private CustomerResolver customers;
+    @org.springframework.beans.factory.annotation.Autowired private FollowupResolver followups;
+    @org.springframework.beans.factory.annotation.Autowired private CustomerQueryPlanner customerPlanner;
+    @org.springframework.beans.factory.annotation.Autowired private SqlReviewLog sqlLog;
 
     public QueryTaskProcessor(QueryTaskMapper taskMapper, TaskStateStore states, ModelGateway modelGateway,
             CompletenessValidator completeness, SqlPlanner planner, SqlRiskEvaluator risks,
             SqlSafetyValidator safety, GeneratedSqlScopeValidator scope, QueryExecutionGateway execution,
             ResultAssembler assembler, FallbackPlanner fallbackPlanner, HistoryService history,
             AuditService audit, ObjectMapper json,
-            @Value("${app.query.max-clarification-rounds:2}") int maxClarifications) {
+            @Value("${app.query.max-clarification-rounds:5}") int maxClarifications) {
         this.taskMapper = taskMapper; this.states = states; this.modelGateway = modelGateway;
         this.completeness = completeness; this.planner = planner; this.risks = risks; this.safety = safety;
         this.scope = scope; this.execution = execution; this.assembler = assembler;
@@ -70,10 +74,29 @@ public class QueryTaskProcessor {
             if (confirmed) {
                 PlannedQuery saved = storedPlan(task);
                 validate(saved, user, task.getInterpretationSource());
+                if(task.getResolvedCustomerId()!=null)scope.validateCustomer(saved.sql(),saved.parameters(),task.getResolvedCustomerId());
                 executePlan(task, saved, user, requestId);
                 return;
             }
-            QueryInterpretation interpretation = modelGateway.interpret(task.getMergedQueryText(), user, () -> states.active(taskId));
+            if(customers!=null){
+                var identity=customers.inspect(task,user);
+                if(identity.isPresent()){ask(task,identity.get(),requestId);return;}
+                var ctx=task.getContextJson()==null?null:json.readValue(task.getContextJson(),com.boc.nl2sql.conversation.domain.ConversationContext.class);
+                if(followups.followup(task.getMergedQueryText()) && task.getResolvedCustomerId()==null && (ctx==null||ctx.query().isBlank())){
+                    ask(task,new com.boc.nl2sql.nl2sql.domain.ClarificationQuestion(UUID.randomUUID().toString(),"FOLLOWUP_CONTEXT","本会话还没有可以承接的查询，请完整描述本次查询对象和指标。",List.of(),Map.of()),requestId);return;
+                }
+                task.setDisplayQuery(task.getMergedQueryText()+(task.getResolvedCustomerId()==null?"":"；客户编号："+task.getResolvedCustomerId()));
+                var direct=customerPlanner.plan(task.getMergedQueryText(),task.getResolvedCustomerId(),user);
+                if(direct.isPresent()){
+                    task.setIntentCode("CUSTOMER_FILTER");task.setInterpretationSource("RULE");task.setInterpretationConfidence(1.0);
+                    stage(task,QueryStatus.SQL_GENERATING,45,"客户已确认，正在生成查询计划");
+                    if(acceptPlan(task,direct.get(),user,requestId))executePlan(task,direct.get(),user,requestId);return;
+                }
+            }
+            String modelText=modelText(task);
+            QueryInterpretation interpretation = task.getThinkingEnabled()==null
+                    ?modelGateway.interpret(modelText, user, () -> states.active(taskId))
+                    :modelGateway.interpret(modelText,user,()->states.active(taskId),task.getThinkingEnabled());
             states.ensureActive(taskId);
             task.setIntentCode(interpretation.semantic().intent().name());
             task.setInterpretationSource(interpretation.source());
@@ -82,13 +105,7 @@ public class QueryTaskProcessor {
                     ? completeness.validate(interpretation.semantic(), interpretation.hasGeneratedSql())
                     : java.util.Optional.of(interpretation.clarification());
             if (question.isPresent()) {
-                if (task.getClarificationRound() >= maxClarifications) {
-                    fail(task, "补充条件后仍无法形成唯一查询，请重新描述问题", requestId);
-                    return;
-                }
-                task.setQuestionJson(json.writeValueAsString(question.get()));
-                stage(task, QueryStatus.ASKING, 30, question.get().prompt());
-                audit.record(requestId, taskId, user.userId(), "QUERY_ASKING", question.get().type());
+                ask(task,question.get(),requestId);
                 return;
             }
             stage(task, QueryStatus.SQL_GENERATING, 45, "正在生成受控查询计划");
@@ -122,7 +139,11 @@ public class QueryTaskProcessor {
     /** 每条新SQL（包括修复/降级）都重新校验和确认，绝不沿用旧SQL的确认授权。 */
     private boolean acceptPlan(QueryTaskEntity task, PlannedQuery plan, CurrentUser user, String requestId) {
         states.ensureActive(task.getTaskId());
-        validate(plan, user, task.getInterpretationSource());
+        review(task,requestId,"GENERATED",plan,null);
+        try {
+            validate(plan, user, task.getInterpretationSource());
+            if(task.getResolvedCustomerId()!=null)scope.validateCustomer(plan.sql(),plan.parameters(),task.getResolvedCustomerId());
+        } catch(RuntimeException rejected){review(task,requestId,"REJECTED",plan,rejected instanceof BusinessException b?Integer.toString(b.code()):"VALIDATION_ERROR");throw rejected;}
         QueryRisk risk = risks.assess(plan);
         task.setSqlText(plan.sql());
         task.setSqlParametersJson(json.writeValueAsString(plan.parameters()));
@@ -152,8 +173,13 @@ public class QueryTaskProcessor {
             stage(task, QueryStatus.EXECUTING, 75, "正在查询已授权的营销数据");
             List<Map<String, Object>> rows;
             try {
+                review(task,requestId,"EXECUTING",plan,null);
                 rows = execution.execute(task.getTaskId(), plan, () -> states.active(task.getTaskId()));
+                review(task,requestId,"EXECUTED",plan,"rows="+rows.size());
+            } catch(QueryTerminatedException stopped){
+                review(task,requestId,stopped.timedOut()?"TIMED_OUT":"CANCELLED",plan,null);throw stopped;
             } catch (DataAccessException error) {
+                review(task,requestId,"SQL_ERROR",plan,SqlFailureClassifier.repairReason(error).orElse("DATABASE_ERROR"));
                 states.ensureActive(task.getTaskId());
                 var reason = SqlFailureClassifier.repairReason(error);
                 if (!"DEEPSEEK".equals(task.getInterpretationSource()) || reason.isEmpty()) {
@@ -174,7 +200,8 @@ public class QueryTaskProcessor {
                         "attempt=" + task.getRepairAttempts());
                 try {
                     states.ensureActive(task.getTaskId());
-                    QueryInterpretation repaired = modelGateway.repair(task.getMergedQueryText(), user, plan.sql(), reason.get());
+                    QueryInterpretation repaired = task.getThinkingEnabled()==null?modelGateway.repair(modelText(task), user, plan.sql(), reason.get())
+                            :modelGateway.repair(modelText(task),user,plan.sql(),reason.get(),task.getThinkingEnabled());
                     states.ensureActive(task.getTaskId());
                     if (!repaired.hasGeneratedSql() || repaired.clarification() != null) {
                         fallback(task, user, requestId, "模型修复未形成可执行计划，已停止模型调用。");
@@ -200,7 +227,7 @@ public class QueryTaskProcessor {
 
     private void fallback(QueryTaskEntity task, CurrentUser user, String requestId, String reason) {
         stage(task, QueryStatus.FALLING_BACK, 72, "正在匹配可完整回答问题的固定模板");
-        var template = fallbackPlanner.plan(task.getMergedQueryText(), user);
+        var template = task.getResolvedCustomerId()!=null?java.util.Optional.<FallbackPlanner.Template>empty():fallbackPlanner.plan(task.getMergedQueryText(), user);
         FallbackInfo info = new FallbackInfo(reason, template.map(FallbackPlanner.Template::id).orElse(null),
                 false, List.of("可简化为按年龄段或性别统计客户数量与当前平均资产，并明确开户时间范围。"));
         task.setFallbackJson(json.writeValueAsString(info));
@@ -269,4 +296,10 @@ public class QueryTaskProcessor {
         if (error instanceof DataAccessException) return "分析数据库查询失败，请调整条件或稍后重试";
         return "查询执行失败，请稍后重试";
     }
+    private void ask(QueryTaskEntity task,com.boc.nl2sql.nl2sql.domain.ClarificationQuestion question,String requestId){
+        if(task.getClarificationRound()>=maxClarifications){fail(task,"补充次数已达上限，仍需明确："+question.prompt(),requestId);return;}
+        task.setQuestionJson(json.writeValueAsString(question));stage(task,QueryStatus.ASKING,30,question.prompt());audit.record(requestId,task.getTaskId(),task.getUserId(),"QUERY_ASKING",question.type());
+    }
+    private String modelText(QueryTaskEntity task){return task.getMergedQueryText()+(task.getResolvedCustomerId()==null?"":"\n服务端已确认客户编号："+task.getResolvedCustomerId()+"。每个客户来源必须使用此 customer_id 限制，不可更换客户或扩大范围。");}
+    private void review(QueryTaskEntity task,String request,String phase,PlannedQuery plan,String result){if(sqlLog!=null)sqlLog.record(task.getTaskId(),request,task.getInterpretationSource(),phase,plan,result);}
 }

@@ -17,12 +17,13 @@ $cases = @(
     @{text='统计近30天各机构客户交易金额';source='RULE'}
 )
 foreach ($case in $cases) {
+    $headers['Idempotency-Key'] = [guid]::NewGuid().ToString()
     $task = (Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/v1/queries" -Headers $headers -ContentType 'application/json; charset=utf-8' `
         -Body (@{session_id=[guid]::NewGuid().ToString();query_text=$case.text;preferred_display='AUTO'} | ConvertTo-Json)).data
     $watch = [System.Diagnostics.Stopwatch]::StartNew()
     do {
         $state = (Invoke-RestMethod -Uri "$BaseUrl/api/v1/queries/$($task.task_id)/status" -Headers $headers).data
-        if ($state.status -in @('SUCCESS','FAILED','ASKING','CONFIRMING','CANCELLED')) {break}
+        if ($state.status -in @('SUCCESS','FAILED','ASKING','CONFIRMING','CANCELLED','TIMED_OUT','DEGRADED')) {break}
         Start-Sleep -Milliseconds 500
     } while ($watch.Elapsed.TotalSeconds -lt 150)
     if ($state.status -ne 'SUCCESS') {

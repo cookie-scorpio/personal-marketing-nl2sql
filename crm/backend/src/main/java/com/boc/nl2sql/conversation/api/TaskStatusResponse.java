@@ -19,6 +19,9 @@ public record TaskStatusResponse(
         Map<String, String> error,
         int repairAttempts,
         int executionTimeoutSeconds,
-        boolean cancellable
+        boolean cancellable,
+        long stateVersion,
+        boolean thinkingEnabled,
+        String displayQuery
 ) {
 }

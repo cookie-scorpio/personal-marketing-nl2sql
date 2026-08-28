@@ -14,6 +14,8 @@ public interface ModelAdapter {
     default QueryInterpretation repair(String queryText, CurrentUser user, String failedSql, String reason) {
         throw new com.boc.nl2sql.common.exception.BusinessException(503101, "当前模型不支持SQL修复");
     }
+    default QueryInterpretation interpret(String text,CurrentUser user,java.util.function.BooleanSupplier active,boolean thinking){return interpret(text,user,active);}
+    default QueryInterpretation repair(String text,CurrentUser user,String sql,String reason,boolean thinking){return repair(text,user,sql,reason);}
 
     default boolean available() {
         return true;

@@ -13,14 +13,16 @@ $login = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/v1/auth/login" -Conte
 $headers = @{ Authorization = 'Bearer ' + $login.data.access_token }
 
 function Send-Json([string]$Path, [hashtable]$Body) {
-    return (Invoke-RestMethod -Method Post -Uri ($BaseUrl + $Path) -Headers $headers `
+    $requestHeaders = $headers.Clone()
+    if ($Path -eq '/api/v1/queries') { $requestHeaders['Idempotency-Key'] = [guid]::NewGuid().ToString() }
+    return (Invoke-RestMethod -Method Post -Uri ($BaseUrl + $Path) -Headers $requestHeaders `
         -ContentType 'application/json' -Body ($Body | ConvertTo-Json -Depth 8)).data
 }
 
 function Wait-Query([string]$TaskId) {
     for ($attempt = 0; $attempt -lt 100; $attempt++) {
         $status = (Invoke-RestMethod -Uri "$BaseUrl/api/v1/queries/$TaskId/status" -Headers $headers).data
-        if ($status.status -in @('SUCCESS', 'FAILED', 'ASKING', 'CONFIRMING', 'CANCELLED')) { return $status }
+        if ($status.status -in @('SUCCESS', 'FAILED', 'ASKING', 'CONFIRMING', 'CANCELLED', 'TIMED_OUT', 'DEGRADED')) { return $status }
         Start-Sleep -Milliseconds 300
     }
     throw "任务等待超时：$TaskId"

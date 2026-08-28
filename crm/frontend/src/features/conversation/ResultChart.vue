@@ -64,6 +64,15 @@ function buildOption(): EChartsCoreOption {
     }
   }
   const time = chart.type === 'LINE' || chart.type === 'AREA'
+  if (time && chart.secondary_dimension_key) {
+    const category = chart.secondary_dimension_key
+    const dates = [...new Set(props.rows.map(row => label(row[dimension])))].sort((a, b) => a.localeCompare(b, 'zh-CN', { numeric: true }))
+    const groups = [...new Set(props.rows.map(row => label(row[category])))]
+    return { ...base, grid: { left: 15, right: 25, top: 65, bottom: 40, containLabel: true },
+      xAxis: { type: 'category', data: dates }, yAxis: { type: 'value', name: measure.unit || measure.label },
+      series: groups.map(group => ({ name: group, type: 'line', connectNulls: false,
+        data: dates.map(date => { const row = props.rows.find(item => label(item[dimension]) === date && label(item[category]) === group); return row ? number(row[measure.key]) : null }) })) }
+  }
   const rows = time ? [...props.rows].sort((a, b) => label(a[dimension]).localeCompare(label(b[dimension]), 'zh-CN', { numeric: true })) : props.rows
   const horizontal = !time && (rows.length > 8 || rows.some(row => label(row[dimension]).length > 10))
   const category = { type: 'category', data: rows.map(row => label(row[dimension])),

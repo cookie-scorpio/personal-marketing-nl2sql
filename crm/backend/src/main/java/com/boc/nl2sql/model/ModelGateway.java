@@ -31,6 +31,10 @@ public class ModelGateway {
     }
 
     public QueryInterpretation interpret(String queryText, CurrentUser user, java.util.function.BooleanSupplier active) {
+        return interpretInternal(queryText,user,active,null);
+    }
+    public QueryInterpretation interpret(String text,CurrentUser user,java.util.function.BooleanSupplier active,boolean thinking){return interpretInternal(text,user,active,thinking);}
+    private QueryInterpretation interpretInternal(String queryText,CurrentUser user,java.util.function.BooleanSupplier active,Boolean thinking){
         if (active != null && !active.getAsBoolean()) throw new com.boc.nl2sql.execution.QueryTerminatedException(false);
         var ruleSemantic = ruleParser.parse(queryText);
         var timeQuestion = new com.boc.nl2sql.nl2sql.application.TimeScopeClarifier().clarify(queryText, ruleSemantic);
@@ -49,7 +53,8 @@ public class ModelGateway {
             throw new BusinessException(503102,
                     "该问题超出规则快速查询范围，请配置 DeepSeek V4 Flash 后重试");
         }
-        return active == null ? adapter.interpret(queryText, user) : adapter.interpret(queryText, user, active);
+        return thinking!=null?adapter.interpret(queryText,user,active==null?()->true:active,thinking)
+                : active == null ? adapter.interpret(queryText, user) : adapter.interpret(queryText, user, active);
     }
 
     public String activeProvider() {
@@ -61,5 +66,9 @@ public class ModelGateway {
         return adapters.stream().filter(adapter -> adapter.provider().equalsIgnoreCase(configuredProvider))
                 .findFirst().orElseThrow(() -> new BusinessException(503101, "模型适配器不可用"))
                 .repair(text, user, failedSql, reason);
+    }
+    public QueryInterpretation repair(String text,CurrentUser user,String sql,String reason,boolean thinking){
+        return adapters.stream().filter(adapter->adapter.provider().equalsIgnoreCase(configuredProvider)).findFirst()
+                .orElseThrow(()->new BusinessException(503101,"模型适配器不可用")).repair(text,user,sql,reason,thinking);
     }
 }

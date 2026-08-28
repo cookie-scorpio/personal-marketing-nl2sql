@@ -11,11 +11,16 @@ import java.time.LocalDateTime;
 @Component
 public class TaskStateStore {
     private final QueryTaskMapper mapper;
+    @org.springframework.beans.factory.annotation.Autowired
+    private ConversationStore conversations;
     public TaskStateStore(QueryTaskMapper mapper) { this.mapper = mapper; }
+    @org.springframework.transaction.annotation.Transactional
     public void save(QueryTaskEntity task) {
         if (!trySave(task)) throw new TaskChangedException();
     }
+    @org.springframework.transaction.annotation.Transactional
     public boolean trySave(QueryTaskEntity task) {
+        if(conversations!=null)conversations.lockTask(task);
         long previous = task.getStateVersion();
         task.setStateVersion(previous + 1);
         task.setUpdatedAt(LocalDateTime.now());
@@ -24,6 +29,7 @@ public class TaskStateStore {
                 .eq(QueryTaskEntity::getStateVersion, previous)
                 .notIn(QueryTaskEntity::getStatusCode, "SUCCESS", "FAILED", "CANCELLED", "TIMED_OUT", "DEGRADED"));
         if (updated == 0) task.setStateVersion(previous);
+        if (updated == 1 && conversations != null) conversations.record(task);
         return updated == 1;
     }
     public boolean active(String taskId) {

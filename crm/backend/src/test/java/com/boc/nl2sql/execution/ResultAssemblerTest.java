@@ -10,6 +10,17 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class ResultAssemblerTest {
+    @Test void masksCustomerFieldsBeforeRowsAndAnalysisAreBuilt(){
+        var result=assemble("TABLE",List.of(Map.of("CUSTOMER_NAME","李验甲","mobile_masked","90000008877","asset_wan",10)));
+        assertThat(result.rows().get(0)).containsEntry("customer_name","李**").containsEntry("mobile_masked","900****8877");
+        assertThat(result.analysis().insights().toString()).doesNotContain("李验甲");
+    }
+    @Test void comparesGroupsOverTimeWithoutAggregatingMissingPoints(){
+        var result=assemble("AUTO",List.of(Map.of("month","2026-01","channel_code","APP","transaction_count",2),Map.of("month","2026-02","channel_code","BRANCH","transaction_count",4)));
+        assertThat(result.charts().get(0).type()).isEqualTo("LINE");
+        assertThat(result.charts().get(0).secondaryDimensionKey()).isEqualTo("channel_code");
+        assertThat(result.rows()).hasSize(2);
+    }
     private com.boc.nl2sql.execution.domain.QueryResult assemble(String type, List<Map<String, Object>> rows) {
         return new ResultAssembler().assemble(new PlannedQuery("SELECT age_band_code FROM dim_customer LIMIT 100",
                 Map.of(), type, "测试分析", false), rows, "DEEPSEEK", 0.95);

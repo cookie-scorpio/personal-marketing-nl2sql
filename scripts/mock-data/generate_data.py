@@ -89,7 +89,8 @@ def build_customers(settings: Settings, rng: random.Random) -> list[tuple]:
         level = rng.choices(["NORMAL", "GOLD", "PLATINUM"], weights=[68, 22, 10], k=1)[0]
         age = rng.randint(20, 72)
         age_band = "A18_25" if age <= 25 else "A26_35" if age <= 35 else "A36_45" if age <= 45 else "A46_60" if age <= 60 else "A60_PLUS"
-        synthetic_name = f"{rng.choice(SURNAMES)}*{rng.choice(GIVEN_MARKS)}"
+        full_name = f"{rng.choice(SURNAMES)}{rng.choice(['明', '华', '晓明', '文博', '思远', '小雨', '嘉宁', '安'])}"
+        synthetic_name = full_name[0] + '*' * max(1, len(full_name) - 1)
         # 900 开头不构造真实中国手机号，末四位只用于演示脱敏格式。
         mobile_masked = f"900****{index % 10_000:04d}"
         asset = money_by_level(rng, level)
@@ -98,7 +99,7 @@ def build_customers(settings: Settings, rng: random.Random) -> list[tuple]:
             f"C{index:08d}", synthetic_name, rng.choice(["M", "F", "U"]), age, age_band,
             mobile_masked, level, level == "PLATINUM", rng.choice(RISK_LEVELS),
             rng.choice(OCCUPATIONS), region_code, branch_id, manager_id, asset, change_rate,
-            today - timedelta(days=rng.randint(30, 5000)), "ACTIVE", today,
+            today - timedelta(days=rng.randint(30, 5000)), "ACTIVE", today, full_name,
         ))
     return rows
 
@@ -219,7 +220,7 @@ def main() -> None:
         transactions = build_transactions(settings, rng)
 
         cursor.executemany("INSERT INTO dim_customer_manager VALUES (%s,%s,%s,%s,%s) ON DUPLICATE KEY UPDATE manager_name=VALUES(manager_name),branch_id=VALUES(branch_id),region_code=VALUES(region_code)", managers)
-        insert_batches(cursor, """INSERT INTO dim_customer(customer_id,customer_name_masked,gender_code,age,age_band_code,mobile_masked,customer_level_code,vip_flag,risk_level_code,occupation_code,region_code,branch_id,manager_id,total_asset_amount,asset_change_3m_rate,open_date,status_code,snapshot_date) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""", customers, settings.batch_size)
+        insert_batches(cursor, """INSERT INTO dim_customer(customer_id,customer_name_masked,gender_code,age,age_band_code,mobile_masked,customer_level_code,vip_flag,risk_level_code,occupation_code,region_code,branch_id,manager_id,total_asset_amount,asset_change_3m_rate,open_date,status_code,snapshot_date,customer_name) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""", customers, settings.batch_size)
         insert_batches(cursor, """INSERT INTO dim_marketing_campaign(campaign_id,campaign_name,campaign_type_code,campaign_status_code,product_id,target_customer_segment_code,channel_code,owner_org_id,owner_manager_id,start_time,end_time,budget_amount,target_count) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""", campaigns, settings.batch_size)
         insert_batches(cursor, """INSERT INTO fct_product_holding(customer_id,product_id,product_name,product_category_code,holding_amount,market_value_amount,profit_amount,maturity_date,risk_level_code,snapshot_date) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""", holdings, settings.batch_size)
         insert_batches(cursor, """INSERT INTO fct_customer_marketing(campaign_id,customer_id,contact_time,contact_channel_code,response_flag,conversion_flag,conversion_amount) VALUES (%s,%s,%s,%s,%s,%s,%s)""", marketing, settings.batch_size)

@@ -1,8 +1,8 @@
 # CRM 后端
 
-本目录是个金营销 NL2SQL 平台的 Spring Boot v1.1 后端。登录、自然语言解析、SQL规划、查询执行和历史记录位于同一进程，各模块按业务包隔离，通过 Java 接口直接调用。
+本目录是个金营销 NL2SQL 平台的 Spring Boot v1.2 后端。登录、自然语言解析、SQL规划、查询执行和历史记录位于同一进程，各模块按业务包隔离，通过 Java 接口直接调用。
 
-v1.1增加运行中取消、默认60秒SQL超时、最多两次模型修复与模板降级、时间口径确认和多指标多图分析。完整字段与接口见[实施说明](../../docs/v1.1实施说明与接口数据字典.md)。超时可通过`QUERY_EXECUTION_TIMEOUT_SECONDS`配置；数据库迁移新增V4。
+v1.2增加持久化会话、客户身份澄清、默认开启的每任务思考开关、SSE、提交幂等、并发保护、复杂SQL AST校验和SQL核查日志；沿用取消、60秒SQL超时、最多两次修复及模板降级。完整字段与接口见[实施说明](../../docs/v1.2实施说明与接口数据字典.md)。超时可通过`QUERY_EXECUTION_TIMEOUT_SECONDS`配置；数据库迁移新增V5。
 
 `mvn test`默认不连接数据库。使用本地模拟库进行取消、超时和降级验证时执行`mvn "-Dv11.mysql=true" test`，需要可用的local配置；该组测试不调用真实模型，会保留模拟任务与审计记录。
 
@@ -15,8 +15,8 @@ v1.1增加运行中取消、默认60秒SQL超时、最多两次模型修复与�
 - 高频明确场景优先使用规则；自由问题通过DeepSeek V4 Flash生成结构化JSON查询计划。
 - 从MySQL业务术语表加载口径；模型低置信度、缺失条件或矛盾时主动反问。
 - 固定模板生成SQL，命名参数绑定，执行前校验只读、单语句、表白名单和结果上限。
-- MySQL异步查询、任务状态轮询、潜在高成本查询确认、图表描述、基础分析和历史记录。
-- Redis短期会话索引；Redis不可用时仅在本地开发环境降级为进程内缓存。
+- MySQL异步查询、SSE阶段与状态恢复、潜在高成本查询确认、图表描述、基础分析和历史记录。
+- MySQL保存会话、消息、上下文和事件；Redis加速幂等索引，不可用时仍由MySQL保证去重。
 - Flyway数据库迁移、操作审计和Actuator健康检查。
 
 ## 目录说明
@@ -58,7 +58,7 @@ POST /api/v1/queries
   → QueryExecutionGateway查询MySQL
   → ResultAssembler整理指标、图表、表格和基础分析
   → HistoryService与AuditService保存摘要
-  → 前端轮询任务状态并展示结果
+  → 前端订阅SSE，断线续传，必要时读取状态恢复
 ```
 
 任务处于 `ASKING` 时，前端调用 `/api/v1/conversations/{sessionId}/messages` 补充条件；处于 `CONFIRMING` 时，调用 `/api/v1/queries/{taskId}/confirmations` 确认或取消。
@@ -90,16 +90,16 @@ DEEPSEEK_MODEL=deepseek-v4-flash
 
 `deepseek`已实现真实HTTP调用；不会发送查询结果或客户明细，只发送问题、表结构、术语和模拟数据范围。Qwen仍是历史预留适配位置，不建议在本期启用。
 
-短JSON查询规划默认显式关闭DeepSeek思考模式，首次输出上限4096 token，空响应或截断时最多重试一次、上限8192 token。可在`application-local.yml`已有的`app.model.deepseek`下补充：
+对话默认开启思考模式，可在页面按任务关闭；首次输出上限16384 token，空响应或截断时最多重试一次、上限32768 token。可在`application-local.yml`已有的`app.model.deepseek`下补充：
 
 ```yaml
-thinking-enabled: false
-max-tokens: 4096
-retry-max-tokens: 8192
-read-timeout-seconds: 60
+thinking-enabled: true
+max-tokens: 16384
+retry-max-tokens: 32768
+read-timeout-seconds: 120
 ```
 
-以上配置与`base-url`、`api-key`、`model`同级，不要重复声明`app`节点。默认值已经生效，不必改动现有密钥。若显式启用思考，需要为思考与最终JSON一起预留足够的输出额度。
+已有local配置若仍指定旧的token和超时值，需要手工调整非敏感项。以上配置与`base-url`、`api-key`、`model`同级，不要重复声明`app`节点。默认值已经生效，不必改动现有密钥。若显式启用思考，需要为思考与最终JSON一起预留足够的输出额度。
 
 提示词原先位于`DeepSeekModelAdapter`常量中，现在由`Nl2SqlPrompts`加载`prompts/`中的UTF-8文本，再加入当前日期、数据库术语、当前账号数据范围和用户问题。修改提示词后需重新构建/重启；不支持页面在线编辑。
 
@@ -145,7 +145,10 @@ mvn spring-boot:run
 
 - `POST /api/v1/auth/login`：账号密码登录。
 - `GET /api/v1/auth/me`：读取当前用户和数据范围。
-- `POST /api/v1/queries`：提交自然语言问题。
+- `POST /api/v1/queries`：提交自然语言问题，必须提供稳定的`Idempotency-Key`，支持`thinking_enabled`。
+- `GET /api/v1/queries/{taskId}/events`：SSE，支持`Last-Event-ID`。
+- `GET /api/v1/conversations`及`/{sessionId}`：会话列表与消息恢复。
+- `POST /api/v1/queries/{taskId}/cancel`：取消当前任务。
 - `GET /api/v1/queries/{taskId}/status`：查询任务状态和结果。
 - `POST /api/v1/conversations/{sessionId}/messages`：补充或澄清条件。
 - `POST /api/v1/queries/{taskId}/confirmations`：确认高范围查询。
@@ -158,6 +161,6 @@ mvn spring-boot:run
 - BCG-E3和Milvus不进入本期运行环境，仅保留`EmbeddingClient`、`VectorStore`和外部配置。
 - Redis Cluster配置见`application-redis-cluster.example.yml`；当前Docker仍是单节点Redis。
 - 生产环境必须替换默认JWT密钥、演示账号和数据库密码，并由统一认证中心接管登录。
-- 不要把完整Prompt、客户明细、实际SQL参数或密码写入日志。
+- 不记录完整Prompt、客户明细、思考正文或密码。业务SQL及脱敏绑定参数写入`logs/sql-review.log`，由`SQL_REVIEW_LOG_DIR`修改目录；按20MB/每天滚动，保留14天，上限1GB。日志仅供授权人员核查虚构数据。
 
-详细字段、接口示例、当前限制和升级方式见 [v1.1实施说明](../../docs/v1.1实施说明与接口数据字典.md)。
+详细字段、接口示例、当前限制和升级方式见 [v1.2实施说明](../../docs/v1.2实施说明与接口数据字典.md)。

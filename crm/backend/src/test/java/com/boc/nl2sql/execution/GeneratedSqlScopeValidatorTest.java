@@ -23,4 +23,27 @@ class GeneratedSqlScopeValidatorTest {
                 "SELECT age_band_code FROM dim_customer c WHERE c.branch_id = 'B001' LIMIT 100", manager))
                 .isInstanceOf(BusinessException.class);
     }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={
+        "SELECT c.customer_id FROM dim_customer c WHERE c.manager_id='M0001' OR 1=1 LIMIT 10",
+        "SELECT c.customer_id FROM dim_customer c WHERE c.customer_id='M0001' LIMIT 10",
+        "SELECT c.customer_id FROM dim_customer c WHERE EXISTS(SELECT d.customer_id FROM dim_customer d WHERE d.manager_id='M0001') LIMIT 10",
+        "SELECT c.customer_id FROM dim_customer c WHERE c.manager_id='M0001' UNION ALL SELECT d.customer_id FROM dim_customer d LIMIT 10",
+        "WITH x AS(SELECT customer_id FROM dim_customer) SELECT x.customer_id FROM x LIMIT 10",
+        "SELECT c.customer_id FROM dim_customer c LEFT JOIN fct_transaction t ON c.manager_id='M0001' AND c.customer_id=t.customer_id LIMIT 10",
+        "SELECT (SELECT SUM(d.total_asset_amount) FROM dim_customer d) AS amount FROM dim_customer c WHERE c.manager_id='M0001' LIMIT 10"
+    })
+    void everyPhysicalSourceNeedsEffectiveScope(String sql){assertThatThrownBy(()->validator.validate(sql,manager)).isInstanceOf(BusinessException.class);}
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={
+        "WITH x AS(SELECT c.customer_id FROM dim_customer c WHERE c.manager_id='M0001') SELECT x.customer_id FROM x LIMIT 10",
+        "SELECT c.customer_id FROM dim_customer c WHERE c.manager_id='M0001' AND EXISTS(SELECT t.transaction_id FROM fct_transaction t WHERE t.customer_id=c.customer_id) LIMIT 10",
+        "SELECT c.customer_id,t.amount_cny FROM dim_customer c LEFT JOIN fct_transaction t ON c.customer_id=t.customer_id WHERE c.manager_id='M0001' LIMIT 10",
+        "SELECT c.customer_id FROM dim_customer c WHERE c.manager_id='M0001' UNION ALL SELECT d.customer_id FROM dim_customer d WHERE d.manager_id='M0001' LIMIT 10"
+    })
+    void supportsScopedCteCorrelatedSubqueryAndLeftJoin(String sql){assertThatCode(()->validator.validate(sql,manager)).doesNotThrowAnyException();}
+    @Test void enforcesResolvedCustomerEvenWhenSqlHasAccountScope(){
+        assertThatThrownBy(()->validator.validateCustomer("SELECT c.customer_id FROM dim_customer c WHERE c.manager_id='M0001' LIMIT 10",java.util.Map.of(),"C00000001")).isInstanceOf(BusinessException.class);
+        assertThatCode(()->validator.validateCustomer("SELECT c.customer_id FROM dim_customer c WHERE c.customer_id=:resolvedCustomerId LIMIT 10",java.util.Map.of("resolvedCustomerId","C00000001"),"C00000001")).doesNotThrowAnyException();
+    }
 }

@@ -1,4 +1,5 @@
 const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
+export const apiUrl = (path: string) => `${API_BASE}${path}`
 const TOKEN_KEY = 'nl2sql_access_token'
 
 interface ApiEnvelope<T> {
@@ -36,7 +37,7 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
   const headers = new Headers(init.headers)
   headers.set('Content-Type', 'application/json')
   headers.set('X-Request-ID', crypto.randomUUID())
-  if (init.method && init.method !== 'GET') headers.set('Idempotency-Key', crypto.randomUUID())
+  if (init.method && init.method !== 'GET' && !headers.has('Idempotency-Key')) headers.set('Idempotency-Key', crypto.randomUUID())
   if (token) headers.set('Authorization', `Bearer ${token}`)
 
   let response: Response

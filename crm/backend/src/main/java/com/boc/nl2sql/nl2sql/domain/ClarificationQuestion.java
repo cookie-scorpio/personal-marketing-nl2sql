@@ -8,6 +8,9 @@ public record ClarificationQuestion(
         String type,
         String prompt,
         List<String> options,
-        Map<String, String> recognizedSlots
+        Map<String, String> recognizedSlots,
+        List<com.boc.nl2sql.conversation.application.CustomerResolver.Candidate> candidates
 ) {
+    public ClarificationQuestion { candidates=candidates==null?List.of():List.copyOf(candidates); }
+    public ClarificationQuestion(String id,String type,String prompt,List<String> options,Map<String,String> slots){this(id,type,prompt,options,slots,List.of());}
 }

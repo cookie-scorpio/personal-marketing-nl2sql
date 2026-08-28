@@ -22,6 +22,13 @@ public class QueryTaskEntity {
     private String interpretationSource;
     private Double interpretationConfidence;
     private String preferredDisplay;
+    private Boolean thinkingEnabled;
+    private String idempotencyKey;
+    private String requestHash;
+    private String contextJson;
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private String resolvedCustomerId;
+    private String displayQuery;
     private Long stateVersion;
     private Integer repairAttempts;
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
@@ -44,6 +51,18 @@ public class QueryTaskEntity {
     private LocalDateTime updatedAt;
 
     public String getTaskId() { return taskId; }
+    public Boolean getThinkingEnabled() { return thinkingEnabled; }
+    public void setThinkingEnabled(Boolean value) { thinkingEnabled=value; }
+    public String getIdempotencyKey() { return idempotencyKey; }
+    public void setIdempotencyKey(String value) { idempotencyKey=value; }
+    public String getRequestHash() { return requestHash; }
+    public void setRequestHash(String value) { requestHash=value; }
+    public String getContextJson() { return contextJson; }
+    public void setContextJson(String value) { contextJson=value; }
+    public String getResolvedCustomerId() { return resolvedCustomerId; }
+    public void setResolvedCustomerId(String value) { resolvedCustomerId=value; }
+    public String getDisplayQuery() { return displayQuery; }
+    public void setDisplayQuery(String value) { displayQuery=value; }
     public Long getStateVersion() { return stateVersion; }
     public void setStateVersion(Long stateVersion) { this.stateVersion = stateVersion; }
     public Integer getRepairAttempts() { return repairAttempts; }

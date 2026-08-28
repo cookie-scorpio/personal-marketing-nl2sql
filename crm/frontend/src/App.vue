@@ -1,21 +1,25 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import {
-  ChatDotRound, Fold, Plus, SwitchButton,
+  Close, Fold, Plus, SwitchButton,
 } from '@element-plus/icons-vue'
 import { useAuth } from './app/auth'
 import LoginPage from './features/auth/LoginPage.vue'
 import ConversationWorkspace from './features/conversation/ConversationWorkspace.vue'
-import InsightPanel from './features/marketing/InsightPanel.vue'
+import ConversationSidebar from './features/conversation/ConversationSidebar.vue'
 
 const { user, restoring, authenticated, restore, logout } = useAuth()
 const sidebarOpen = ref(false)
-const activeNav = ref('智能问数')
-const conversationKey = ref(0)
+const narrowScreen = ref(window.matchMedia('(max-width: 820px)').matches)
+const sidebarMedia = window.matchMedia('(max-width: 820px)')
+const menuButton = ref<HTMLButtonElement>()
+const newSessionButton = ref<HTMLButtonElement>()
+function resizeSidebar(event: MediaQueryListEvent) { narrowScreen.value = event.matches; if (!event.matches) sidebarOpen.value = false }
+function openSidebar() { sidebarOpen.value = true; void nextTick(() => newSessionButton.value?.focus()) }
+function closeSidebar() { sidebarOpen.value = false; void nextTick(() => menuButton.value?.focus()) }
+const workspace = ref<InstanceType<typeof ConversationWorkspace>>()
+const sessionRevision = ref(0)
 const serviceHealthy = ref<boolean | null>(null)
-const primaryNav = [
-  { label: '智能问数', icon: ChatDotRound },
-]
 
 const roleLabel = computed(() => ({
   CUSTOMER_MANAGER: '客户经理', TEAM_LEAD: '团队负责人', ORG_MANAGER: '机构负责人',
@@ -28,18 +32,16 @@ const scopeLabel = computed(() => {
   return `区域 ${user.value.region_code}`
 })
 
-function navigate(label: string) {
-  activeNav.value = label
-  sidebarOpen.value = false
+function newQuery() {
+  if (workspace.value?.newConversation()) sidebarOpen.value = false
 }
 
-function newQuery() {
-  activeNav.value = '智能问数'
-  conversationKey.value += 1
-  sidebarOpen.value = false
+async function selectSession(id: string) {
+  if (await workspace.value?.openSession(id)) sidebarOpen.value = false
 }
 
 onMounted(async () => {
+  sidebarMedia.addEventListener('change', resizeSidebar)
   await restore()
   try {
     const response = await fetch('/actuator/health')
@@ -49,22 +51,19 @@ onMounted(async () => {
     serviceHealthy.value = false
   }
 })
+onUnmounted(() => sidebarMedia.removeEventListener('change', resizeSidebar))
 </script>
 
 <template>
   <div v-if="restoring" class="app-loading"><span class="brand-seal">中</span><p>正在恢复工作台…</p></div>
   <LoginPage v-else-if="!authenticated" />
   <div v-else class="app-shell">
-    <div v-if="sidebarOpen" class="mobile-mask" @click="sidebarOpen = false" />
-    <aside class="sidebar" :class="{ 'is-open': sidebarOpen }">
-      <div class="brand"><span class="brand-seal">中</span><div><strong>中银智析</strong><small>个金营销智能问数</small></div></div>
-      <button class="new-query-button" type="button" @click="newQuery"><Plus /> 发起新查询</button>
-      <nav class="nav-list" aria-label="主导航">
-        <button v-for="item in primaryNav" :key="item.label" type="button" class="nav-item"
-                :class="{ active: activeNav === item.label }" @click="navigate(item.label)">
-          <component :is="item.icon" /><span>{{ item.label }}</span>
-        </button>
-      </nav>
+    <div v-if="sidebarOpen" class="mobile-mask" @click="closeSidebar" />
+    <aside id="conversation-sidebar" class="sidebar" :class="{ 'is-open': sidebarOpen }" :inert="narrowScreen && !sidebarOpen" @keydown.esc="closeSidebar">
+      <div class="brand"><span class="brand-seal">中</span><div><strong>中银智析</strong><small>个金营销智能问数</small></div><button class="sidebar-close mobile-only" type="button" aria-label="关闭会话侧栏" @click="closeSidebar"><Close /></button></div>
+      <button ref="newSessionButton" class="new-query-button" type="button" :disabled="workspace?.navigationBusy" @click="newQuery"><Plus /> 新建会话</button>
+      <ConversationSidebar :key="user?.user_id" :active-session-id="workspace?.sessionId"
+                           :disabled="!!workspace?.navigationBusy" :refresh-version="sessionRevision" @select="selectSession" />
       <div class="sidebar-note">
         <span>当前数据范围</span><strong>{{ scopeLabel }}</strong>
         <p>查询范围由登录身份决定，前端无法修改。</p>
@@ -78,20 +77,19 @@ onMounted(async () => {
       </div>
     </aside>
 
-    <main class="main-area">
+    <main class="main-area" :inert="narrowScreen && sidebarOpen">
       <header class="topbar">
         <div class="topbar-title">
-          <button class="icon-button mobile-only" type="button" aria-label="打开菜单" @click="sidebarOpen = true"><Fold /></button>
-          <div><h1>{{ activeNav }}</h1><p>用业务语言发现客户机会 · 数据范围：{{ scopeLabel }}</p></div>
+          <button ref="menuButton" class="icon-button mobile-only" type="button" aria-label="打开会话侧栏" aria-controls="conversation-sidebar" :aria-expanded="sidebarOpen" @click="openSidebar"><Fold /></button>
+          <div><h1>智能问数</h1><p>用业务语言发现客户机会 · 数据范围：{{ scopeLabel }}</p></div>
         </div>
         <div class="topbar-actions">
           <span class="service-status" :class="{ unavailable: serviceHealthy === false }"><i />{{ serviceHealthy === null ? '正在连接服务' : serviceHealthy ? '服务状态正常' : '服务暂不可用' }}</span>
         </div>
       </header>
 
-      <div v-if="activeNav === '智能问数'" class="workspace-grid">
-        <ConversationWorkspace :key="conversationKey" />
-        <InsightPanel />
+      <div class="workspace-grid conversation-layout">
+        <ConversationWorkspace ref="workspace" :key="user?.user_id" @sessions-changed="sessionRevision++" />
       </div>
     </main>
   </div>

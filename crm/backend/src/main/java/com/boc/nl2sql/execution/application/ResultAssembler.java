@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Component
 public class ResultAssembler {
@@ -159,7 +160,9 @@ public class ResultAssembler {
     /** 覆盖全部有效指标，优先用分图区分计量单位；建议类型不符合数据形态时自动纠正。 */
     private List<ChartSpec> buildCharts(PlannedQuery planned, List<ColumnMeta> columns, List<Map<String, Object>> rows) {
         if (rows.size() < 2 || "TABLE".equalsIgnoreCase(planned.resultType())) return List.of();
-        List<ColumnMeta> dimensions = columns.stream().filter(column -> !"MEASURE".equals(column.role())).toList();
+        List<ColumnMeta> dimensions = columns.stream().filter(column -> !"MEASURE".equals(column.role()))
+                .filter(column -> !Set.of("customer_id","customer_name","snapshot_date").contains(column.key())
+                        || rows.stream().map(row->row.get(column.key())).distinct().count()>1).toList();
         List<ColumnMeta> numbers = measures(columns).stream()
                 .filter(column -> rows.stream().anyMatch(row -> numeric(row.get(column.key())))).toList();
         if (numbers.isEmpty()) return List.of();
@@ -173,8 +176,14 @@ public class ResultAssembler {
             var seen = new java.util.HashSet<List<Object>>();
             boolean unique = rows.stream().allMatch(row -> seen.add(java.util.Arrays.asList(
                     row.get(dimensions.get(0).key()), row.get(dimensions.get(1).key()))));
-            if (unique) for (var measure : numbers) charts.add(chart("HEATMAP", dimensions.get(0), measure,
-                    dimensions.get(1).key(), "以颜色比较两个维度交叉下的数值，空白表示无数据"));
+            if(unique){
+                var time=dimensions.stream().filter(d->"TIME".equals(d.role())).findFirst();
+                if(time.isPresent()){
+                    var category=dimensions.get(0)==time.get()?dimensions.get(1):dimensions.get(0);
+                    for(var measure:numbers)charts.add(chart("LINE",time.get(),measure,category.key(),"按时间比较不同分组的变化，缺失分组值保持为空"));
+                }else for (var measure : numbers) charts.add(chart("HEATMAP", dimensions.get(0), measure,
+                        dimensions.get(1).key(), "以颜色比较两个维度交叉下的数值，空白表示无数据"));
+            }
             return charts;
         }
         if (dimensions.size() != 1) return charts;
@@ -188,7 +197,8 @@ public class ResultAssembler {
                     time ? "按时间顺序展示变化；缺失值保留为空" : "按分组比较此指标，独立标注计量单位"));
             boolean share = !time && rows.size() <= 8 && "SUM".equals(measure.aggregation()) && nonnegative
                     && rows.stream().mapToDouble(row -> number(row.get(measure.key()))).sum() > 0
-                    && ("PIE".equals(requested) || dimension.key().contains("category") || dimension.key().contains("level"));
+                    && ("PIE".equals(requested) || dimension.key().contains("category") || dimension.key().contains("level")
+                    || "AUTO".equals(requested)&&(dimension.key().contains("gender")||dimension.key().contains("channel")));
             if (share) charts.add(chart("PIE", dimension, measure, null, "展示当前返回分组的构成比例，不代表全库总体"));
         }
         return charts;
@@ -226,7 +236,15 @@ public class ResultAssembler {
     private String compactNumber(double value) { return String.format(java.util.Locale.ROOT, Math.rint(value) == value ? "%.0f" : "%.2f", value); }
     private Map<String, Object> normalizeKeys(Map<String, Object> source) {
         Map<String, Object> result = new LinkedHashMap<>();
-        source.forEach((key, value) -> result.put(key.toLowerCase(java.util.Locale.ROOT), value));
+        source.forEach((key, value) -> {
+            String normalized = key.toLowerCase(java.util.Locale.ROOT);
+            Object masked = value;
+            if(value instanceof String text) {
+                if(Set.of("customer_name", "customer_name_masked").contains(normalized)) masked=com.boc.nl2sql.common.privacy.CustomerMasking.name(text);
+                if(Set.of("mobile", "mobile_masked", "phone").contains(normalized)) masked=com.boc.nl2sql.common.privacy.CustomerMasking.mobile(text);
+            }
+            result.put(normalized, masked);
+        });
         return result;
     }
     private String inferType(Object value) {

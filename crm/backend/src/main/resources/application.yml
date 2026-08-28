@@ -28,6 +28,8 @@ spring:
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
+    # 同一事务加锁后必须重新读取任务，不能复用加锁前的空结果或旧状态。
+    local-cache-scope: statement
   global-config:
     banner: false
 
@@ -43,20 +45,21 @@ app:
       base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
       api-key: ${DEEPSEEK_API_KEY:}
       model: ${DEEPSEEK_MODEL:deepseek-v4-flash}
-      # V4默认开启思考；短JSON规划显式关闭，防止思考耗尽输出额度而无最终content。
-      thinking-enabled: ${DEEPSEEK_THINKING_ENABLED:false}
-      max-tokens: ${DEEPSEEK_MAX_TOKENS:4096}
+      # 适配器缺省设置；对话API省略thinking_enabled时按true接收，可按任务覆盖。
+      thinking-enabled: ${DEEPSEEK_THINKING_ENABLED:true}
+      max-tokens: ${DEEPSEEK_MAX_TOKENS:16384}
       # 仅空回复或截断时重试一次，避免无界增加调用量。
-      retry-max-tokens: ${DEEPSEEK_RETRY_MAX_TOKENS:8192}
-      read-timeout-seconds: ${DEEPSEEK_READ_TIMEOUT_SECONDS:60}
+      retry-max-tokens: ${DEEPSEEK_RETRY_MAX_TOKENS:32768}
+      read-timeout-seconds: ${DEEPSEEK_READ_TIMEOUT_SECONDS:120}
     qwen:
       base-url: ${QWEN_BASE_URL:}
       api-key: ${QWEN_API_KEY:}
       model: ${QWEN_MODEL:Qwen3-32B}
   query:
+    sql-log-dir: ${SQL_REVIEW_LOG_DIR:logs}
     execution-timeout-seconds: ${QUERY_EXECUTION_TIMEOUT_SECONDS:60}
     max-result-rows: ${QUERY_MAX_RESULT_ROWS:100}
-    max-clarification-rounds: ${QUERY_MAX_CLARIFICATION_ROUNDS:2}
+    max-clarification-rounds: ${QUERY_MAX_CLARIFICATION_ROUNDS:5}
   rag:
     # V1.0只保留外置RAG配置，不创建Milvus连接，也不调用Embedding服务。
     enabled: ${RAG_ENABLED:false}

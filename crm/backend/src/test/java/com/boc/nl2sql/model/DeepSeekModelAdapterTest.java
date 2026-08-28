@@ -22,6 +22,17 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class DeepSeekModelAdapterTest {
+    @Test void taskThinkingOverrideAppliesToPlanningAndRepairWithoutChangingGlobalDefault() throws Exception {
+        try(var fixture=new Fixture(List.of(response("stop",PLAN,"推理正文不进入查询计划")))){
+            var adapter=fixture.adapter();
+            adapter.interpret("比较营销渠道",user(),()->true,true);
+            adapter.repair("比较营销渠道",user(),"SELECT customer_id FROM dim_customer LIMIT 10","SQL表达错误",true);
+            adapter.interpret("比较营销渠道",user(),()->true,false);
+            assertThat(fixture.requests.get(0)).containsEntry("thinking",Map.of("type","enabled"));
+            assertThat(fixture.requests.get(1)).containsEntry("thinking",Map.of("type","enabled"));
+            assertThat(fixture.requests.get(2)).containsEntry("thinking",Map.of("type","disabled"));
+        }
+    }
     @Test
     void cancellationPreventsInitialResponseRetry() throws Exception {
         try (var fixture = new Fixture(List.of(response("stop", "", "")))) {

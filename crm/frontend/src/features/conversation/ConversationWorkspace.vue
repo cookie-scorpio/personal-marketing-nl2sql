@@ -1,370 +1,249 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref } from 'vue'
-import {
-  ArrowRight, Check, Clock, CopyDocument, DataAnalysis, Delete, Document,
-  MagicStick, Promotion, Refresh, Search, TrendCharts, WarningFilled,
-} from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { ApiError, apiRequest } from '../../app/api'
-import type { HistoryItem, PageResult, SubmitQueryResponse, TaskStatus } from '../../app/types'
-import ResultChart from './ResultChart.vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { ChatDotRound, Promotion, Loading, VideoPause, Refresh } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { apiRequest, apiUrl, ApiError, getToken } from '../../app/api'
+import { useAuth } from '../../app/auth'
+import type { ConversationMessage, ConversationDetail, TaskStatus, SubmitQueryResponse } from '../../app/types'
+import QueryResultView from './QueryResultView.vue'
 
-type ViewState = 'welcome' | 'running' | 'asking' | 'confirming' | 'success' | 'failed' | 'cancelled' | 'timedout'
+const emit = defineEmits<{ 'sessions-changed': [] }>()
+const { user } = useAuth()
+const storageKey = computed(() => `nl2sql-session-${user.value?.user_id}`)
+const draft = ref(''), thinking = ref(true), sessionId = ref(crypto.randomUUID() as string)
+const messages = ref<ConversationMessage[]>([]), task = ref<TaskStatus | null>(null)
+const sending = ref(false), cancelling = ref(false), loading = ref(false)
+const hasMore = ref(false), connectionNote = ref('')
+const selected = ref(''), answer = ref(''), listHost = ref<HTMLElement>()
+const phases = ref<Record<string, string[]>>({})
+const failedSubmission = ref('')
+const composer = ref<HTMLTextAreaElement>()
+const navigationBusy = computed(() => loading.value || sending.value || cancelling.value || !!failedSubmission.value)
+type Pending = { key: string; text: string; session: string; thinking: boolean }
+let pending: Pending | null = null
+let controller: AbortController | null = null
+let generation = 0
+let cancelRequested = false
+let destroyed = false
+const stopped = new Set(['SUCCESS', 'FAILED', 'CANCELLED', 'TIMED_OUT', 'DEGRADED'])
+const waiting = new Set(['ASKING', 'CONFIRMING'])
+const active = computed(() => !!task.value?.cancellable)
+const running = computed(() => sending.value || (active.value && !waiting.has(task.value!.status)))
+const canSend = computed(() => !!draft.value.trim() && !navigationBusy.value && (!active.value || task.value?.status === 'ASKING'))
+const examples = ['帮我查找一下李先生的资产信息', '统计近30天各机构客户交易金额', '按月展示今年客户交易金额趋势', '比较本季度不同渠道的营销转化率']
+const phaseLabels: Record<string, string> = { RECEIVED: '请求已接收', INTENT_ANALYZING: '理解问题与确认查询对象', SQL_GENERATING: '生成查询计划', VALIDATING: '校验 SQL 与数据权限', EXECUTING: '执行 MySQL 查询', REPAIRING: '修复查询 SQL', FALLING_BACK: '匹配受控模板', PACKAGING: '整理图表与分析', SUCCESS: '查询完成', ASKING: '等待补充', CONFIRMING: '等待执行确认', FAILED: '查询未完成', CANCELLED: '查询已取消', TIMED_OUT: 'SQL 执行超时', DEGRADED: '降级处理结束' }
 
-const query = ref('')
-const sessionId = ref(crypto.randomUUID())
-const currentTask = ref<TaskStatus | null>(null)
-const viewState = ref<ViewState>('welcome')
-const submitting = ref(false)
-const cancelling = ref(false)
-const activeTask = computed(() => currentTask.value?.cancellable ?? ['running', 'asking', 'confirming'].includes(viewState.value))
-const chartLabels: Record<string, string> = { BAR: '柱状图', LINE: '折线图', AREA: '面积图', PIE: '构成图', SCATTER: '散点图', HEATMAP: '热力图' }
-function formatMetric(value: unknown) {
-  return typeof value === 'number' ? new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 }).format(value) : value ?? '—'
+function disconnect() { generation++; controller?.abort(); controller = null }
+async function scroll(force = false) { await nextTick(); const host = listHost.value; if (host && (force || host.scrollHeight - host.scrollTop - host.clientHeight < 240)) host.scrollTo({ top: host.scrollHeight, behavior: 'auto' }) }
+function assistant(status: TaskStatus) {
+  const key = `assistant-${status.task_id}-${status.clarification_round}`
+  let message = messages.value.find(m => m.role_code === 'ASSISTANT' && m.task_id === status.task_id && m.payload?.clarification_round === status.clarification_round)
+  if (!message) { message = { message_id: key, task_id: status.task_id, role_code: 'ASSISTANT', content: status.message }; messages.value.push(message); message = messages.value[messages.value.length - 1]! }
+  if (!message.payload || status.state_version >= message.payload.state_version) { message.payload = status; message.content = status.message }
 }
-const selectedAnswer = ref('')
-const customAnswer = ref('')
-const errorMessage = ref('')
-const showSql = ref(false)
-const resultTab = ref<'analysis' | 'table'>('analysis')
-const historyVisible = ref(false)
-const historyLoading = ref(false)
-const historyItems = ref<HistoryItem[]>([])
-let pollGeneration = 0
-
-const examples = [
-  { icon: TrendCharts, title: '客户筛选', text: '找出资产超过50万元的高净值客户名单' },
-  { icon: DataAnalysis, title: '交易分析', text: '统计近30天各机构客户交易金额' },
-  { icon: Document, title: '产品持有', text: '分析持有理财产品的客户和持有规模' },
-  { icon: WarningFilled, title: '营销转化', text: '分析本季度营销活动的触达和转化效果' },
-]
-
-const statusLabel = computed(() => {
-  const labels: Record<string, string> = {
-    RECEIVED: '请求已接收', INTENT_ANALYZING: '识别业务意图', SQL_GENERATING: '生成查询计划',
-    VALIDATING: '安全与权限校验', EXECUTING: '查询营销数据', PACKAGING: '整理查询结果',
-    REPAIRING: '修复查询 SQL', FALLING_BACK: '匹配固定查询模板',
+function update(status: TaskStatus) {
+  const previous = task.value
+  assistant(status)
+  const history = phases.value[status.task_id] ||= []
+  const label = phaseLabels[status.status] || status.message
+  if (history[history.length - 1] !== label) history.push(label)
+  if (!task.value || status.task_id === task.value.task_id && status.state_version >= task.value.state_version) {
+    const oldQuestion = task.value?.question?.question_id
+    task.value = status
+    if (oldQuestion !== status.question?.question_id) { answer.value = ''; selected.value = '' }
   }
-  return currentTask.value ? labels[currentTask.value.status] || currentTask.value.message : '等待查询'
-})
-
-const terminalStatuses = new Set(['ASKING', 'CONFIRMING', 'SUCCESS', 'FAILED', 'CANCELLED', 'TIMED_OUT', 'DEGRADED'])
-
-function useExample(text: string) {
-  query.value = text
+  if (previous?.task_id !== status.task_id || previous.status !== status.status && (stopped.has(status.status) || waiting.has(status.status))) emit('sessions-changed')
+  scroll()
 }
 
-async function submitQuery() {
-  if (!query.value.trim() || submitting.value || activeTask.value) return
-  submitting.value = true
-  errorMessage.value = ''
-  showSql.value = false
-  resultTab.value = 'analysis'
-  currentTask.value = null
-  viewState.value = 'running'
-  try {
-    const submitted = await apiRequest<SubmitQueryResponse>('/api/v1/queries', {
-      method: 'POST',
-      body: JSON.stringify({ session_id: sessionId.value, query_text: query.value.trim(), preferred_display: 'AUTO' }),
-    })
-    await beginPolling(submitted.task_id)
-  } catch (exception) {
-    failFrom(exception)
-  } finally {
-    submitting.value = false
-  }
-}
-
-/** 每次开始新轮询都会使旧 generation 失效，避免重置页面后旧请求覆盖新状态。 */
-async function beginPolling(taskId: string) {
-  const generation = ++pollGeneration
-  while (generation === pollGeneration) {
+/** fetch读取SSE以携带JWT；事件编号按任务保存，重连不会重复追加消息。 */
+async function subscribe(id: string) {
+  disconnect(); const epoch = generation
+  controller = new AbortController(); const signal = controller.signal
+  let after = Number(sessionStorage.getItem(`nl2sql-event-${user.value?.user_id}-${id}`) || 0)
+  let failures = 0
+  while (!signal.aborted && epoch === generation) {
     try {
-      const status = await apiRequest<TaskStatus>(`/api/v1/queries/${taskId}/status`)
-      if (generation !== pollGeneration) return
-      currentTask.value = status
-      if (terminalStatuses.has(status.status)) {
-        syncViewState(status)
-        return
+      const headers = new Headers({ Authorization: `Bearer ${getToken()}`, 'Last-Event-ID': String(after) })
+      const response = await fetch(apiUrl(`/api/v1/queries/${id}/events`), { headers, signal })
+      if (!response.ok || !response.body) throw new Error('事件连接不可用')
+      const reader = response.body.getReader(), decoder = new TextDecoder()
+      let buffer = ''
+      connectionNote.value = ''
+      while (!signal.aborted) {
+        const { value, done } = await reader.read()
+        if (done) break
+        buffer = (buffer + decoder.decode(value, { stream: true })).replace(/\r\n/g, '\n')
+        let end: number
+        while ((end = buffer.indexOf('\n\n')) >= 0) {
+          const event = buffer.slice(0, end); buffer = buffer.slice(end + 2)
+          const data = event.split('\n').filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n')
+          if (!data) continue
+          const status = JSON.parse(data) as TaskStatus
+          if (epoch !== generation || signal.aborted) return
+          update(status); failures = 0
+          const eventId = event.split('\n').find(line => line.startsWith('id:'))?.slice(3).trim()
+          if (eventId && Number(eventId) > after) { after = Number(eventId); sessionStorage.setItem(`nl2sql-event-${user.value?.user_id}-${id}`, String(after)) }
+        }
       }
-      await new Promise(resolve => window.setTimeout(resolve, status.status === 'EXECUTING' ? 1000 : 650))
-    } catch (exception) {
-      if (generation !== pollGeneration) return
-      failFrom(exception)
-      return
+      if (task.value && (stopped.has(task.value.status) || waiting.has(task.value.status))) return
+    } catch { if (signal.aborted || epoch !== generation) return }
+    failures++
+    connectionNote.value = failures < 3 ? '进度连接中断，正在恢复；后台任务不会因此取消。' : '实时连接暂不可用，正在通过状态接口恢复进度。'
+    try {
+      const status = await apiRequest<TaskStatus>(`/api/v1/queries/${id}/status`, { signal })
+      if (epoch !== generation) return
+      update(status)
+      if (stopped.has(status.status) || waiting.has(status.status)) { connectionNote.value = ''; return }
+    } catch (error) {
+      if (error instanceof ApiError && error.code === 401001) { connectionNote.value = '登录已失效，请重新登录后恢复会话。'; return }
     }
+    await new Promise(resolve => window.setTimeout(resolve, Math.min(5000, failures * 1000)))
   }
 }
 
-function syncViewState(status: TaskStatus) {
-  if (status.status === 'ASKING') {
-    selectedAnswer.value = ''
-    customAnswer.value = ''
-    viewState.value = 'asking'
-  } else if (status.status === 'CONFIRMING') {
-    viewState.value = 'confirming'
-  } else if (status.status === 'SUCCESS' || status.status === 'DEGRADED') {
-    viewState.value = 'success'
-  } else if (status.status === 'CANCELLED') {
-    viewState.value = 'cancelled'
-  } else if (status.status === 'TIMED_OUT') {
-    viewState.value = 'timedout'
-  } else {
-    errorMessage.value = status.error?.message || status.message || '查询未完成'
-    viewState.value = 'failed'
-  }
+function userMessage(text: string, id = '') { messages.value.push({ message_id: crypto.randomUUID(), task_id: id, role_code: 'USER', content: text }); scroll(true) }
+function inlineError(text: string, id = '') { messages.value.push({ message_id: crypto.randomUUID(), task_id: id, role_code: 'ASSISTANT', content: text }); scroll(true) }
+function errorText(error: unknown) { return error instanceof ApiError ? error.message : '请求未完成，请稍后重试。' }
+async function send() {
+  if (!canSend.value) return
+  if (task.value?.status === 'ASKING') { const text = draft.value.trim(); draft.value = ''; await clarify(text); return }
+  const text = draft.value.trim(); draft.value = ''; task.value = null; cancelRequested = false
+  pending = { key: crypto.randomUUID(), text, session: sessionId.value, thinking: thinking.value }
+  sessionStorage.setItem(`${storageKey.value}-pending`, JSON.stringify(pending))
+  localStorage.setItem(storageKey.value, sessionId.value)
+  userMessage(text)
+  await submitPending()
 }
-
-async function submitClarification() {
-  if (!currentTask.value?.question) return
-  const answer = customAnswer.value.trim() || selectedAnswer.value
-  if (!answer) return
-  viewState.value = 'running'
+async function submitPending() {
+  if (!pending || sending.value) return
+  sending.value = true; failedSubmission.value = ''
+  const operation = pending
+  let accepted = false
   try {
-    await apiRequest<SubmitQueryResponse>(`/api/v1/conversations/${sessionId.value}/messages`, {
-      method: 'POST',
-      body: JSON.stringify({
-        task_id: currentTask.value.task_id,
-        question_id: currentTask.value.question.question_id,
-        answer_text: customAnswer.value.trim() || undefined,
-        selected_options: customAnswer.value.trim() ? [] : [selectedAnswer.value],
-      }),
-    })
-    await beginPolling(currentTask.value.task_id)
-  } catch (exception) {
-    failFrom(exception)
-  }
+    const result = await apiRequest<SubmitQueryResponse>('/api/v1/queries', { method: 'POST', headers: { 'Idempotency-Key': operation.key }, body: JSON.stringify({ session_id: operation.session, query_text: operation.text, thinking_enabled: operation.thinking, preferred_display: 'AUTO' }) })
+    accepted = true
+    emit('sessions-changed')
+    if (destroyed || sessionId.value !== operation.session) return
+    update(await apiRequest<TaskStatus>(`/api/v1/queries/${result.task_id}/status`))
+    pending = null; sessionStorage.removeItem(`${storageKey.value}-pending`)
+    if (cancelRequested) await cancel()
+    else void subscribe(result.task_id)
+  } catch (error) {
+    // 只有提交接口明确拒绝时才释放幂等键；POST成功后读取状态失败仍须保留原键。
+    if (!accepted && error instanceof ApiError && error.code >= 400000 && error.code < 500000) {
+      pending = null; sessionStorage.removeItem(`${storageKey.value}-pending`)
+      draft.value = operation.text; cancelRequested = false
+      inlineError(`提交未被接受：${errorText(error)}。问题已放回输入框，请调整后重试。`)
+    } else failedSubmission.value = `提交结果尚未确认：${errorText(error)}。请重试本次提交，系统将使用同一幂等键避免重复执行。`
+  } finally { sending.value = false }
 }
-
-async function decide(decision: 'CONFIRM' | 'REJECT') {
-  if (!currentTask.value?.confirmation) return
-  try {
-    const status = await apiRequest<TaskStatus>(`/api/v1/queries/${currentTask.value.task_id}/confirmations`, {
-      method: 'POST',
-      body: JSON.stringify({ confirm_token: currentTask.value.confirmation.confirm_token, decision }),
-    })
-    currentTask.value = status
-    if (decision === 'CONFIRM') {
-      viewState.value = 'running'
-      await beginPolling(status.task_id)
-    } else {
-      syncViewState(status)
-    }
-  } catch (exception) {
-    failFrom(exception)
-  }
-}
-
-async function cancelQuery(): Promise<boolean> {
-  if (!currentTask.value || cancelling.value) return false
+async function cancel() {
+  if (cancelling.value || loading.value) return
+  if (!task.value) { cancelRequested = true; connectionNote.value = '已请求停止，取得任务编号后将立即取消。'; return }
   cancelling.value = true
+  try { const status = await apiRequest<TaskStatus>(`/api/v1/queries/${task.value.task_id}/cancel`, { method: 'POST' }); disconnect(); update(status); connectionNote.value = '' }
+  catch (error) { inlineError(`取消未成功：${errorText(error)} 后台任务可能仍在执行，请重试取消。`, task.value.task_id) }
+  finally { cancelling.value = false }
+}
+async function clarify(text = answer.value.trim() || selected.value) {
+  const current = task.value
+  if (!current?.question || !text || navigationBusy.value) return
+  sending.value = true; userMessage(text, current.task_id)
   try {
-    const status = await apiRequest<TaskStatus>(`/api/v1/queries/${currentTask.value.task_id}/cancel`, { method: 'POST' })
-    pollGeneration += 1
-    currentTask.value = status
-    syncViewState(status)
+    await apiRequest(`/api/v1/conversations/${sessionId.value}/messages`, { method: 'POST', body: JSON.stringify({ task_id: current.task_id, question_id: current.question.question_id, answer_text: text }) })
+    answer.value = ''; selected.value = ''
+    update(await apiRequest<TaskStatus>(`/api/v1/queries/${current.task_id}/status`)); void subscribe(current.task_id)
+  } catch (error) { inlineError(errorText(error), current.task_id); await refreshTask() }
+  finally { sending.value = false }
+}
+async function decide(decision: 'CONFIRM' | 'REJECT') {
+  const current = task.value
+  if (!current?.confirmation || navigationBusy.value) return
+  if (decision === 'REJECT') { await cancel(); return }
+  sending.value = true
+  try {
+    const status = await apiRequest<TaskStatus>(`/api/v1/queries/${current.task_id}/confirmations`, { method: 'POST', body: JSON.stringify({ confirm_token: current.confirmation.confirm_token, decision }) })
+    userMessage('确认并执行', current.task_id); update(status); void subscribe(current.task_id)
+  } catch (error) { inlineError(errorText(error), current.task_id); await refreshTask() }
+  finally { sending.value = false }
+}
+async function refreshTask() { if (!task.value) return; try { update(await apiRequest<TaskStatus>(`/api/v1/queries/${task.value.task_id}/status`)) } catch { /* 原错误保留在会话中 */ } }
+async function openSession(id: string, older = false) {
+  if (loading.value || sending.value || cancelling.value) return false
+  if (pending && id !== pending.session) { ElMessage.warning('请先确认本次提交结果，再切换会话'); return false }
+  loading.value = true
+  try {
+    const before = older ? Math.min(...messages.value.map(m => Number(m.message_id)).filter(Number.isFinite)) : 0
+    const result = await apiRequest<ConversationDetail>(`/api/v1/conversations/${id}?before_message_id=${before || 0}`)
+    if (destroyed) return false
+    if (!older) disconnect()
+    sessionId.value = id; localStorage.setItem(storageKey.value, id)
+    messages.value = older ? [...result.messages, ...messages.value] : result.messages
+    hasMore.value = result.has_more
+    if (!older) {
+      task.value = null; draft.value = ''; connectionNote.value = ''; failedSubmission.value = ''
+      const last = [...messages.value].reverse().find(m => m.payload)?.payload
+      if (last) task.value = last
+      if (result.active_task_id) { task.value = await apiRequest<TaskStatus>(`/api/v1/queries/${result.active_task_id}/status`); update(task.value); thinking.value = task.value.thinking_enabled; if (!waiting.has(task.value.status)) void subscribe(result.active_task_id) }
+      await scroll(true)
+    }
     return true
-  } catch (exception) {
-    ElMessage.error(exception instanceof ApiError ? exception.message : '取消请求未成功，请重试；后台任务可能仍在执行。')
+  } catch (error) {
+    if (error instanceof ApiError && error.code === 404001 && !messages.value.length) { localStorage.removeItem(storageKey.value); ElMessage.warning('该会话已不存在，请新建会话') }
+    else inlineError(`会话恢复失败：${errorText(error)}`)
     return false
-  } finally { cancelling.value = false }
-}
-
-async function reset() {
-  if (activeTask.value && !(await cancelQuery())) return
-  pollGeneration += 1
-  sessionId.value = crypto.randomUUID()
-  currentTask.value = null
-  query.value = ''
-  errorMessage.value = ''
-  showSql.value = false
-  viewState.value = 'welcome'
-}
-
-function failFrom(exception: unknown) {
-  errorMessage.value = exception instanceof ApiError ? exception.message : '请求失败，请稍后重试。'
-  viewState.value = 'failed'
-}
-
-async function copySql() {
-  const sql = currentTask.value?.result?.sql_preview
-  if (!sql) return
-  await navigator.clipboard.writeText(sql)
-  ElMessage.success('SQL 已复制')
-}
-
-async function loadHistory() {
-  historyVisible.value = true
-  historyLoading.value = true
-  try {
-    const page = await apiRequest<PageResult<HistoryItem>>('/api/v1/query-history?page_no=1&page_size=30')
-    historyItems.value = page.items
-  } catch (exception) {
-    ElMessage.error(exception instanceof ApiError ? exception.message : '历史记录加载失败')
-  } finally {
-    historyLoading.value = false
   }
+  finally { loading.value = false }
 }
-
-async function reuseHistory(item: HistoryItem) {
-  if (activeTask.value && !(await cancelQuery())) return
-  pollGeneration += 1
-  currentTask.value = null
-  query.value = item.query_text
-  historyVisible.value = false
-  viewState.value = 'welcome'
+function newConversation() {
+  if (loading.value || cancelling.value) return false
+  if (sending.value || pending) { ElMessage.warning('请先确认本次提交结果，再新建会话'); return false }
+  disconnect(); sessionId.value = crypto.randomUUID(); messages.value = []; task.value = null; draft.value = ''; thinking.value = true; phases.value = {}; hasMore.value = false; connectionNote.value = ''; failedSubmission.value = ''
+  localStorage.removeItem(storageKey.value)
+  void nextTick(() => composer.value?.focus())
+  return true
 }
-
-async function deleteHistory(item: HistoryItem) {
-  try {
-    await ElMessageBox.confirm('删除后该记录将不再出现在查询历史中，任务与审计记录仍会保留。', '删除查询历史', {
-      confirmButtonText: '删除记录', cancelButtonText: '保留', type: 'warning',
-    })
-    await apiRequest(`/api/v1/query-history/${item.history_id}`, { method: 'DELETE' })
-    historyItems.value = historyItems.value.filter(candidate => candidate.history_id !== item.history_id)
-    ElMessage.success('历史记录已删除')
-  } catch (exception) {
-    if (exception instanceof ApiError) ElMessage.error(exception.message)
-  }
-}
-
-onUnmounted(() => { pollGeneration += 1 })
+function enter(event: KeyboardEvent) { if (event.isComposing || event.shiftKey) return; event.preventDefault(); if (canSend.value) void send() }
+defineExpose({ newConversation, openSession, sessionId, navigationBusy })
+onMounted(async () => {
+  const saved = localStorage.getItem(storageKey.value)
+  if (saved) await openSession(saved)
+  const raw = sessionStorage.getItem(`${storageKey.value}-pending`)
+  if (raw) { try { pending = JSON.parse(raw) as Pending; sessionId.value = pending.session; failedSubmission.value = '上次提交结果尚未确认，请重试原提交；不会重复创建任务。' } catch { sessionStorage.removeItem(`${storageKey.value}-pending`) } }
+})
+onUnmounted(() => { destroyed = true; disconnect() })
 </script>
 
 <template>
-  <section class="conversation-card">
-    <header class="conversation-head">
-      <div>
-        <p class="section-kicker"><MagicStick /> 智能查询助手</p>
-        <h2>今天想了解哪些营销数据？</h2>
-        <p>描述业务问题，系统会补全条件、生成受控 SQL 并解释结果。</p>
-      </div>
-      <button class="history-button" type="button" @click="loadHistory"><Clock /> 查询历史</button>
-    </header>
-
-    <div v-if="viewState === 'welcome'" class="welcome-content">
-      <div class="example-grid">
-        <button v-for="item in examples" :key="item.title" type="button" class="example-card" @click="useExample(item.text)">
-          <span class="example-icon"><component :is="item.icon" /></span>
-          <span><strong>{{ item.title }}</strong><small>{{ item.text }}</small></span>
-          <ArrowRight />
-        </button>
-      </div>
-      <div class="context-notice"><Check /><span><strong>查询边界已启用</strong>只读 SQL、数据范围和敏感字段策略均由服务端强制执行。</span></div>
+  <section class="conversation-card agent-workspace">
+    <header class="conversation-head"><div><p class="section-kicker"><ChatDotRound /> 智能查询助手 · v1.2</p><h2>把问题说清，让数据回答</h2><p>支持连续追问；客户身份、数据权限和统计口径由服务端校验。</p></div></header>
+    <div ref="listHost" class="chat-messages" :aria-busy="loading">
+      <p v-if="loading" class="submission-progress" role="status"><Loading class="spinning" /> 正在加载会话…</p>
+      <button v-if="hasMore" class="load-older" :disabled="loading" @click="openSession(sessionId, true)">加载更早的消息</button>
+      <div v-if="!messages.length && !loading" class="chat-welcome"><h3>从一个具体的业务问题开始</h3><p>可以查客户、看趋势、比较渠道，也可以在结果后继续追问。</p><div class="question-examples"><button v-for="example in examples" :key="example" type="button" class="question-example" @click="draft = example; composer?.focus()"><span>{{ example }}</span></button></div><p class="chart-reason">当前仅使用虚构客户数据。完整姓名仅用于定位，查询结果统一脱敏。</p></div>
+      <article v-for="message in messages" :key="message.message_id" class="chat-message" :class="message.role_code === 'USER' ? 'user-message' : 'assistant-message'">
+        <div v-if="message.role_code === 'USER'" class="user-bubble">{{ message.content }}</div>
+        <template v-else><div class="assistant-avatar"><ChatDotRound /></div><div class="assistant-body">
+          <template v-if="message.payload">
+            <p class="query-echo">当前查询内容为：{{ message.payload.display_query || '正在确认查询对象和条件' }}</p>
+            <div class="stage-status" :class="{ 'is-error': ['FAILED', 'TIMED_OUT'].includes(message.payload.status) }" role="status"><Loading v-if="message.payload.cancellable && !waiting.has(message.payload.status)" class="spinning" /><span>{{ phaseLabels[message.payload.status] || message.payload.status }}</span><small v-if="message.payload.status === 'INTENT_ANALYZING'">{{ message.payload.thinking_enabled ? '思考模式已开启' : '思考模式已关闭' }}</small></div>
+            <details v-if="(phases[message.task_id]?.length || 0) > 1" class="stage-details"><summary>执行阶段</summary><ol><li v-for="(phase, i) in phases[message.task_id]" :key="i">{{ phase }}</li></ol></details>
+            <p v-if="!message.payload.result" class="assistant-text">{{ message.payload.error?.message || message.payload.message }}</p>
+            <template v-if="message.payload.question && task?.task_id === message.task_id && task.question?.question_id === message.payload.question.question_id && task.status === 'ASKING'">
+              <div v-if="task.question.candidates?.length" class="customer-options"><button v-for="candidate in task.question.candidates" :key="candidate.customer_id" :disabled="navigationBusy" @click="clarify(candidate.customer_id)"><strong>{{ candidate.name }} <small>{{ candidate.customer_id }}</small></strong><span>机构 {{ candidate.branch_id }} · {{ candidate.mobile }}</span></button></div>
+              <div class="answer-options"><button v-for="option in task.question.options" :key="option" :disabled="navigationBusy" :class="{ selected: selected === option }" @click="selected = option; answer = ''">{{ option }}</button></div>
+              <div class="chat-answer"><el-input v-model="answer" maxlength="200" placeholder="补充客户信息或查询条件" @keydown.enter="!$event.isComposing && clarify()" /><el-button type="primary" :loading="sending" :disabled="navigationBusy || (!answer.trim() && !selected)" @click="clarify()">补充后继续</el-button><el-button :loading="cancelling" @click="cancel">取消查询</el-button></div>
+            </template>
+            <div v-if="message.payload.confirmation && task?.task_id === message.task_id && task.status === 'CONFIRMING' && task.confirmation?.confirm_token === message.payload.confirmation.confirm_token" class="chat-confirm"><ul><li v-for="reason in task.confirmation.reasons" :key="reason">{{ reason }}</li></ul><el-button :disabled="navigationBusy" @click="decide('REJECT')">取消查询</el-button><el-button type="danger" :loading="sending" @click="decide('CONFIRM')">确认并执行</el-button></div>
+            <QueryResultView v-if="message.payload.result" :result="message.payload.result" />
+            <p v-if="['FAILED','TIMED_OUT','CANCELLED'].includes(message.payload.status)" class="chart-reason">{{ message.payload.status === 'CANCELLED' ? '查询已停止推进，不会继续修复或降级执行。' : '可以调整条件后重新提问。' }} 任务编号：{{ message.task_id }}</p>
+          </template><p v-else class="assistant-text inline-error" role="alert">{{ message.content }}</p>
+        </div></template>
+      </article>
+      <div v-if="sending && !active" class="submission-progress" role="status"><Loading class="spinning" /> {{ cancelRequested ? '正在确认任务编号，以便取消…' : '正在提交查询…' }}</div>
+      <div v-if="failedSubmission" class="inline-error" role="alert"><p>{{ failedSubmission }}</p><el-button :loading="sending" @click="submitPending"><Refresh /> 重试本次提交</el-button></div>
     </div>
-
-    <div v-else-if="viewState === 'running'" class="running-panel">
-      <div class="progress-orbit"><MagicStick /></div>
-      <p class="section-kicker">查询任务 {{ currentTask?.task_id?.slice(0, 8) || '创建中' }}</p>
-      <h3>{{ statusLabel }}</h3>
-      <p>{{ currentTask?.message || '正在建立安全查询上下文…' }}</p>
-      <el-progress :percentage="currentTask?.progress || 8" :show-text="false" :stroke-width="7" />
-      <div class="stage-row">
-        <span :class="{ done: (currentTask?.progress || 0) >= 20 }">理解问题</span>
-        <span :class="{ done: (currentTask?.progress || 0) >= 60 }">校验 SQL</span>
-        <span :class="{ done: (currentTask?.progress || 0) >= 75 }">查询数据</span>
-        <span :class="{ done: (currentTask?.progress || 0) >= 90 }">整理结果</span>
-      </div>
-      <div class="query-stop-actions">
-        <el-button :disabled="!currentTask" :loading="cancelling" @click="cancelQuery">取消查询</el-button>
-        <small>单次 SQL 最多执行 {{ currentTask?.execution_timeout_seconds ?? 60 }} 秒；取消后不再修复或降级。</small>
-      </div>
-    </div>
-
-    <div v-else-if="viewState === 'asking' && currentTask?.question" class="clarification-panel">
-      <div class="assistant-mark"><MagicStick /></div>
-      <div class="clarification-main">
-        <p class="section-kicker">需要补充 · 第 {{ currentTask.clarification_round + 1 }} 轮</p>
-        <h3>{{ currentTask.question.prompt }}</h3>
-        <div v-if="currentTask.question.options.length" class="answer-options">
-          <button v-for="option in currentTask.question.options" :key="option" type="button"
-                  :class="{ selected: selectedAnswer === option }" @click="selectedAnswer = option; customAnswer = ''">{{ option }}</button>
-        </div>
-        <el-input v-model="customAnswer" placeholder="也可以自行输入补充条件" maxlength="200" />
-        <el-button type="primary" :disabled="!selectedAnswer && !customAnswer.trim()" @click="submitClarification">补充后继续</el-button>
-        <el-button :loading="cancelling" @click="cancelQuery">取消查询</el-button>
-      </div>
-      <aside class="recognized-slots">
-        <strong>已识别信息</strong>
-        <span v-for="(value, key) in currentTask.question.recognized_slots" :key="key"><Check /> {{ key }}：{{ value }}</span>
-      </aside>
-    </div>
-
-    <div v-else-if="viewState === 'confirming' && currentTask?.confirmation" class="risk-panel">
-      <span class="risk-icon"><WarningFilled /></span>
-      <div><p class="section-kicker">执行前确认</p><h3>该查询涉及较大的数据范围</h3><p>{{ currentTask.confirmation.message }}</p></div>
-      <ul v-if="currentTask.confirmation.reasons?.length" class="risk-reasons"><li v-for="reason in currentTask.confirmation.reasons" :key="reason">{{ reason }}</li></ul>
-      <div class="risk-actions"><el-button @click="decide('REJECT')">取消查询</el-button><el-button type="danger" @click="decide('CONFIRM')">确认并执行</el-button></div>
-    </div>
-
-    <div v-else-if="viewState === 'success' && currentTask?.result" class="result-panel">
-      <div class="result-heading">
-        <div><p class="section-kicker"><Check /> {{ currentTask.result.fallback ? '降级处理结果' : '查询完成' }}</p><h3>{{ currentTask.result.title }}</h3><p>{{ currentTask.result.summary }}</p></div>
-        <span>数据截至 {{ currentTask.result.data_as_of }} · {{ currentTask.result.fallback ? '固定模板降级' : currentTask.result.interpretation_source === 'RULE' ? '规则快速识别' : 'DeepSeek智能识别' }}<template v-if="!currentTask.result.fallback"> {{ Math.round(currentTask.result.confidence * 100) }}%</template></span>
-      </div>
-      <div v-if="currentTask.result.fallback" class="fallback-notice" role="status">
-        <strong>{{ currentTask.result.fallback.data_available ? '已使用固定模板，结果仍保留原问题的条件与数据权限。' : '未获得可用数据，未更换统计口径。' }}</strong>
-        <p>{{ currentTask.result.fallback.reason }}</p>
-        <p v-for="suggestion in currentTask.result.fallback.suggestions" :key="suggestion">{{ suggestion }}</p>
-      </div>
-      <div v-if="currentTask.result.metrics.length" class="metric-grid">
-        <div v-for="metric in currentTask.result.metrics" :key="metric.key || metric.label"><span>{{ metric.label }}</span><strong>{{ formatMetric(metric.value) }} <small>{{ metric.unit }}</small></strong><span>{{ metric.note }}</span></div>
-      </div>
-      <div class="result-tabs" role="tablist" aria-label="结果展示方式">
-        <button type="button" role="tab" :aria-selected="resultTab === 'analysis'" :class="{ active: resultTab === 'analysis' }" @click="resultTab = 'analysis'">图表与分析<span v-if="currentTask.result.charts.length"> · {{ currentTask.result.charts.length }} 张图</span></button>
-        <button type="button" role="tab" :aria-selected="resultTab === 'table'" :class="{ active: resultTab === 'table' }" @click="resultTab = 'table'">数据明细</button>
-      </div>
-      <div v-if="resultTab === 'analysis'" class="analysis-layout" :class="{ 'no-chart': !currentTask.result.charts.length }">
-        <section v-for="(chart, index) in currentTask.result.charts" :key="`${chart.type}-${chart.dimension_key}-${index}`" class="chart-card">
-          <div class="content-card-head"><strong>{{ chart.title }}</strong><span>{{ chartLabels[chart.type] || chart.type }}</span></div>
-          <p v-if="chart.reason" class="chart-reason">{{ chart.reason }}</p>
-          <ResultChart :chart="chart" :rows="currentTask.result.rows" />
-        </section>
-        <section class="analysis-card">
-          <div class="content-card-head"><strong>数据分析</strong><span>确定性计算</span></div>
-          <p>{{ currentTask.result.analysis.overview }}</p>
-          <ul><li v-for="insight in currentTask.result.analysis.insights" :key="insight">{{ insight }}</li></ul>
-          <div v-for="suggestion in currentTask.result.analysis.suggestions" :key="suggestion" class="analysis-suggestion"><TrendCharts /><span>{{ suggestion }}</span></div>
-        </section>
-        <div v-if="!currentTask.result.charts.length" class="chart-empty">当前结果以单项指标或明细为主，暂不适合绘制图表。</div>
-      </div>
-      <div v-else class="table-wrap">
-        <el-table :data="currentTask.result.rows" stripe empty-text="当前条件下没有匹配数据">
-          <el-table-column v-for="column in currentTask.result.columns" :key="column.key" :prop="column.key" :label="column.label + (column.unit && !column.label.includes(column.unit) ? `（${column.unit}）` : '')" min-width="128" show-overflow-tooltip />
-        </el-table>
-      </div>
-      <div v-if="currentTask.result.sql_preview" class="result-toolbar"><strong>查询依据</strong><button type="button" @click="showSql = !showSql"><CopyDocument />{{ showSql ? '收起 SQL' : '查看 SQL' }}</button></div>
-      <div v-if="showSql" class="sql-panel"><div><span>已通过只读、权限和白名单校验</span><button type="button" @click="copySql">复制 SQL</button></div><pre>{{ currentTask.result.sql_preview }}</pre></div>
-      <div class="result-foot"><span><Check /> 返回内容已按当前身份过滤并脱敏</span><el-button @click="reset">开始新的查询</el-button></div>
-    </div>
-
-    <div v-else-if="viewState === 'failed'" class="error-panel">
-      <span><WarningFilled /></span><div><p class="section-kicker">查询未完成</p><h3>{{ errorMessage }}</h3><p>可以修改问题后重试；若持续失败，请记录页面上的任务编号。</p></div>
-      <el-button @click="viewState = 'welcome'">修改问题</el-button>
-    </div>
-
-    <div v-else-if="viewState === 'cancelled' || viewState === 'timedout'" class="stopped-panel" role="status">
-      <Clock /><div><h3>{{ viewState === 'cancelled' ? '查询已取消' : 'SQL 执行超时，查询已终止' }}</h3>
-      <p>不会继续调用模型修复或执行降级查询。可以调整条件后重新发起查询。</p>
-      <small v-if="currentTask">任务编号：{{ currentTask.task_id }}</small></div>
-      <el-button @click="viewState = 'welcome'">修改问题</el-button>
-    </div>
-
-    <div class="composer" :class="{ compact: viewState !== 'welcome' }">
-      <Search />
-      <textarea v-model="query" rows="2" maxlength="1000" placeholder="例如：统计近30天各机构高净值客户的交易金额" @keydown.enter.exact.prevent="submitQuery" />
-      <button type="button" class="send-button" :disabled="!query.trim() || submitting || activeTask" aria-label="发送查询" @click="submitQuery"><Promotion /></button>
-    </div>
-    <div class="composer-help"><span>Enter 发送 · 最多 1000 字</span><button v-if="viewState !== 'welcome'" type="button" :disabled="cancelling || (activeTask && !currentTask)" @click="reset"><Refresh /> {{ activeTask ? '取消并清空会话' : '清空会话' }}</button></div>
-
-    <el-drawer v-model="historyVisible" title="查询历史" size="420px">
-      <div v-loading="historyLoading" class="history-list">
-        <div v-if="!historyLoading && !historyItems.length" class="history-empty">完成一次查询后，历史记录会显示在这里。</div>
-        <article v-for="item in historyItems" :key="item.history_id">
-          <button class="history-copy" type="button" @click="reuseHistory(item)"><strong>{{ item.query_text }}</strong><span>{{ item.result_summary || item.status_code }}</span><small>{{ new Date(item.created_at).toLocaleString('zh-CN') }}</small></button>
-          <button class="history-delete" type="button" aria-label="删除历史" @click="deleteHistory(item)"><Delete /></button>
-        </article>
-      </div>
-    </el-drawer>
+    <div class="chat-composer-wrap"><p v-if="connectionNote" class="connection-note" role="status">{{ connectionNote }}</p><div class="chat-composer"><textarea ref="composer" v-model="draft" :disabled="loading" maxlength="1000" rows="2" :placeholder="task?.status === 'ASKING' ? '补充当前问题所需的信息…' : '输入业务问题，或承接上文继续追问…'" aria-label="业务问题" @keydown.enter="enter" /><button type="button" class="send-button" :class="{ 'stop-button': running || task?.status === 'CONFIRMING' }" :disabled="loading || cancelling || (running ? cancelRequested : task?.status === 'CONFIRMING' ? false : !canSend)" :aria-label="running || task?.status === 'CONFIRMING' ? '停止当前查询' : '发送查询'" @click="running || task?.status === 'CONFIRMING' ? cancel() : send()"><Loading v-if="cancelling" class="spinning" /><VideoPause v-else-if="running || task?.status === 'CONFIRMING'" /><Promotion v-else /></button></div><div class="chat-composer-foot"><label><el-switch v-model="thinking" :disabled="active || navigationBusy" aria-label="思考模式" /><span>思考模式</span><small>默认开启，复杂问题可能需要更长时间</small></label><span>Enter 发送 · Shift+Enter 换行</span></div></div>
   </section>
 </template>

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
-  title: 个金营销 NL2SQL v1.1 API
-  version: 1.1.0
+  title: 个金营销 NL2SQL v1.2 API
+  version: 1.2.0
   description: Vue工作台与Spring Boot模块化单体之间的接口契约。所有业务数据均为模拟数据。
 servers:
   - url: http://127.0.0.1:8080
@@ -52,6 +52,12 @@ paths:
   /api/v1/queries:
     post:
       summary: 提交自然语言查询任务
+      description: 同用户同键同内容复用任务；更换内容须用新键。每个会话同时只允许一个未结束任务。
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 8, maxLength: 128, pattern: '^[A-Za-z0-9._:-]{8,128}$' }
       requestBody:
         required: true
         content:
@@ -64,6 +70,60 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ApiResponse" }
+        "400": { description: 请求或幂等键格式错误 }
+        "409": { description: 409005同键不同内容，409006会话已有活动任务 }
+  /api/v1/queries/{taskId}/events:
+    get:
+      summary: SSE真实阶段、结果与错误，支持持久化续传
+      description: 事件名status，data为完整TaskStatus，id为event_id。无新事件且已等待或结束时发送无id的snapshot。心跳约10.5秒，连接最长55秒。断开不会取消SQL。
+      parameters:
+        - $ref: "#/components/parameters/TaskId"
+        - name: Last-Event-ID
+          in: header
+          schema: { type: integer, format: int64, minimum: 0, default: 0 }
+      responses:
+        "200":
+          description: 直接返回SSE，不使用ApiResponse封装
+          content:
+            text/event-stream:
+              schema: { type: string }
+        "404": { description: 任务不存在或不属于当前用户 }
+  /api/v1/conversations:
+    get:
+      summary: 本人持久化会话列表
+      parameters:
+        - { name: page_no, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 30 } }
+      responses:
+        "200":
+          description: data为会话数组，无total，按更新时间倒序
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: "#/components/schemas/ConversationSummary" } }
+  /api/v1/conversations/{sessionId}:
+    get:
+      summary: 本人会话、上下文及最近消息
+      parameters:
+        - { name: sessionId, in: path, required: true, schema: { type: string, maxLength: 36 } }
+        - { name: before_message_id, in: query, schema: { type: integer, format: int64, default: 0 }, description: 小于此编号的更早消息，非正数取最新一页 }
+        - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 100 } }
+      responses:
+        "200":
+          description: 本页消息按编号升序，has_more表示本页达到数量上限
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/ConversationDetail" }
+        "404": { description: 会话不存在或不属于当前用户 }
   /api/v1/queries/{taskId}/status:
     get:
       summary: 获取任务阶段、反问、确认信息或最终结果
@@ -183,15 +243,16 @@ components:
       type: object
       required: [session_id, query_text]
       properties:
-        session_id: { type: string, format: uuid }
+        session_id: { type: string, minLength: 1, maxLength: 36, description: 建议使用UUID }
         query_text: { type: string, minLength: 1, maxLength: 1000 }
+        thinking_enabled: { type: boolean, default: true, description: 本任务固定设置，澄清和SQL修复沿用；规则路径不调用模型 }
         preferred_display:
           type: string
           description: 兼容保留字段，当前由服务端依据结果自动决定展示方式。
           example: AUTO
     TaskStatus:
       type: object
-      required: [task_id, session_id, status, progress, message, clarification_round, repair_attempts, execution_timeout_seconds, cancellable]
+      required: [task_id, session_id, status, progress, message, clarification_round, repair_attempts, execution_timeout_seconds, cancellable, state_version, thinking_enabled]
       properties:
         task_id: { type: string, format: uuid }
         session_id: { type: string, format: uuid }
@@ -205,6 +266,9 @@ components:
         repair_attempts: { type: integer, minimum: 0, maximum: 2, description: 已消耗的SQL修复调用次数，不含首次规划的响应重试 }
         execution_timeout_seconds: { type: integer, minimum: 1, default: 60 }
         cancellable: { type: boolean }
+        state_version: { type: integer, format: int64, minimum: 0 }
+        thinking_enabled: { type: boolean }
+        display_query: { type: string, description: 脱敏的当前有效问题，可能包含已选客户编号 }
         question: { $ref: "#/components/schemas/ClarificationQuestion" }
         confirmation: { $ref: "#/components/schemas/Confirmation" }
         result: { $ref: "#/components/schemas/QueryResult" }
@@ -216,10 +280,57 @@ components:
       type: [object, "null"]
       properties:
         question_id: { type: string, format: uuid }
-        type: { type: string, enum: [MISSING_TOPIC, MISSING_TIME_RANGE, TIME_BASIS, CONFLICT, MODEL_CLARIFICATION] }
+        type: { type: string, enum: [MISSING_TOPIC, MISSING_TIME_RANGE, TIME_BASIS, CONFLICT, MODEL_CLARIFICATION, CUSTOMER_IDENTITY, CUSTOMER_SELECTION, CUSTOMER_NOT_FOUND, FOLLOWUP_CONTEXT] }
         prompt: { type: string }
         options: { type: array, items: { type: string } }
         recognized_slots: { type: object, additionalProperties: { type: string } }
+        candidates: { type: array, maxItems: 10, items: { $ref: "#/components/schemas/CustomerCandidate" } }
+    CustomerCandidate:
+      type: object
+      required: [customer_id, name, branch_id, mobile]
+      properties:
+        customer_id: { type: string }
+        name: { type: string, description: 脱敏姓名 }
+        branch_id: { type: string }
+        mobile: { type: string, description: 虚构脱敏手机号 }
+    ConversationSummary:
+      type: object
+      required: [session_id, title, state_version]
+      properties:
+        session_id: { type: string, maxLength: 36 }
+        title: { type: string, maxLength: 160 }
+        active_task_id: { type: [string, "null"] }
+        state_version: { type: integer, format: int64 }
+        created_at: { type: string }
+        updated_at: { type: string }
+    ConversationContext:
+      type: [object, "null"]
+      properties:
+        query: { type: string }
+        customer_id: { type: [string, "null"] }
+        source_task_id: { type: [string, "null"] }
+    ConversationMessage:
+      type: object
+      required: [message_id, task_id, role_code, content]
+      properties:
+        message_id: { type: integer, format: int64 }
+        task_id: { type: string }
+        role_code: { type: string, enum: [USER, ASSISTANT] }
+        content: { type: string }
+        payload:
+          anyOf:
+            - $ref: "#/components/schemas/TaskStatus"
+            - { type: "null" }
+        created_at: { type: string }
+    ConversationDetail:
+      allOf:
+        - $ref: "#/components/schemas/ConversationSummary"
+        - type: object
+          required: [messages, has_more]
+          properties:
+            context: { $ref: "#/components/schemas/ConversationContext" }
+            messages: { type: array, items: { $ref: "#/components/schemas/ConversationMessage" } }
+            has_more: { type: boolean }
     Confirmation:
       type: [object, "null"]
       properties:
@@ -284,7 +395,7 @@ components:
         title: { type: string }
         dimension_key: { type: string }
         dimension_label: { type: string }
-        secondary_dimension_key: { type: [string, "null"] }
+        secondary_dimension_key: { type: [string, "null"], description: 热力图第二维度或时间折线的分类系列键 }
         reason: { type: string }
         series:
           type: array

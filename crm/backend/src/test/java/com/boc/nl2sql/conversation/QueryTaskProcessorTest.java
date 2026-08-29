@@ -52,6 +52,8 @@ class QueryTaskProcessorTest {
         when(states.active("task")).thenReturn(true); when(states.trySave(task)).thenReturn(true);
         when(model.interpret(anyString(), eq(user), any())).thenReturn(plan(sql));
         when(model.repair(anyString(), eq(user), anyString(), anyString())).thenReturn(plan(sql));
+        when(model.reviewResult(anyString(),eq(user),anyString(),anyMap(),anyBoolean()))
+                .thenReturn(new SqlResultReview(true,"结构一致"));
     }
     private QueryInterpretation plan(String candidate) {
         return new QueryInterpretation(new RuleBasedSemanticParser().parse(task.getQueryText()),
@@ -128,7 +130,40 @@ class QueryTaskProcessorTest {
         when(model.repair(anyString(), eq(user), anyString(), anyString())).thenReturn(plan(sql.replace("M0001", "M9999")));
         processor.processAsync("task", user, "request");
         assertThat(task.getStatusCode()).isEqualTo("DEGRADED");
+        verify(model,times(2)).repair(anyString(),eq(user),anyString(),anyString());
         verify(execution, never()).execute(anyString(), argThat(query -> query.sql().contains("M9999")), any());
+    }
+
+    @Test
+    void validationFailureIsRepairedAndEveryCandidateIsRevalidated() {
+        String invalid="SELECT c.unknown_column FROM dim_customer c WHERE c.manager_id='M0001' LIMIT 100";
+        when(model.interpret(anyString(),eq(user),any())).thenReturn(plan(invalid));
+        when(execution.execute(eq("task"),any(),any())).thenReturn(List.of());
+
+        processor.processAsync("task",user,"request");
+
+        assertThat(task.getStatusCode()).isEqualTo("SUCCESS");
+        assertThat(task.getRepairAttempts()).isEqualTo(1);
+        verify(model).repair(anyString(),eq(user),eq(invalid),contains("字段不存在"));
+        verify(execution,times(1)).execute(eq("task"),argThat(query->query.sql().equals(sql)),any());
+    }
+
+    @Test
+    void obviousResultShapeMismatchUsesSameRepairBudgetWithoutSendingRowValues() {
+        var firstRows=List.<Map<String,Object>>of(Map.of("customer_id","C00000001"));
+        var repairedRows=List.<Map<String,Object>>of(Map.of("age_band_code","20-29","customer_count",3));
+        when(execution.execute(eq("task"),any(),any())).thenReturn(firstRows,repairedRows);
+        when(model.reviewResult(anyString(),eq(user),anyString(),anyMap(),anyBoolean()))
+                .thenReturn(new SqlResultReview(false,"用户要求分组统计，但返回了客户明细"),new SqlResultReview(true,"结构一致"));
+
+        processor.processAsync("task",user,"request");
+
+        assertThat(task.getStatusCode()).isEqualTo("SUCCESS");
+        assertThat(task.getRepairAttempts()).isEqualTo(1);
+        verify(model).repair(anyString(),eq(user),anyString(),contains("返回了客户明细"));
+        verify(model,times(2)).reviewResult(anyString(),eq(user),anyString(),argThat(summary->
+                !summary.toString().contains("C00000001")&&!summary.toString().contains("20-29")),anyBoolean());
+        verify(execution,times(2)).execute(eq("task"),any(),any());
     }
 
     @Test

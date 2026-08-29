@@ -39,7 +39,9 @@ const active = computed(() => !!task.value?.cancellable)
 const running = computed(() => sending.value || (active.value && !waiting.has(task.value!.status)))
 const canSend = computed(() => !!draft.value.trim() && !navigationBusy.value && (!active.value || task.value?.status === 'ASKING'))
 const examples = ['帮我查找一下李先生的资产信息', '统计近30天各机构客户交易金额', '按月展示今年客户交易金额趋势', '比较本季度不同渠道的营销转化率']
-const phaseLabels: Record<string, string> = { RECEIVED: '请求已接收', INTENT_ANALYZING: '理解问题与确认查询对象', SQL_GENERATING: '生成查询计划', VALIDATING: '校验 SQL 与数据权限', EXECUTING: '执行 MySQL 查询', REPAIRING: '修复查询 SQL', FALLING_BACK: '匹配受控模板', PACKAGING: '整理图表与分析', SUCCESS: '查询完成', ASKING: '等待补充', CONFIRMING: '等待执行确认', FAILED: '查询未完成', CANCELLED: '查询已取消', TIMED_OUT: 'SQL 执行超时', DEGRADED: '降级处理结束' }
+const phaseLabels: Record<string, string> = { RECEIVED: '请求已接收', INTENT_ANALYZING: '理解问题与确认查询对象', SQL_GENERATING: '生成查询计划', VALIDATING: '校验 SQL 与数据权限', EXECUTING: '执行 MySQL 查询', RESULT_REVIEWING: '复核结果结构', REPAIRING: '修复查询 SQL', FALLING_BACK: '匹配受控模板', PACKAGING: '整理图表与分析', SUCCESS: '查询完成', ASKING: '等待补充', CONFIRMING: '等待执行确认', FAILED: '查询未完成', CANCELLED: '查询已取消', TIMED_OUT: 'SQL 执行超时', DEGRADED: '降级处理结束' }
+const repairTriggerLabels: Record<string,string> = { VALIDATION: 'SQL校验', EXECUTION: 'MySQL执行', RESULT_REVIEW: '结果结构复核' }
+const repairStatusLabels: Record<string,string> = { STARTED: '修复中', GENERATED: '候选已生成', APPLIED: '已通过校验', REJECTED: '候选被拒绝', MODEL_FAILED: '模型未形成候选' }
 
 function disconnect() { generation++; controller?.abort(); controller = null }
 async function scroll(force = false) { await nextTick(); const host = listHost.value; if (host && (force || host.scrollHeight - host.scrollTop - host.clientHeight < 240)) host.scrollTo({ top: host.scrollHeight, behavior: 'auto' }) }
@@ -237,7 +239,7 @@ onUnmounted(() => { destroyed = true; disconnect() })
 
 <template>
   <section class="conversation-card agent-workspace">
-    <header class="conversation-head"><div><p class="section-kicker"><ChatDotRound /> 智能查询助手 · v1.3</p><h2>把问题说清，让数据回答</h2><p>支持连续追问；客户身份、数据权限和统计口径由服务端校验。</p></div></header>
+    <header class="conversation-head"><div><p class="section-kicker"><ChatDotRound /> 智能查询助手 · v1.4</p><h2>把问题说清，让数据回答</h2><p>支持连续追问；客户身份、数据权限和统计口径由服务端校验。</p></div></header>
     <div class="chat-reading-area">
     <MessageNavigator :messages="messages" :session-id="sessionId" :host="listHost" :has-more="hasMore" :load-older="() => openSession(sessionId, true)" />
     <div ref="listHost" class="chat-messages" :aria-busy="loading">
@@ -251,6 +253,14 @@ onUnmounted(() => { destroyed = true; disconnect() })
             <p class="query-echo">当前查询内容为：{{ message.payload.display_query || '正在确认查询对象和条件' }}</p>
             <div class="stage-status" :class="{ 'is-error': ['FAILED', 'TIMED_OUT'].includes(message.payload.status) }" role="status"><Loading v-if="message.payload.cancellable && !waiting.has(message.payload.status)" class="spinning" /><span>{{ phaseLabels[message.payload.status] || message.payload.status }}</span><small v-if="message.payload.status === 'INTENT_ANALYZING'">{{ message.payload.thinking_enabled ? '思考模式已开启' : '思考模式已关闭' }}</small></div>
             <details v-if="(phases[message.task_id]?.length || 0) > 1" class="stage-details"><summary>执行阶段</summary><ol><li v-for="(phase, i) in phases[message.task_id]" :key="i">{{ phase }}</li></ol></details>
+            <details v-if="message.payload.repairs?.length" class="repair-details">
+              <summary>已自动修复 SQL（{{ message.payload.repairs.length }} 次）</summary>
+              <ol><li v-for="repair in message.payload.repairs" :key="repair.repair_id">
+                <div><strong>第 {{ repair.attempt_no }} 次 · {{ repairTriggerLabels[repair.trigger_phase] || repair.trigger_phase }}</strong><span>{{ repairStatusLabels[repair.status] || repair.status }}</span></div>
+                <p>{{ repair.repair_reason }}：{{ repair.failure_reason }}</p>
+                <details><summary>查看修复前后 SQL</summary><label>修复前</label><pre>{{ repair.original_sql }}</pre><template v-if="repair.repaired_sql"><label>修复后</label><pre>{{ repair.repaired_sql }}</pre></template></details>
+              </li></ol>
+            </details>
             <p v-if="!message.payload.result" class="assistant-text">{{ message.payload.error?.message || message.payload.message }}</p>
             <template v-if="message.payload.question && task?.task_id === message.task_id && task.question?.question_id === message.payload.question.question_id && task.status === 'ASKING'">
               <div v-if="task.question.candidates?.length" class="customer-options"><button v-for="candidate in task.question.candidates" :key="candidate.customer_id" :disabled="navigationBusy" @click="clarify(candidate.customer_id)"><strong>{{ candidate.name }} <small>{{ candidate.customer_id }}</small></strong><span>机构 {{ candidate.branch_id }} · {{ candidate.mobile }}</span></button></div>

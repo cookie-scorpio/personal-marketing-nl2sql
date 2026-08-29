@@ -4,6 +4,7 @@ import com.boc.nl2sql.execution.domain.QueryResult;
 import com.boc.nl2sql.nl2sql.domain.ClarificationQuestion;
 
 import java.util.Map;
+import java.util.List;
 
 public record TaskStatusResponse(
         String taskId,
@@ -18,6 +19,7 @@ public record TaskStatusResponse(
         QueryResult result,
         Map<String, String> error,
         int repairAttempts,
+        List<SqlRepairResponse> repairs,
         int executionTimeoutSeconds,
         boolean cancellable,
         long stateVersion,

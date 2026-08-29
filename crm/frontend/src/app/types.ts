@@ -77,6 +77,7 @@ export interface TaskStatus {
   intent?: string
   clarification_round: number
   repair_attempts?: number
+  repairs?: SqlRepairTrace[]
   execution_timeout_seconds?: number
   cancellable?: boolean
   question?: ClarificationQuestion
@@ -95,6 +96,19 @@ export interface TaskStatus {
   legacy_notice?: string
   created_at?: string
   updated_at?: string
+}
+
+export interface SqlRepairTrace {
+  repair_id: number
+  attempt_no: number
+  trigger_phase: 'VALIDATION' | 'EXECUTION' | 'RESULT_REVIEW' | string
+  status: 'STARTED' | 'GENERATED' | 'APPLIED' | 'REJECTED' | 'MODEL_FAILED' | string
+  original_sql: string
+  failure_reason: string
+  repair_reason: string
+  repaired_sql?: string
+  created_at: string
+  updated_at: string
 }
 
 export interface ConversationMessage {

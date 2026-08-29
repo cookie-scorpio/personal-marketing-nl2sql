@@ -7,8 +7,10 @@ import com.boc.nl2sql.conversation.api.*;
 import com.boc.nl2sql.conversation.application.QueryApplicationService;
 import com.boc.nl2sql.model.ModelGateway;
 import com.boc.nl2sql.model.QueryInterpretation;
+import com.boc.nl2sql.model.SqlResultReview;
 import com.boc.nl2sql.nl2sql.application.RuleBasedSemanticParser;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -35,6 +37,7 @@ class QueryLifecycleMysqlTest {
     private final CurrentUser director = new CurrentUser(3L, "director01", "负责人", RoleCode.ORG_MANAGER, "EAST", null, null);
     private final String normalSql = "SELECT c.age_band_code, COUNT(*) AS customer_count, AVG(c.total_asset_amount) AS avg_asset_amount FROM dim_customer c WHERE c.region_code = 'EAST' GROUP BY c.age_band_code LIMIT 100";
     private final String slowSql = "SELECT SUM(c.total_asset_amount + d.total_asset_amount + e.total_asset_amount) AS v11_cancel_probe FROM dim_customer c JOIN dim_customer d ON d.region_code=c.region_code JOIN dim_customer e ON e.region_code=c.region_code WHERE c.region_code = 'EAST' LIMIT 100";
+    @BeforeEach void reviewAligned(){when(model.reviewResult(anyString(),eq(director),anyString(),anyMap(),anyBoolean())).thenReturn(new SqlResultReview(true,"结构一致"));}
     private QueryInterpretation plan(String sql) {
         return new QueryInterpretation(new RuleBasedSemanticParser().parse("分析各年龄段客户数量和平均资产"),
                 "DEEPSEEK", 0.95, sql, "v1.1数据库验收", "AUTO", null);
@@ -102,6 +105,11 @@ class QueryLifecycleMysqlTest {
         assertThat(status.repairAttempts()).isEqualTo(2);
         assertThat(status.result().fallback().dataAvailable()).isTrue();
         assertThat(status.result().charts()).hasSize(2);
+        assertThat(status.repairs()).hasSize(2).allSatisfy(repair->{
+            assertThat(repair.triggerPhase()).isEqualTo("EXECUTION");
+            assertThat(repair.repairReason()).contains("MySQL表达错误");
+            assertThat(repair.originalSql()).isNotBlank();
+        });
         assertThat(conversations.detail(status.sessionId(),director,0,100).get("context")).isNotNull();
         verify(model, times(2)).repair(anyString(), eq(director), anyString(), anyString(), anyBoolean());
     }
@@ -223,15 +231,20 @@ class QueryLifecycleMysqlTest {
         verify(model,times(1)).interpret(anyString(),eq(director),any(),anyBoolean());
     }
 
-    @Test void rejectedSqlIsLoggedWithTimestampButNeverExecuted()throws Exception{
+    @Test void rejectedSqlIsLoggedButOnlySafeFallbackIsExecuted()throws Exception{
         String sql="SELECT c.customer_name FROM dim_customer c WHERE c.region_code='EAST' LIMIT 10";
         when(model.interpret(anyString(),eq(director),any(),anyBoolean())).thenReturn(plan(sql));
-        String id=submit();awaitState(id,"FAILED");
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM query_task_event WHERE task_id=? AND JSON_UNQUOTE(JSON_EXTRACT(payload_json,'$.status'))='EXECUTING'",Integer.class,id)).isZero();
+        String id=submit();var state=awaitState(id,"DEGRADED");
+        assertThat(state.repairAttempts()).isEqualTo(1);
+        assertThat(state.repairs()).singleElement().satisfies(repair->assertThat(repair.status()).isEqualTo("MODEL_FAILED"));
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM query_task_event WHERE task_id=? AND JSON_UNQUOTE(JSON_EXTRACT(payload_json,'$.status'))='EXECUTING'",Integer.class,id)).isEqualTo(1);
         var file=java.nio.file.Path.of(environment.getProperty("app.query.sql-log-dir","logs"),"sql-review.log");
         var lines=java.nio.file.Files.readAllLines(file,java.nio.charset.StandardCharsets.UTF_8).stream().filter(line->line.contains(id)).toList();
-        assertThat(lines).hasSize(2);
+        assertThat(lines).hasSize(5);
         assertThat(lines.get(0)).contains("GENERATED",sql);assertThat(lines.get(1)).contains("REJECTED","422104",sql);
+        assertThat(lines.stream().filter(line->line.contains("\"source\":\"DEEPSEEK\"")&&line.contains("\"phase\":\"EXECUTING\""))).isEmpty();
+        assertThat(lines.stream().filter(line->line.contains("\"source\":\"TEMPLATE_FALLBACK\"")&&line.contains("\"phase\":\"EXECUTED\""))).hasSize(1);
         for(String line:lines)assertThatCode(()->java.time.OffsetDateTime.parse(line.substring(0,line.indexOf(' ')))).doesNotThrowAnyException();
+        verify(model,times(1)).repair(anyString(),eq(director),eq(sql),anyString(),anyBoolean());
     }
 }

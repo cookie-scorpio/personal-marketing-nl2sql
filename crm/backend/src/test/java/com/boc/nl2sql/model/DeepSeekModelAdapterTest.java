@@ -51,6 +51,17 @@ class DeepSeekModelAdapterTest {
             assertThat(fixture.requests).hasSize(1);
         }
     }
+    @Test
+    void resultReviewUsesOnlyStructureSummaryAndReturnsMismatchReason() throws Exception {
+        try(var fixture=new Fixture(List.of(response("stop","{\"aligned\":false,\"reason\":\"缺少用户要求的分组指标\"}","")))){
+            var summary=Map.<String,Object>of("returned_row_count",1,"columns",List.of(Map.of("name","customer_id","type","TEXT")));
+            var review=fixture.adapter().reviewResult("按年龄段统计客户数量",user(),
+                    "SELECT c.customer_id FROM dim_customer c WHERE c.manager_id='M0001' LIMIT 100",summary,true);
+            assertThat(review.aligned()).isFalse();assertThat(review.reason()).contains("缺少");
+            assertThat(fixture.requests).hasSize(1);
+            assertThat(fixture.requests.get(0).toString()).contains("returned_row_count","customer_id").doesNotContain("C00000001");
+        }
+    }
     private static final String PLAN = """
             {"intent":"MARKETING_ANALYSIS","confidence":0.96,"needs_clarification":false,
              "clarification_question":"","clarification_options":[],"conflicts":[],

@@ -333,7 +333,7 @@ components:
           example: AUTO
     TaskStatus:
       type: object
-      required: [task_id, session_id, status, progress, message, clarification_round, repair_attempts, execution_timeout_seconds, cancellable, state_version, thinking_enabled]
+      required: [task_id, session_id, status, progress, message, clarification_round, repair_attempts, repairs, execution_timeout_seconds, cancellable, state_version, thinking_enabled]
       properties:
         created_at: { type: string, description: 任务创建时间 }
         updated_at: { type: string, description: 最近阶段更新时间 }
@@ -343,12 +343,17 @@ components:
         session_id: { type: string, format: uuid }
         status:
           type: string
-          enum: [RECEIVED, INTENT_ANALYZING, ASKING, SQL_GENERATING, VALIDATING, CONFIRMING, EXECUTING, REPAIRING, FALLING_BACK, PACKAGING, SUCCESS, FAILED, CANCELLED, TIMED_OUT, DEGRADED]
+          enum: [RECEIVED, INTENT_ANALYZING, ASKING, SQL_GENERATING, VALIDATING, CONFIRMING, EXECUTING, RESULT_REVIEWING, REPAIRING, FALLING_BACK, PACKAGING, SUCCESS, FAILED, CANCELLED, TIMED_OUT, DEGRADED]
         progress: { type: integer, minimum: 0, maximum: 100 }
         message: { type: string }
         intent: { type: [string, "null"] }
         clarification_round: { type: integer, minimum: 0 }
         repair_attempts: { type: integer, minimum: 0, maximum: 2, description: 已消耗的SQL修复调用次数，不含首次规划的响应重试 }
+        repairs:
+          type: array
+          maxItems: 2
+          description: 按修复次数升序返回的安全修复轨迹；不包含模型思考或查询结果值
+          items: { $ref: "#/components/schemas/SqlRepairTrace" }
         execution_timeout_seconds: { type: integer, minimum: 1, default: 60 }
         cancellable: { type: boolean }
         state_version: { type: integer, format: int64, minimum: 0 }
@@ -361,6 +366,20 @@ components:
           type: [object, "null"]
           properties:
             message: { type: string }
+    SqlRepairTrace:
+      type: object
+      required: [repair_id, attempt_no, trigger_phase, status, original_sql, failure_reason, repair_reason, created_at, updated_at]
+      properties:
+        repair_id: { type: integer, format: int64 }
+        attempt_no: { type: integer, minimum: 1, maximum: 2 }
+        trigger_phase: { type: string, enum: [VALIDATION, EXECUTION, RESULT_REVIEW] }
+        status: { type: string, enum: [STARTED, GENERATED, APPLIED, REJECTED, MODEL_FAILED] }
+        original_sql: { type: string, description: 本次修复前的完整只读SQL }
+        failure_reason: { type: string, description: 已脱敏、截断的失败或拒绝原因 }
+        repair_reason: { type: string, description: 触发修复的受控原因 }
+        repaired_sql: { type: [string, "null"], description: 模型返回的完整候选SQL；未生成时为空 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
     ClarificationQuestion:
       type: [object, "null"]
       properties:

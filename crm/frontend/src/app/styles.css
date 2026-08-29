@@ -474,5 +474,17 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .pie-readable-legend li { display: grid; grid-template-columns: 8px minmax(0,1fr) auto; align-items: baseline; gap: 8px; }
 .pie-readable-legend i { width: 8px; height: 8px; border-radius: 2px; }
 .pie-readable-legend span { overflow-wrap: anywhere; line-height: 1.5; }
-.pie-readable-legend strong { font-weight: 500; color: var(--muted); white-space: nowrap; }
+.pie-readable-legend strong { min-width: 0; font-weight: 500; color: var(--muted); text-align: right; overflow-wrap: anywhere; }
 @media (max-width: 560px) { .user-message-body { max-width: 94%; } .pie-readable-legend li { grid-template-columns: 8px minmax(0,1fr); } .pie-readable-legend strong { grid-column: 2; } }
+
+/* v1.4：修复轨迹默认收起，展开后仍以原因优先，SQL仅作审计核查。 */
+.repair-details { margin-top: 10px; border: 1px solid #e7ddd7; border-radius: 8px; background: #fbfaf8; color: var(--muted); font-size: 12px; }
+.repair-details > summary { padding: 10px 12px; color: #5f514c; cursor: pointer; }
+.repair-details > ol { display: grid; gap: 10px; margin: 0; padding: 0 12px 12px; list-style: none; }
+.repair-details > ol > li { padding-top: 10px; border-top: 1px solid #ebe4df; }
+.repair-details li > div { display: flex; justify-content: space-between; gap: 12px; color: #4f4541; }
+.repair-details li > div span { flex-shrink: 0; }
+.repair-details p { margin: 7px 0; line-height: 1.6; overflow-wrap: anywhere; }
+.repair-details details summary { width: fit-content; color: var(--accent); cursor: pointer; }
+.repair-details label { display: block; margin: 9px 0 4px; color: #6e625d; }
+.repair-details pre { max-height: 180px; margin: 0; padding: 10px; overflow: auto; border-radius: 6px; background: #f3efec; color: #403835; white-space: pre-wrap; overflow-wrap: anywhere; }

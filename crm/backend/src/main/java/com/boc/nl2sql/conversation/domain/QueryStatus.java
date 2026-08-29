@@ -8,6 +8,7 @@ public enum QueryStatus {
     VALIDATING,
     CONFIRMING,
     EXECUTING,
+    RESULT_REVIEWING,
     PACKAGING,
     SUCCESS,
     FAILED,

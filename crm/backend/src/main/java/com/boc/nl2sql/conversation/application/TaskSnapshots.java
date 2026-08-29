@@ -15,6 +15,8 @@ import java.util.List;
 public class TaskSnapshots {
     private final ObjectMapper json;
     private final int timeout;
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private com.boc.nl2sql.execution.application.SqlRepairStore repairs;
     public TaskSnapshots(ObjectMapper json, @Value("${app.query.execution-timeout-seconds:60}") int timeout) {
         this.json=json; this.timeout=timeout;
     }
@@ -29,7 +31,8 @@ public class TaskSnapshots {
         return new TaskStatusResponse(task.getTaskId(),task.getSessionId(),task.getStatusCode(),task.getProgress(),
                 task.getStageMessage(),task.getIntentCode(),task.getClarificationRound(),read(task.getQuestionJson(),ClarificationQuestion.class),
                 confirmation,read(task.getResultJson(),QueryResult.class),task.getErrorMessage()==null?null:Map.of("message",task.getErrorMessage()),
-                task.getRepairAttempts()==null?0:task.getRepairAttempts(),timeout,!QueryStatus.terminal(task.getStatusCode()),
+                task.getRepairAttempts()==null?0:task.getRepairAttempts(),repairs==null?List.of():repairs.list(task.getTaskId()),
+                timeout,!QueryStatus.terminal(task.getStatusCode()),
                 task.getStateVersion(),Boolean.TRUE.equals(task.getThinkingEnabled()),task.getDisplayQuery(),task.getCreatedAt(),task.getUpdatedAt());
     }
     private <T>T read(String value,Class<T> type){return value==null?null:json.readValue(value,type);}

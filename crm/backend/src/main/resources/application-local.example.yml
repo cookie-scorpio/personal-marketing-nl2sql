@@ -17,6 +17,7 @@ app:
       thinking-enabled: true
       tools-enabled: true
       max-tool-rounds: 3
+      result-review-enabled: true
       max-tokens: 16384
       retry-max-tokens: 32768
       read-timeout-seconds: 120

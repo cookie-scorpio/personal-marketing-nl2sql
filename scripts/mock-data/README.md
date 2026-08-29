@@ -9,7 +9,7 @@
 
 ## 使用方法
 
-要求 Python 3.9 或更高版本。先启动 MySQL 和v1.3后端一次，让 Flyway 创建表并执行V1–V7，再执行：
+要求 Python 3.9 或更高版本。先启动 MySQL 和 v1.4 后端一次，让 Flyway 创建表并执行 V1–V9，再执行：
 
 ```powershell
 cd D:\code\boc\0824nl2sql\scripts\mock-data
@@ -29,7 +29,7 @@ $env:MYSQL_PASSWORD = "与 deploy/local/.env 相同的应用密码"
 generate_data.py → MySQL业务表 → Spring Boot受控SQL → 脱敏结果 → Vue工作台
 ```
 
-## v1.3 姓名字段
+## 姓名字段
 
 生成器同时写入`customer_name`虚构完整姓名和`customer_name_masked`脱敏姓名，手机号仍仅为虚构脱敏占位值。已有v1.1模拟库由V5生成新的虚构姓名，无需执行重置。原有脱敏姓名不可反向还原，本项目不进行真实姓名恢复。
 

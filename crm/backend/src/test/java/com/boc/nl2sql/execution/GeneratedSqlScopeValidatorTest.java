@@ -39,7 +39,9 @@ class GeneratedSqlScopeValidatorTest {
         "WITH x AS(SELECT c.customer_id FROM dim_customer c WHERE c.manager_id='M0001') SELECT x.customer_id FROM x LIMIT 10",
         "SELECT c.customer_id FROM dim_customer c WHERE c.manager_id='M0001' AND EXISTS(SELECT t.transaction_id FROM fct_transaction t WHERE t.customer_id=c.customer_id) LIMIT 10",
         "SELECT c.customer_id,t.amount_cny FROM dim_customer c LEFT JOIN fct_transaction t ON c.customer_id=t.customer_id WHERE c.manager_id='M0001' LIMIT 10",
-        "SELECT c.customer_id FROM dim_customer c WHERE c.manager_id='M0001' UNION ALL SELECT d.customer_id FROM dim_customer d WHERE d.manager_id='M0001' LIMIT 10"
+        "SELECT c.customer_id FROM dim_customer c WHERE c.manager_id='M0001' UNION ALL SELECT d.customer_id FROM dim_customer d WHERE d.manager_id='M0001' LIMIT 10",
+        "WITH scoped AS(SELECT c.customer_id,c.age_band_code FROM dim_customer c WHERE c.manager_id='M0001') SELECT s.age_band_code,SUM(t.amount_cny) AS amount_cny FROM scoped s JOIN fct_transaction t ON t.customer_id=s.customer_id JOIN dim_customer c ON c.customer_id=t.customer_id WHERE c.manager_id='M0001' AND t.transaction_date BETWEEN DATE('2026-01-01') AND DATE('2026-08-28') GROUP BY s.age_band_code HAVING SUM(t.amount_cny)>0 LIMIT 100",
+        "SELECT c.customer_id,(SELECT MAX(t.amount_cny) FROM fct_transaction t WHERE t.customer_id=c.customer_id) AS max_amount FROM dim_customer c WHERE c.manager_id='M0001' AND c.customer_level_code IN('GOLD','PLATINUM') LIMIT 100"
     })
     void supportsScopedCteCorrelatedSubqueryAndLeftJoin(String sql){assertThatCode(()->validator.validate(sql,manager)).doesNotThrowAnyException();}
     @Test void enforcesResolvedCustomerEvenWhenSqlHasAccountScope(){

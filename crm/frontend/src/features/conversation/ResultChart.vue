@@ -23,7 +23,8 @@ const pieItems = computed(() => {
   return rows.map((row, index) => ({ name: label(row[props.chart.dimension_key]), value: number(row[measure.key])!,
     percent: sum > 0 ? ((number(row[measure.key])! / sum) * 100).toFixed(2) : '0.00', color: palette[index % palette.length] }))
 })
-const compactPie = computed(() => width.value < 520 || pieItems.value.length > 6)
+// 三栏结果卡片通常不足以安全容纳饼图外标签；窄图使用完整HTML图例承载文字与数值。
+const compactPie = computed(() => width.value < 680 || pieItems.value.length > 6)
 function number(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null
   const parsed = Number(value)
@@ -43,9 +44,10 @@ function buildOption(): EChartsCoreOption {
   if (!measure) return base
   if (chart.type === 'PIE') return {
     ...base, tooltip: { trigger: 'item', confine: true, renderMode: 'richText' }, legend: { show: false },
-    series: [{ name: measure.label, type: 'pie', radius: compactPie.value ? ['38%', '66%'] : ['30%', '52%'], center: ['50%', '50%'],
+    series: [{ name: measure.label, type: 'pie', radius: compactPie.value ? ['36%', '66%'] : ['30%', '50%'], center: ['50%', '50%'],
       avoidLabelOverlap: true, labelLayout: { hideOverlap: true },
-      label: { show: !compactPie.value, formatter: '{b}\n{d}%', alignTo: 'edge', edgeDistance: 8, overflow: 'break', width: Math.max(60, Math.min(140, width.value * .2)), fontSize: 11 },
+      label: { show: !compactPie.value, formatter: '{b}\n{d}%', alignTo: 'edge', edgeDistance: 10,
+        bleedMargin: 4, overflow: 'break', width: Math.max(72, Math.min(150, width.value * .2)), fontSize: 11 },
       labelLine: { show: !compactPie.value, length: 12, length2: 8 },
       data: props.rows.filter(row => number(row[measure.key]) !== null)
         .map(row => ({ name: label(row[dimension]), value: number(row[measure.key]) })) }],
@@ -125,7 +127,7 @@ onBeforeUnmount(() => { motion.removeEventListener('change', render); observer?.
   <div class="responsive-chart">
   <div ref="host" class="result-chart" role="img" :aria-label="chart.title + '。可切换到数据明细查看完整数值。'" />
   <ul v-if="chart.type === 'PIE'" class="pie-readable-legend" aria-label="饼图完整分类与占比">
-    <li v-for="(item, index) in pieItems" :key="index"><i :style="{ backgroundColor: item.color }" /><span>{{ item.name }}</span><strong>{{ item.value.toLocaleString('zh-CN') }}{{ chart.series[0]?.unit || '' }} · {{ item.percent }}%</strong></li>
+    <li v-for="(item, index) in pieItems" :key="`${item.name}-${index}`"><i :style="{ backgroundColor: item.color }" /><span :title="item.name">{{ item.name }}</span><strong>{{ item.value.toLocaleString('zh-CN') }}{{ chart.series[0]?.unit || '' }} · {{ item.percent }}%</strong></li>
   </ul>
   </div>
 </template>

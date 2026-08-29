@@ -71,4 +71,11 @@ public class ModelGateway {
         return adapters.stream().filter(adapter->adapter.provider().equalsIgnoreCase(configuredProvider)).findFirst()
                 .orElseThrow(()->new BusinessException(503101,"模型适配器不可用")).repair(text,user,sql,reason,thinking);
     }
+
+    public SqlResultReview reviewResult(String text, CurrentUser user, String sql,
+                                        java.util.Map<String,Object> resultSummary, boolean thinking) {
+        return adapters.stream().filter(adapter->adapter.provider().equalsIgnoreCase(configuredProvider)).findFirst()
+                .orElseThrow(()->new BusinessException(503101,"模型适配器不可用"))
+                .reviewResult(text,user,sql,resultSummary,thinking);
+    }
 }

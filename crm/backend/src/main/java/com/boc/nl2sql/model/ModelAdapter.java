@@ -16,6 +16,10 @@ public interface ModelAdapter {
     }
     default QueryInterpretation interpret(String text,CurrentUser user,java.util.function.BooleanSupplier active,boolean thinking){return interpret(text,user,active);}
     default QueryInterpretation repair(String text,CurrentUser user,String sql,String reason,boolean thinking){return repair(text,user,sql,reason);}
+    default SqlResultReview reviewResult(String text, CurrentUser user, String sql,
+                                         java.util.Map<String,Object> resultSummary, boolean thinking) {
+        return new SqlResultReview(true, "当前模型不需要额外结果结构复核");
+    }
 
     default boolean available() {
         return true;

@@ -1,69 +1,92 @@
 # 个金营销 NL2SQL 平台
 
-本项目面向个人金融营销场景，让业务人员通过自然语言查询模拟客户、交易、产品持有和营销活动数据，并以指标、图表、表格和基础分析理解结果。
+本项目用于演示个人金融营销场景中的自然语言查询。业务人员可以直接询问模拟客户、交易、产品持有和营销活动数据，系统会在账号权限范围内生成并校验只读 SQL，再以指标、图表、表格和简要分析展示结果。
 
-当前为 v1.4：在v1.3能力上增加SQL校验失败、可修复MySQL错误和结果结构偏题三类有限自修复，最多修复两次并持久化原因；饼图在窄卡片中使用完整可换行数值列表，避免外标签裁切。自由问题由DeepSeek生成SQL，当前账号权限与每次修复候选均由后端重新校验；Milvus仍只保留外置接口。
+当前产品版本统一为 **v1.5**。本次版本汇总了 v1.4 之后的全部改动，包括连续对话、客户定位与两人对比、会话删除、结果导出、SQL 修复记录、图表展示、脱敏和稳定演示数据。完整功能、数据库设计、接口和升级说明见 [v1.5 实施说明与接口数据字典](docs/v1.5实施说明与接口数据字典.md)。
 
-本版沿用 v1.3 的旧回答恢复、账号隔离、消息时间、复制、编辑后重新发送及回复点赞/点踩能力。会话历史仍按会话创建时间从新到旧展示，本次不改为按最新消息排序。V8迁移从旧任务保存的结果恢复回答，不重新执行SQL。
+## 主要功能
 
-完整功能、数据库字典、API示例、升级方式与测试记录见 [v1.4实施说明](docs/v1.4实施说明与接口数据字典.md)。[v1.3](docs/v1.3实施说明与接口数据字典.md)、[v1.2](docs/v1.2实施说明与接口数据字典.md)、[v1.1](docs/v1.1实施说明与接口数据字典.md)、[v1.0](docs/v1.0实施说明与接口数据字典.md)保留作历史参考。
+- Vue 3 对话工作台，支持会话历史、连续追问、取消、编辑重发、回复评价和 CSV 导出。
+- Spring Boot 后端统一处理登录、客户范围、自然语言识别、SQL 校验、执行、审计和结果整理。
+- 明确场景优先使用规则，自由问题可由 DeepSeek 生成查询计划；每次生成或修复后的 SQL 都重新校验。
+- 客户姓名、编号和手机号后四位定位；原问句条件锁定，多结果时在限定范围内自动筛选。
+- 两位客户逐位定位和资产比较；固定条件唯一时自动继续，零匹配时直接结束。
+- MySQL 保存业务数据、账号、任务、会话和审计；Redis 用于短期幂等索引，暂时不可用时仍由 MySQL 保证一致性。
 
-## 主要内容
+## 目录
 
-- `crm/`：客户关系管理系统，包含前端和 Spring Boot 后端。
-- `data-product/`：保留 MySQL 数据服务、元数据与 SQL 资产的后续扩展目录。
-- `llm-service/`：保留模型服务的后续扩展目录，当前混合识别和模型调用已在 Java 后端实现。
-- `contracts/`：跨系统使用的 OpenAPI、事件和数据结构定义。
-- `deploy/`：容器、环境和部署说明，不保存密码、令牌等敏感信息。
-- `docs/`：架构、开发、接口和决策记录。
+- `crm/frontend/`：Vue 3 + TypeScript 前端。
+- `crm/backend/`：Spring Boot 后端和 Flyway 数据库迁移。
+- `scripts/mock-data/`：稳定的虚构业务数据和演示会话生成工具。
+- `contracts/openapi/`：前后端接口契约。
+- `deploy/local/`：本地 MySQL 和 Redis 容器配置。
+- `docs/`：v1.0 至 v1.5 六份实施说明。
 
-完整目录说明见 [仓库架构说明](docs/architecture/repository-structure.md)，Gitee 创建和团队配置见 [Gitee 仓库创建指南](docs/development/gitee-setup.md)。
+## 安装与配置
 
-## 开始开发
+需要 JDK 17、Maven 3.9、Node.js 20、Python 3.9 和 Docker Desktop。
 
-1. 阅读 [协作规范](CONTRIBUTING.md)。
-2. 从 `main` 创建短期功能分支，例如 `feat/crm-customer-search`。
-3. 只修改自己负责的业务目录；跨系统接口先更新 `contracts/`。
-4. 本地完成测试后推送分支，并通过 Pull Request 合并到 `main`。
+1. 按 [本地基础服务说明](deploy/local/README.md)启动 MySQL 8.4 和 Redis 7。
+2. 按 [后端说明](crm/backend/README.md)准备 `application-local.yml`，至少配置数据库密码和 `JWT_SECRET`。
+3. 首次启动一次后端，让 Flyway 建表并创建演示账号。
+4. 按 [模拟数据说明](scripts/mock-data/README.md)重建稳定业务数据和演示会话。
+5. 按 [前端说明](crm/frontend/README.md)安装依赖并启动页面。
 
-前后端目录已提供安装、配置、运行和测试命令。
+自由问题需要设置 `MODEL_PROVIDER=deepseek`、`DEEPSEEK_API_KEY` 和相应模型名称；只演示规则查询时可以使用默认的 `mock` 模式。
 
-## v1.4 本地运行
+## 运行
 
-1. 按[本地基础服务说明](deploy/local/README.md)启动MySQL 8.4和Redis 7.x。
-2. 按[后端说明](crm/backend/README.md)配置密码并启动Spring Boot，Flyway会自动创建表和演示账号。
-3. 按[虚构数据生成说明](scripts/mock-data/README.md)生成1万名客户和相关营销数据。
-4. 按[前端说明](crm/frontend/README.md)启动Vue开发服务器。
+后端：
 
-浏览器访问`http://127.0.0.1:5173`，可使用`manager01`、`leader01`或`director01`登录，演示密码为`Demo@123`。
+```powershell
+cd crm/backend
+$env:SPRING_PROFILES_ACTIVE = "local"
+mvn spring-boot:run
+```
 
-SQL默认执行超时为60秒，通过`QUERY_EXECUTION_TIMEOUT_SECONDS`配置。由v1.3升级时Flyway只新增V9修复轨迹表；先停止旧版本任务再部署同版本前后端。取消、超时、数据库连接和数据库权限错误不会触发修复。**V7会重新分配已有客户的虚构完整姓名，只适用于模拟库，升级前备份。**
+前端：
 
-## 配置与运行
+```powershell
+cd crm/frontend
+npm install
+npm run dev
+```
 
-当前可执行应用位于 `crm/`，模型编排与 MySQL 查询均在 Spring Boot 内按模块实现；其他目录保留扩展边界：
+浏览器访问 `http://127.0.0.1:5173`。演示账号为 `manager01`、`leader01` 和 `director01`，初始密码均为 `Demo@123`。
 
-- CRM 前端：在 `crm/frontend/` 中维护 `package.json` 和环境变量示例。
-- CRM 后端：在 `crm/backend/` 中维护 Maven 工程和 Spring Boot 配置。
-- 数据查询：当前直接使用 MySQL，不需要 Spark、Hive 或额外数据服务。
-- 大模型接入：配置 Java 后端的 DeepSeek 地址、模型和密钥，不需要独立 Python 服务。
+## 模拟数据
 
-本地配置使用 `.env.example`、`application-local.example.yml` 等示例文件。真实密钥、数据库密码、客户数据和生产配置不得提交到仓库。
+以下命令会重建固定基准日和固定随机种子的业务数据，清空测试会话，并为 `manager01` 留下 5 个可编辑重发的演示问题：
 
-## 部署
+```powershell
+cd scripts/mock-data
+$env:MYSQL_PASSWORD = "本地应用数据库密码"
+.\.venv\Scripts\python.exe generate_data.py --reset --reset-runtime --seed-demo-sessions
+```
 
-先启动 MySQL 和 Redis，再部署后端 Maven 生成的可执行 JAR，最后将前端 `npm run build` 生成的 `dist/` 交给静态服务器。静态服务器需将 `/api` 和 `/actuator/health` 反向代理到后端。密钥和环境差异通过外部配置注入。SSE代理需关闭缓冲，读取超时大于55秒。日志默认写到后端工作目录的`logs/application.log`、`logs/conversation.log`与`logs/sql-review.log`，部署时提供持久化目录。具体命令见前后端说明。
+该命令只适用于演示环境。具体数据规模、稳定客户编号、清理范围和校验方法见 [模拟数据说明](scripts/mock-data/README.md)。
 
 ## 测试
 
-按[自动评测说明](scripts/evaluation/README.md)准备Python依赖。`scripts/verify-v1.4.ps1`默认运行后端测试、比较器测试、前端测试与构建，不调用真实模型。MySQL及HTTP验收只在独立`_test`库执行；真实模型需显式启用并配置持久化请求次数上限。
+```powershell
+mvn -f crm/backend/pom.xml test
+cd crm/frontend
+npm test
+npm run build
+```
+
+后端数据库集成测试只能在名称以 `_test` 结尾的隔离库执行，不要对演示库或其他共享数据库开启集成测试。
+
+## 部署
+
+先准备 MySQL 和 Redis，再部署后端 JAR，最后把前端 `npm run build` 生成的 `dist/` 交给静态服务器。静态服务器需要将 `/api` 和健康检查转发到后端；SSE 代理应关闭缓冲，并把读取超时设置为 60 秒以上。密码、JWT 密钥和模型密钥必须通过外部配置注入。
 
 ## 注意事项
 
-- 当前面向模拟数据，后端限制查询为只读 SQL，并校验账号数据范围；不应直接用于生产客户数据。生产部署还需独立只读查询账号、完整列级权限和更严格的数据治理。
-- 日志、测试样例、提示词和截图不得包含真实客户敏感信息。
-- `main` 和 `release/*` 应设置为保护分支，禁止开发人员直接推送。
-- 生产故障修复使用 `hotfix/*`，合并后打版本标签并保留审计记录。
+- 项目只使用虚构数据，不得导入真实客户信息。
+- SQL 只允许读取白名单表，并强制加入当前账号的数据范围；生产环境仍需独立只读账号、列级权限和统一认证。
+- 不要提交 `.env`、`application-local.yml`、日志、模型密钥或数据库备份。
+- Flyway 的 `V1` 至 `V12` 是数据库迁移编号，不等同于产品版本，升级时不得重命名已执行的迁移文件。
 
 ## 许可
 

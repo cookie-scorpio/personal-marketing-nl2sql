@@ -1,8 +1,8 @@
 # CRM 后端
 
-本目录是个金营销 NL2SQL 平台的 Spring Boot v1.4 后端。登录、自然语言解析、SQL规划、查询执行和历史记录位于同一进程，各模块按业务包隔离，通过 Java 接口直接调用。
+本目录是个金营销 NL2SQL 平台的 Spring Boot v1.5 后端。登录、自然语言解析、客户定位、SQL规划、查询执行、会话和审计位于同一进程，各模块按业务包隔离，通过 Java 接口直接调用。
 
-v1.4增加最多两次的统一SQL自修复、无业务值的结果结构复核和修复轨迹持久化。校验失败、已知MySQL表达错误或明确结果结构偏题可以触发修复；每个候选都重新经过账号权限、客户范围、只读AST和风险确认。完整字段与接口见[实施说明](../../docs/v1.4实施说明与接口数据字典.md)，由v1.3升级只新增V9迁移。
+v1.5汇总了 v1.4 之后的全部改动：最多两次SQL修复、结果结构复核、会话级交互、两人对比、固定条件客户筛选、会话级联取消删除、结果导出和展示优化。每个SQL候选都会重新经过账号权限、客户范围、只读AST和风险确认。完整字段与接口见[实施说明](../../docs/v1.5实施说明与接口数据字典.md)，数据库迁移按顺序保留为 V1–V12。
 
 `mvn test`默认不连接数据库。使用真实MySQL测试时必须按[隔离库评测说明](../../scripts/evaluation/README.md)显式覆盖数据源，不能在用户库直接开启v11.mysql；该组测试不调用真实模型，会保留模拟任务与审计记录。
 
@@ -19,6 +19,9 @@ v1.4增加最多两次的统一SQL自修复、无业务值的结果结构复核�
 - MySQL异步查询、SSE阶段与状态恢复、潜在高成本查询确认、图表描述、基础分析和历史记录。
 - MySQL保存会话、消息、上下文和事件；Redis加速幂等索引，不可用时仍由MySQL保证去重。
 - Flyway数据库迁移、操作审计和Actuator健康检查。
+- 原问句中的姓名、姓氏、客户编号和手机号后四位由服务端锁定；唯一客户自动继续，零匹配直接结束，多结果只允许使用其他字段附加筛选。
+- 两位客户按各自固定条件逐位定位，同一客户不可重复选择；两位都确认后使用受控名单进行比较。
+- 删除会话时同一事务内先取消未结束任务，再逻辑删除会话，迟到结果不能恢复已删除会话。
 
 ## 目录说明
 
@@ -152,7 +155,8 @@ mvn spring-boot:run
 - `POST /api/v1/queries`：提交自然语言问题，必须提供稳定的`Idempotency-Key`，支持`thinking_enabled`。
 - `GET /api/v1/queries/{taskId}/events`：SSE，支持`Last-Event-ID`。
 - `GET /api/v1/conversations`及`/{sessionId}`：会话列表与消息恢复。
-- `DELETE /api/v1/conversations/{sessionId}`：逻辑删除会话，活动任务必须先结束。
+- `DELETE /api/v1/conversations/{sessionId}`：取消未结束任务后逻辑删除会话。
+- `GET /api/v1/conversations/{sessionId}/customer-search`：在服务端固定条件内分页附加筛选客户。
 - `GET /api/v1/conversations/{sessionId}/anchors`：分页读取用户输入目录。
 - `POST /api/v1/queries/{taskId}/cancel`：取消当前任务。
 - `GET /api/v1/queries/{taskId}/status`：查询任务状态和结果。
@@ -169,4 +173,4 @@ mvn spring-boot:run
 - 生产环境必须替换默认JWT密钥、演示账号和数据库密码，并由统一认证中心接管登录。
 - conversation.log保存基础脱敏后的用户输入和助手阶段；application.log保存运行诊断。不记录完整Prompt、查询明细、思考正文或密码，但自由文本脱敏不等于生产级隐私治理。业务SQL及脱敏绑定参数写入`logs/sql-review.log`，由`SQL_REVIEW_LOG_DIR`修改目录；按20MB/每天滚动，保留14天，上限1GB。日志仅供授权人员核查虚构数据。
 
-详细字段、接口示例、当前限制和升级方式见 [v1.4实施说明](../../docs/v1.4实施说明与接口数据字典.md)。
+详细字段、接口示例、当前限制和升级方式见 [v1.5实施说明](../../docs/v1.5实施说明与接口数据字典.md)。

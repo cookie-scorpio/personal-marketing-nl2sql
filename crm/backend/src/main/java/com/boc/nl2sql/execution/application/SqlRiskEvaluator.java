@@ -27,12 +27,12 @@ public class SqlRiskEvaluator {
             reasons.addAll(planned.risk().reasons());
         }
         long joins = Pattern.compile("\\bjoin\\b").matcher(normalized).results().count();
-        if (joins >= 3) reasons.add("查询关联了" + joins + "张业务表，执行耗时可能较长");
+        if (joins >= 3) reasons.add("查询涉及的数据范围较大，执行耗时可能较长");
         if (!normalized.contains(" where ") && referencesFactTable(normalized)) {
-            reasons.add("事实表查询没有过滤条件，可能扫描大量模拟数据");
+            reasons.add("查询未限定客户范围，可能扫描大量数据，请确认后再执行");
         }
         if (!containsAggregate(normalized) && referencesFactTable(normalized) && !containsTimeFilter(normalized)) {
-            reasons.add("明细查询未限定时间范围，可能产生较大扫描量");
+            reasons.add("明细查询未限定时间范围，耗时可能较长");
         }
         Matcher limit = LIMIT.matcher(normalized);
         if (limit.find() && Integer.parseInt(limit.group(1)) > 100) {

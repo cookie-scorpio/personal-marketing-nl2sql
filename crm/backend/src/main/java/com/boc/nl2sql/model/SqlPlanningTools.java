@@ -27,7 +27,7 @@ public class SqlPlanningTools {
         if(arguments.size()!=1 || !(arguments.get("sql") instanceof String sql) || sql.length()>30000)
             return Map.of("ok",false,"code",400001,"message","validate_sql只接受sql字符串，最大30000字符");
         try{
-            new SqlAstValidator(user,Map.of(),ModelCallContext.customer(),maxRows).validate(sql);
+            new SqlAstValidator(user,Map.of(),ModelCallContext.customer()==null?null:java.util.List.of(ModelCallContext.customer()),maxRows).validate(sql);
             return Map.of("ok",true,"executed",false,"message","静态预检通过；不代表业务口径或MySQL执行正确。最终SQL仍需后端校验、已确认客户校验与风险确认。");
         }catch(BusinessException invalid){return Map.of("ok",false,"executed",false,"code",invalid.code(),"message",invalid.getMessage());}
     }

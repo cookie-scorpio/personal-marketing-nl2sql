@@ -2,7 +2,7 @@
 import { computed, onUnmounted, ref } from 'vue'
 import { CopyDocument, EditPen } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { apiRequest } from '../../app/api'
+import { apiRequest, operationKey } from '../../app/api'
 import type { ConversationDetail, ConversationMessage } from '../../app/types'
 import { messageText } from './messageText'
 const props = defineProps<{ message: ConversationMessage; sessionId: string; editDisabled: boolean }>()
@@ -33,7 +33,7 @@ async function rate(value: 'LIKE' | 'DISLIKE') {
       if (!saved || typeof saved.message_id !== 'number') throw new Error('回复尚未同步，请稍后重试')
       id = saved.message_id
     }
-    await apiRequest(`/api/v1/conversations/${props.sessionId}/messages/${id}/feedback`, { method: 'POST', body: JSON.stringify({ feedback }) })
+    await apiRequest(`/api/v1/conversations/${props.sessionId}/messages/${id}/feedback`, { method: 'POST', headers: { 'Idempotency-Key': operationKey('fb', id, feedback) }, body: JSON.stringify({ feedback }) })
     if (!disposed) { emit('feedback', feedback); ElMessage.success(feedback === 'NONE' ? '已取消评价' : '评价已保存') }
   } catch (error) { if (!disposed) ElMessage.error(error instanceof Error ? error.message : '评价保存失败，请重试') }
   finally { busy.value = false }

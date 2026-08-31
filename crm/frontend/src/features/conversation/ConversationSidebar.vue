@@ -57,7 +57,8 @@ async function load(more = false) {
 async function remove(item: ConversationSummary) {
   if (props.disabled || deleting.value) return
   try {
-    await ElMessageBox.confirm(`删除会话“${item.title}”？删除后无法再打开，后台仍保留审计记录。`, '删除会话', { confirmButtonText: '删除会话', cancelButtonText: '保留会话', type: 'warning', confirmButtonClass: 'el-button--danger' })
+    const suffix = item.active_task_id ? '会话中有进行中的查询，删除后将自动取消该查询。' : '删除后无法再打开，后台仍保留审计记录。'
+    await ElMessageBox.confirm(`删除会话“${item.title}”？${suffix}`, '删除会话', { confirmButtonText: '删除会话', cancelButtonText: '保留会话', type: 'warning', confirmButtonClass: 'el-button--danger' })
   } catch { return }
   deleting.value = item.session_id
   try {
@@ -95,7 +96,7 @@ onUnmounted(() => controller?.abort())
           <ChatDotRound /><span>{{ item.title || '未命名会话' }}</span>
           <i v-if="item.active_task_id" class="session-pending" aria-label="有待处理查询" />
         </button>
-        <button type="button" class="session-delete" :disabled="disabled || !!deleting || !!item.active_task_id" :aria-label="`删除会话：${item.title}`" :title="item.active_task_id ? '请先完成或取消查询，再删除会话' : '删除会话'" @click.stop="remove(item)"><Loading v-if="deleting === item.session_id" class="spinning" /><Delete v-else /></button>
+        <button type="button" class="session-delete" :disabled="disabled || !!deleting" :aria-label="`删除会话：${item.title}`" :title="item.active_task_id ? '删除后将自动取消进行中的查询' : '删除会话'" @click.stop="remove(item)"><Loading v-if="deleting === item.session_id" class="spinning" /><Delete v-else /></button>
         </div>
       </section>
       <button v-if="moreAvailable" type="button" class="sidebar-load-more" :disabled="loading" @click="load(true)">{{ loading ? '正在加载…' : '加载更多会话' }}</button>

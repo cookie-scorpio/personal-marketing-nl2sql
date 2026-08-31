@@ -18,11 +18,21 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiResponse<Void>> business(BusinessException exception, HttpServletRequest request) {
-        HttpStatus status = exception.code() == 401001 ? HttpStatus.UNAUTHORIZED
-                : exception.code()==404001?HttpStatus.NOT_FOUND
-                : exception.code()/1000==409?HttpStatus.CONFLICT:HttpStatus.BAD_REQUEST;
+        HttpStatus status = statusOf(exception.code());
         return ResponseEntity.status(status)
                 .body(ApiResponse.error(exception.code(), exception.getMessage(), WebRequestSupport.requestId(request)));
+    }
+
+    /** 业务码段与HTTP状态一一对应：前端与网关据此区分参数错误、权限拒绝、限流与上游故障。 */
+    private HttpStatus statusOf(int code) {
+        if (code == 401001) return HttpStatus.UNAUTHORIZED;
+        if (code == 404001) return HttpStatus.NOT_FOUND;
+        int prefix = code / 1000;
+        if (prefix == 403) return HttpStatus.FORBIDDEN;
+        if (prefix == 409) return HttpStatus.CONFLICT;
+        if (prefix == 429) return HttpStatus.TOO_MANY_REQUESTS;
+        if (prefix == 502 || prefix == 503) return HttpStatus.BAD_GATEWAY;
+        return HttpStatus.BAD_REQUEST;
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -46,7 +56,11 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> unknown(Exception exception, HttpServletRequest request) {
-        log.error("Unhandled request error: type={}, frames={}", exception.getClass().getName(), java.util.Arrays.toString(exception.getStackTrace()));
+        Throwable root = exception;
+        while (root.getCause() != null && root.getCause() != root) root = root.getCause();
+        log.error("Unhandled request error: type={}, message={}, rootType={}, rootMessage={}, frames={}",
+                exception.getClass().getName(), exception.getMessage(), root.getClass().getName(), root.getMessage(),
+                java.util.Arrays.toString(exception.getStackTrace()));
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(ApiResponse.error(500000, "系统暂时无法处理该请求，请稍后重试", WebRequestSupport.requestId(request)));
     }

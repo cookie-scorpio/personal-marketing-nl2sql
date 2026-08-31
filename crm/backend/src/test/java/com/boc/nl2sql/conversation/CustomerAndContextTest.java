@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.*;
 
 class CustomerAndContextTest {
-    private final CustomerResolver customers=new CustomerResolver(null,null);
+    private final CustomerResolver customers=new CustomerResolver(null,null,new tools.jackson.databind.json.JsonMapper());
     private final FollowupResolver followups=new FollowupResolver();
     @Test void recognizesCourtesyNamesAndFullNamesWithoutConfusingGroups(){
         var mention=customers.mention("帮我查找一下李先生的资产信息");assertThat(mention).isNotNull();assertThat(mention.name()).isEqualTo("李");assertThat(mention.surname()).isTrue();

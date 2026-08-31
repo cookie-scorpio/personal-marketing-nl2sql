@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
-  title: 个金营销 NL2SQL v1.2 API
-  version: 1.3.0
+  title: 个金营销 NL2SQL v1.5 API
+  version: 1.5.0
   description: Vue工作台与Spring Boot模块化单体之间的接口契约。所有业务数据均为模拟数据。
 servers:
   - url: http://127.0.0.1:8080
@@ -107,7 +107,7 @@ paths:
                       data: { type: array, items: { $ref: "#/components/schemas/ConversationSummary" } }
   /api/v1/conversations/{sessionId}:
     delete:
-      summary: 逻辑删除本人会话，保留后台审计，不支持恢复
+      summary: 删除本人会话；未结束任务会先级联取消，后台审计保留
       parameters:
         - { name: sessionId, in: path, required: true, schema: { type: string, maxLength: 36 } }
       responses:
@@ -126,7 +126,7 @@ paths:
                           session_id: { type: string }
                           deleted: { type: boolean, const: true }
         "404": { description: 不存在或他人会话 }
-        "409": { description: 409007，存在未结束查询，须先完成或取消 }
+        "409": { description: 仅在活动任务并发状态变化导致无法安全取消时返回 }
     get:
       summary: 本人会话、上下文及最近消息
       parameters:
@@ -178,6 +178,29 @@ paths:
         "400": { description: 反馈类型无效 }
         "404": { description: 他人/已删除会话、消息不存在或不是助手回复 }
         "409": { description: 409008，回复尚未完成 }
+  /api/v1/conversations/{sessionId}/customer-search:
+    get:
+      summary: 在当前客户澄清的固定条件内附加筛选
+      description: 原问句中的姓名、姓氏、客户编号或手机号后四位由服务端从活动任务读取，客户端不可覆盖。keyword为空时返回固定条件内全部客户；没有固定条件时必须输入keyword。
+      parameters:
+        - { name: sessionId, in: path, required: true, schema: { type: string, maxLength: 36 } }
+        - { name: keyword, in: query, schema: { type: string, maxLength: 20, default: "" }, description: 仅作为允许字段内的附加筛选 }
+        - { name: page_no, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 20, default: 20 } }
+      responses:
+        "200":
+          description: 脱敏客户列表；固定条件不在响应中重复展示
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/CustomerSearchPage" }
+        "400": { description: 附加筛选格式无效，或使用了原问句已占用的字段 }
+        "404": { description: 会话不存在或不属于当前用户 }
+        "409": { description: 当前没有等待客户定位的活动任务 }
   /api/v1/conversations/{sessionId}/anchors:
     get:
       summary: 获取本人会话用户输入目录，用于快速跳转
@@ -359,6 +382,10 @@ components:
         state_version: { type: integer, format: int64, minimum: 0 }
         thinking_enabled: { type: boolean }
         display_query: { type: string, description: 脱敏的当前有效问题，可能包含已选客户编号 }
+        resolved_customer:
+          allOf:
+            - $ref: "#/components/schemas/CustomerCandidate"
+          description: 明确条件唯一命中后的只读脱敏客户卡片；存在时查询已自动继续，不要求再次确认
         question: { $ref: "#/components/schemas/ClarificationQuestion" }
         confirmation: { $ref: "#/components/schemas/Confirmation" }
         result: { $ref: "#/components/schemas/QueryResult" }
@@ -384,12 +411,14 @@ components:
       type: [object, "null"]
       properties:
         question_id: { type: string, format: uuid }
-        type: { type: string, enum: [MISSING_TOPIC, MISSING_TIME_RANGE, TIME_BASIS, CONFLICT, MODEL_CLARIFICATION, CUSTOMER_IDENTITY, CUSTOMER_SELECTION, CUSTOMER_NOT_FOUND, FOLLOWUP_CONTEXT] }
+        type: { type: string, enum: [MISSING_TOPIC, MISSING_TIME_RANGE, TIME_BASIS, CONFLICT, DISPLAY_CONFLICT, MODEL_CLARIFICATION, CUSTOMER_IDENTITY, CUSTOMER_SELECTION, CUSTOMER_NOT_FOUND, CUSTOMER_CONFIRM, CUSTOMER_SCOPE, FOLLOWUP_CONTEXT] }
         prompt: { type: string }
         options: { type: array, items: { type: string } }
         recognized_slots: { type: object, additionalProperties: { type: string } }
         candidates: { type: array, maxItems: 10, items: { $ref: "#/components/schemas/CustomerCandidate" } }
         input_types: { type: array, items: { type: string, enum: [CUSTOMER_ID, CUSTOMER_NAME, MOBILE_SUFFIX] }, description: 身份补充允许的输入类型；普通澄清和候选选择为空 }
+        recommended_option: { type: [string, "null"] }
+        multi_select: { type: boolean, default: false }
     CustomerCandidate:
       type: object
       required: [customer_id, name, branch_id, mobile]
@@ -398,6 +427,14 @@ components:
         name: { type: string, description: 脱敏姓名 }
         branch_id: { type: string }
         mobile: { type: string, description: 虚构脱敏手机号 }
+    CustomerSearchPage:
+      type: object
+      required: [total, page_no, page_size, items]
+      properties:
+        total: { type: integer, minimum: 0 }
+        page_no: { type: integer, minimum: 1 }
+        page_size: { type: integer, minimum: 1, maximum: 20 }
+        items: { type: array, items: { $ref: "#/components/schemas/CustomerCandidate" } }
     ConversationSummary:
       type: object
       required: [session_id, title, state_version]

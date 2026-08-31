@@ -24,6 +24,8 @@ export interface ClarificationQuestion {
   options: string[]
   recognized_slots: Record<string, string>
   input_types?: string[]
+  recommended_option?: string | null
+  multi_select?: boolean
   candidates?: Array<{ customer_id: string; name: string; branch_id: string; mobile: string }>
 }
 
@@ -92,6 +94,12 @@ export interface TaskStatus {
   state_version: number
   thinking_enabled: boolean
   display_query?: string
+  resolved_customer?: {
+    customer_id: string
+    name: string
+    branch_id: string
+    mobile: string
+  }
   legacy_recovered?: boolean
   legacy_notice?: string
   created_at?: string

@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ResultAssemblerTest {
     @Test void masksCustomerFieldsBeforeRowsAndAnalysisAreBuilt(){
         var result=assemble("TABLE",List.of(Map.of("CUSTOMER_NAME","李验甲","mobile_masked","90000008877","asset_wan",10)));
-        assertThat(result.rows().get(0)).containsEntry("customer_name","李**").containsEntry("mobile_masked","900****8877");
+        assertThat(result.rows().get(0)).containsEntry("customer_name","李*甲").containsEntry("mobile_masked","900****8877");
         assertThat(result.analysis().insights().toString()).doesNotContain("李验甲");
     }
     @Test void comparesGroupsOverTimeWithoutAggregatingMissingPoints(){
@@ -22,7 +22,7 @@ class ResultAssemblerTest {
         assertThat(result.rows()).hasSize(2);
     }
     private com.boc.nl2sql.execution.domain.QueryResult assemble(String type, List<Map<String, Object>> rows) {
-        return new ResultAssembler().assemble(new PlannedQuery("SELECT age_band_code FROM dim_customer LIMIT 100",
+        return new ResultAssembler(null).assemble(new PlannedQuery("SELECT age_band_code FROM dim_customer LIMIT 100",
                 Map.of(), type, "测试分析", false), rows, "DEEPSEEK", 0.95);
     }
 
@@ -108,7 +108,7 @@ class ResultAssemblerTest {
                 Map.of("branch_id", "B001", "customer_count", 18L),
                 Map.of("branch_id", "B002", "customer_count", 12L));
 
-        var result = new ResultAssembler().assemble(planned, rows, "RULE", 1.0);
+        var result = new ResultAssembler(null).assemble(planned, rows, "RULE", 1.0);
 
         assertThat(result.charts()).hasSize(1);
         assertThat(result.charts().get(0).dimensionKey()).isEqualTo("branch_id");

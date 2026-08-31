@@ -276,13 +276,29 @@ public class DeepSeekModelAdapter implements ModelAdapter {
                 null, null, false, false, conflicts, slots);
         double confidence = plan.confidence() == null ? 0.5 : Math.max(0, Math.min(1, plan.confidence()));
         boolean asking = Boolean.TRUE.equals(plan.needsClarification()) || confidence < 0.65;
-        ClarificationQuestion question = asking
-                ? new ClarificationQuestion(UUID.randomUUID().toString(), "MODEL_CLARIFICATION",
-                nonBlank(plan.clarificationQuestion(), confidence < 0.65
-                        ? "我对当前问题的理解置信度较低，请补充查询对象、指标或时间范围。"
-                        : "请补充查询所需的业务条件。"),
-                plan.clarificationOptions() == null ? List.of() : List.copyOf(plan.clarificationOptions()), slots)
-                : null;
+        ClarificationQuestion question = null;
+        if (asking) {
+            // v1.5 选项协议：兼容字符串与 {label,value,recommended} 对象两种形态；
+            // recommended 项排到首位并在问题对象上标记，前端据此展示“推荐”。
+            var labels = new java.util.ArrayList<String>();
+            String recommended = null;
+            if (plan.clarificationOptions() != null) {
+                for (Object option : plan.clarificationOptions()) {
+                    if (option instanceof java.util.Map<?, ?> map) {
+                        String label = String.valueOf(map.get("label"));
+                        if (labels.size() == 0 || Boolean.TRUE.equals(map.get("recommended"))) recommended = label;
+                        labels.add(label);
+                    } else if (option != null) {
+                        labels.add(String.valueOf(option));
+                    }
+                }
+            }
+            question = new ClarificationQuestion(UUID.randomUUID().toString(), "MODEL_CLARIFICATION",
+                    nonBlank(plan.clarificationQuestion(), confidence < 0.65
+                            ? "我对当前问题的理解置信度较低，请补充查询对象、指标或时间范围。"
+                            : "请补充查询所需的业务条件。"),
+                    labels, slots).withRecommended(recommended);
+        }
         String sql = asking ? null : normalizeSql(plan.sql());
         if (!asking && (sql == null || sql.isBlank())) {
             throw new BusinessException(422103, "模型未能生成可执行SQL，请换一种方式描述问题");
@@ -328,7 +344,7 @@ public class DeepSeekModelAdapter implements ModelAdapter {
     /** 与提示词JSON字段一一对应的内部传输对象。 */
     private record DeepSeekPlan(
             String intent, Double confidence, Boolean needsClarification,
-            String clarificationQuestion, List<String> clarificationOptions,
+            String clarificationQuestion, List<Object> clarificationOptions,
             List<String> conflicts, Map<String, String> recognizedSlots,
             String sql, String title, String preferredDisplay,
             List<com.boc.nl2sql.execution.domain.ResultColumnHint> columns

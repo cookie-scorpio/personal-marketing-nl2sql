@@ -1,6 +1,6 @@
 可查询的 MySQL 8.4 数据对象如下：
 1. dim_customer c：客户画像快照。customer_id客户编号，customer_name_masked脱敏姓名，gender_code性别，age年龄，
-   age_band_code年龄段，mobile_masked脱敏手机号，customer_level_code客户等级(NORMAL/GOLD/PLATINUM)，vip_flag贵宾标识，
+   age_band_code年龄段，mobile_masked脱敏手机号，customer_level_code客户等级，vip_flag贵宾标识，
    risk_level_code风险等级，occupation_code职业，region_code区域，branch_id机构，manager_id客户经理，
    total_asset_amount总资产(元)，asset_change_3m_rate近三个月资产变化率(小数)，open_date开户日期，
    status_code状态，snapshot_date快照日期。
@@ -8,17 +8,35 @@
    transaction_date交易日期，transaction_type_code交易类型，debit_credit_flag借贷标识，
    currency_code币种，amount_cny折人民币金额(元)，branch_id机构，status_code交易状态。
 3. fct_product_holding h：产品持有快照。holding_id持有记录编号，customer_id客户编号，product_id产品编号，product_name产品名称，
-   product_category_code产品分类(DEPOSIT/WEALTH/FUND)，holding_amount持有份额，market_value_amount市值(元)，
-   profit_amount收益(元)，maturity_date到期日，risk_level_code产品风险等级，snapshot_date快照日期。
+   product_category_code产品分类，holding_amount持有份额，market_value_amount市值(元)，
+   profit_amount收益(元，可为负)，maturity_date到期日，risk_level_code产品风险等级，snapshot_date快照日期。
 4. dim_marketing_campaign p：营销活动。campaign_id活动编号，campaign_name活动名称，campaign_type_code活动类型，
-   campaign_status_code活动状态，product_id产品编号，target_customer_segment_code目标客群，channel_code渠道，
+   campaign_status_code活动状态，product_id产品编号，target_customer_segment_code目标客群，channel_code投放渠道，
    owner_org_id负责机构，owner_manager_id负责人，start_time开始时间，end_time结束时间，budget_amount预算，target_count目标人数。
 5. fct_customer_marketing m：营销触达转化事实。relation_id触达关系编号，campaign_id活动编号，customer_id客户编号，
    contact_time触达时间（可为空），contact_channel_code实际触达渠道（可为空），response_flag是否响应，
    conversion_flag是否转化，conversion_amount转化金额(元)。
 关联关系：t/h/m.customer_id = c.customer_id；m.campaign_id = p.campaign_id。
 业务口径：高净值客户指total_asset_amount>=1000000或customer_level_code='PLATINUM'；
-营销转化率=转化人数/触达人数；AUM指客户总资产；只统计status_code='ACTIVE'客户和status_code='SUCCESS'交易。
+营销转化率=转化人数/触达人数；AUM指客户总资产；客户只统计status_code='ACTIVE'，交易统计默认只统计status_code='SUCCESS'。
+
+编码字段取值字典（过滤与分组时只能使用这些值，展示名由服务端翻译）：
+- gender_code 性别：M=男，F=女，U=未知
+- age_band_code 年龄段：A18_25(18-25岁)、A26_35(26-35岁)、A36_45(36-45岁)、A46_60(46-60岁)、A60_PLUS(60岁以上)
+- customer_level_code 客户等级：NORMAL(标准)、GOLD(黄金)、PLATINUM(铂金)
+- occupation_code 职业：FINANCE/EDUCATION/HEALTHCARE/TECH/MANUFACTURING/RETAIL/OTHER
+- transaction_type_code 交易类型：DEPOSIT(存入)、WITHDRAW(支取)、TRANSFER(转账)、CONSUME(消费)、INTEREST(利息)
+- fct_transaction.status_code 交易状态：SUCCESS(成功，统计默认)、FAILED(失败，约占2%，可单独分析失败交易)
+- risk_level_code 风险等级（产品与客户同值域）：R1、R2、R3、R4、R5
+- product_category_code 产品分类：DEPOSIT(存款)、WEALTH(理财)、FUND(基金)
+- dim_marketing_campaign.channel_code 投放渠道：APP/SMS/PHONE/MULTI(多渠道)
+- fct_customer_marketing.contact_channel_code 触达渠道：APP/SMS/PHONE
+- dim_marketing_campaign.campaign_status_code 活动状态：RUNNING(进行中)、FINISHED(已结束)
+- target_customer_segment_code 目标客群：AUM_50W_PLUS/PLATINUM/ACTIVE
+
+数据量级（选择时间粒度与预期行数时参考）：客户约1万名、交易约20万笔、持仓约2万条、触达约3万条；
+交易数据覆盖范围为服务端注入的"交易数据覆盖范围"，范围外日期表示无数据而非0；
+最新持有快照日期由服务端注入，查询当前持有直接使用该日期，不必写MAX(snapshot_date)子查询。
 
 数据能力边界：
 - dim_customer是当前客户画像快照，不提供历史资产序列；asset_change_3m_rate只表示近三个月变化，不能替代同比。
@@ -27,6 +45,6 @@
 - 同一客户可能被多次触达；人数口径按customer_id去重，转化人数只统计conversion_flag=true的去重客户。
 - 营销时间按m.contact_time过滤；本季度指当前季度第一天到当前日期。
 
-- 存款余额：fct_product_holding中product_category_code='DEPOSIT'的market_value_amount按客户合计（元）；holding_amount为份额，不等于统一金额口径。无存款持有的客户可按存款余额0处理，使用受限客户LEFT JOIN后COALESCE；该表按customer_id、product_id、snapshot_date唯一，允许存在多个历史快照，查询当前持有情况时必须明确快照日期或最新快照口径，不得把它当作交易流水。
+- 存款余额：fct_product_holding中product_category_code='DEPOSIT'的market_value_amount按客户合计（元）；holding_amount为份额，不等于统一金额口径。无存款持有的客户可按存款余额0处理，使用受限客户LEFT JOIN后COALESCE；该表按customer_id、product_id、snapshot_date唯一，查询当前持有情况时直接使用服务端注入的最新快照日期，不得把它当作交易流水。
 
-字段边界：数据库物理上还存在dim_customer.customer_name（V5新增的虚构完整姓名），但该字段仅供后端客户定位使用，不属于自由SQL字段白名单；不得在模型生成的SQL中读取或通过别名、子查询绕过限制。dim_customer_manager和business_term也属于数据库表，但前者不在自由SQL查询白名单，后者由后端读取后作为业务术语上下文提供给模型。
+字段边界：数据库物理上还存在dim_customer.customer_name（虚构完整姓名），但该字段仅供后端客户定位使用，不属于自由SQL字段白名单；不得在模型生成的SQL中读取或通过别名、子查询绕过限制。dim_customer_manager和business_term也属于数据库表，但前者不在自由SQL查询白名单，后者由后端读取后作为业务术语上下文提供给模型。

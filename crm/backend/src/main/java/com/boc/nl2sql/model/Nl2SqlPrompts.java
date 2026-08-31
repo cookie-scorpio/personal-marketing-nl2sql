@@ -16,11 +16,13 @@ import java.time.LocalDate;
 @Component
 public class Nl2SqlPrompts {
     private final BusinessTermCatalog terms;
+    private final DataInsightProvider insights;
     private final int maxRows;
     private final String systemPrompt;
     private final String schemaContext;
 
-    public Nl2SqlPrompts(BusinessTermCatalog terms, @Value("${app.query.max-result-rows:100}") int maxRows) {
+    public Nl2SqlPrompts(BusinessTermCatalog terms, DataInsightProvider insights, @Value("${app.query.max-result-rows:100}") int maxRows) {
+        this.insights = insights;
         this.terms = terms;
         this.maxRows = maxRows;
         this.systemPrompt = read("prompts/nl2sql-system.txt");
@@ -32,11 +34,20 @@ public class Nl2SqlPrompts {
     }
 
     public String userPrompt(String question, CurrentUser user) {
-        return schemaContext + "\n数据库业务术语（优先采用）：\n" + terms.promptContext()
-                + "\n当前日期：" + LocalDate.now()
-                + "\n最大返回行数：" + maxRows
-                + "\n必须使用的数据范围条件：" + scopeCondition(user)
-                + "\n用户问题：" + question;
+        var sb = new StringBuilder(schemaContext)
+                .append("\n数据库业务术语（优先采用）：\n").append(terms.promptContext())
+                .append("\n当前日期：").append(LocalDate.now())
+                .append("\n最大返回行数：").append(maxRows);
+        // v1.5 注入数据概览：模型可据此选择合理的时间粒度与空结果说明，减少对快照日期的猜测。
+        if (insights != null) {
+        var snapshot = insights.latestSnapshot();
+        if (snapshot != null) sb.append("\n最新持有快照日期：").append(snapshot).append("（查询当前持有直接用该日期）");
+        var coverage = insights.transactionCoverage();
+        if (coverage != null) sb.append("\n交易数据覆盖范围：").append(coverage).append("（范围外日期为无数据，不是0）");
+        }
+        sb.append("\n必须使用的数据范围条件：").append(scopeCondition(user))
+          .append("\n用户问题：").append(question);
+        return sb.toString();
     }
 
     private String scopeCondition(CurrentUser user) {

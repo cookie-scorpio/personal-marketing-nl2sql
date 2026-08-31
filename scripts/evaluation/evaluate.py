@@ -12,7 +12,6 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
-import pymysql
 import requests
 import yaml
 
@@ -201,6 +200,11 @@ def run_case(args, db, case):
 
 
 def main():
+    # 仅纯比较器单元测试时不需要数据库驱动；实际 HTTP/数据库评测再加载可选依赖。
+    try:
+        import pymysql
+    except ModuleNotFoundError as exc:
+        raise SystemExit('缺少 PyMySQL，请先执行：python -m pip install -r scripts/evaluation/requirements.txt') from exc
     args = arguments()
     if not re.fullmatch(r'[a-zA-Z0-9_]+_test', args.database):
         raise SystemExit('只允许名称以_test结尾的隔离数据库')

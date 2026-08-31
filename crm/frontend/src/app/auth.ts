@@ -27,6 +27,10 @@ function logout(): void { revision++; clearToken(); user.value = null; restoring
 window.addEventListener('storage', event => {
   if (event.key === TOKEN_KEY || event.key === null) { user.value = null; restoring.value = true; void restore() }
 })
+// 令牌过期（后端401）时与账号切换走同一条恢复路径：回到登录页，而不是停留在假死界面。
+window.addEventListener('nl2sql:unauthorized', () => {
+  if (user.value) { user.value = null; restoring.value = true; void restore() }
+})
 export function useAuth() {
   return { user, restoring, authenticated: computed(() => Boolean(user.value)), login, restore, logout }
 }

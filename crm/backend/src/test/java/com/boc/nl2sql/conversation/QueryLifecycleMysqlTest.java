@@ -43,7 +43,7 @@ class QueryLifecycleMysqlTest {
                 "DEEPSEEK", 0.95, sql, "v1.1数据库验收", "AUTO", null);
     }
     private String submit() {
-        return service.submit(new SubmitQueryRequest(UUID.randomUUID().toString(), "分析各年龄段客户数量和平均资产", "AUTO"), director, "v11-mysql-test").taskId();
+        return service.submit(new SubmitQueryRequest(UUID.randomUUID().toString(), "分析各年龄段客户数量和平均资产", "AUTO", true, null), director, "v11-mysql-test").taskId();
     }
     private TaskStatusResponse awaitState(String taskId, String... expected) throws Exception {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
@@ -132,7 +132,7 @@ class QueryLifecycleMysqlTest {
     void duplicateConcurrentSubmissionsCreateOneTaskAndRejectChangedPayload() throws Exception {
         when(model.interpret(anyString(),eq(director),any(),anyBoolean())).thenReturn(plan(normalSql));
         String session=UUID.randomUUID().toString(),key=UUID.randomUUID().toString();
-        var body=new SubmitQueryRequest(session,"分析各年龄段客户数量和平均资产","AUTO",false);
+        var body=new SubmitQueryRequest(session,"分析各年龄段客户数量和平均资产","AUTO",false, null);
         var pool=java.util.concurrent.Executors.newFixedThreadPool(8);
         try{
             var calls=new java.util.ArrayList<java.util.concurrent.Callable<String>>();
@@ -143,7 +143,7 @@ class QueryLifecycleMysqlTest {
             // 终态提交先于兼容历史的写入；等待该副作用完成后验证仍只有一条，避免时序偶发失败。
             for(int i=0;i<100 && jdbc.queryForObject("SELECT COUNT(*) FROM query_history WHERE task_id=?",Integer.class,id)==0;i++)Thread.sleep(20);
             assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM query_history WHERE task_id=?",Integer.class,id)).isEqualTo(1);
-            assertThatThrownBy(()->service.submit(new SubmitQueryRequest(session,"不同问题","AUTO",false),director,"changed",key)).isInstanceOfSatisfying(BusinessException.class,e->assertThat(e.code()).isEqualTo(409005));
+            assertThatThrownBy(()->service.submit(new SubmitQueryRequest(session,"不同问题","AUTO",false, null),director,"changed",key)).isInstanceOfSatisfying(BusinessException.class,e->assertThat(e.code()).isEqualTo(409005));
             verify(model,times(1)).interpret(anyString(),eq(director),any(),eq(false));
         }finally{pool.shutdownNow();}
     }
@@ -152,7 +152,7 @@ class QueryLifecycleMysqlTest {
         var manager=new CurrentUser(1L,"manager01","经理",RoleCode.CUSTOMER_MANAGER,"EAST","B001","M0001");
         for(String id:java.util.List.of("C99000001","C99000002"))jdbc.update("INSERT INTO dim_customer(customer_id,customer_name,customer_name_masked,gender_code,age,age_band_code,mobile_masked,customer_level_code,vip_flag,risk_level_code,occupation_code,region_code,branch_id,manager_id,total_asset_amount,asset_change_3m_rate,open_date,status_code,snapshot_date) VALUES(?, '李验甲','李**','M',35,'A26_35','900****8877','NORMAL',false,'R2','OTHER','EAST','B001','M0001',100000,0,CURRENT_DATE,'ACTIVE',CURRENT_DATE) ON DUPLICATE KEY UPDATE customer_name='李验甲'",id);
         String session=UUID.randomUUID().toString();
-        String id=service.submit(new SubmitQueryRequest(session,"查询李验甲的资产信息","AUTO",true),manager,"identity",UUID.randomUUID().toString()).taskId();
+        String id=service.submit(new SubmitQueryRequest(session,"查询李验甲的资产信息","AUTO",true, null),manager,"identity",UUID.randomUUID().toString()).taskId();
         TaskStatusResponse asking=waitForUser(id,manager,"ASKING");
         assertThat(asking.question().type()).isEqualTo("CUSTOMER_SELECTION");assertThat(asking.question().candidates()).hasSize(2);
         assertThat(asking.question().candidates()).allSatisfy(c->assertThat(c.name()).isEqualTo("李**"));
@@ -170,9 +170,9 @@ class QueryLifecycleMysqlTest {
         assertThat(result.result().sqlPreview()).doesNotContain("李验甲");
         var detail=conversations.detail(session,manager,0,100);assertThat(detail.get("context").toString()).contains("C99000001");
         assertThat((java.util.List<?>)detail.get("messages")).hasSize(4);
-        String next=service.submit(new SubmitQueryRequest(session,"看看他的产品持有","AUTO",true),manager,"followup",UUID.randomUUID().toString()).taskId();
+        String next=service.submit(new SubmitQueryRequest(session,"看看他的产品持有","AUTO",true, null),manager,"followup",UUID.randomUUID().toString()).taskId();
         assertThat(waitForUser(next,manager,"SUCCESS").displayQuery()).contains("C99000001");
-        String changed=service.submit(new SubmitQueryRequest(session,"再查询C99000002的资产信息","AUTO",true),manager,"change-customer",UUID.randomUUID().toString()).taskId();
+        String changed=service.submit(new SubmitQueryRequest(session,"再查询C99000002的资产信息","AUTO",true, null),manager,"change-customer",UUID.randomUUID().toString()).taskId();
         assertThat(waitForUser(changed,manager,"SUCCESS").result().rows().get(0).get("customer_id")).isEqualTo("C99000002");
         assertThatThrownBy(()->conversations.detail(session,director,0,100)).isInstanceOf(BusinessException.class);
         verifyNoInteractions(model);
@@ -181,7 +181,7 @@ class QueryLifecycleMysqlTest {
     void sameSessionRejectsAnotherTaskUntilFirstTaskEndsAndEventsAreDurable() throws Exception {
         CountDownLatch entered=new CountDownLatch(1),release=new CountDownLatch(1);
         when(model.interpret(anyString(),eq(director),any(),anyBoolean())).thenAnswer(call->{entered.countDown();release.await(5,TimeUnit.SECONDS);return plan(normalSql);});
-        String session=UUID.randomUUID().toString();var request=new SubmitQueryRequest(session,"分析各年龄段客户数量和平均资产","AUTO",true);
+        String session=UUID.randomUUID().toString();var request=new SubmitQueryRequest(session,"分析各年龄段客户数量和平均资产","AUTO",true, null);
         String id=service.submit(request,director,"active",UUID.randomUUID().toString()).taskId();
         assertThat(entered.await(3,TimeUnit.SECONDS)).isTrue();
         try{

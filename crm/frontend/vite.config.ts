@@ -2,7 +2,10 @@ import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
 export default defineConfig(({ mode }) => {
-  const apiTarget = loadEnv(mode, '.', 'API_').API_PROXY_TARGET || 'http://127.0.0.1:8080'
+  const fileEnv = loadEnv(mode, '.', 'API_')
+  // 启动命令显式传入的代理目标优先，便于隔离验收或并行运行不同后端实例。
+  const runtimeEnv = (globalThis as unknown as { process?: { env?: Record<string, string | undefined> } }).process?.env
+  const apiTarget = runtimeEnv?.API_PROXY_TARGET || fileEnv.API_PROXY_TARGET || 'http://127.0.0.1:8080'
   return {
   plugins: [vue()],
   build: {

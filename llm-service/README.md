@@ -2,7 +2,7 @@
 
 本目录管理自然语言理解、查询要素抽取、完备性校验、主动澄清、NL2SQL、SQL 安全校验和效果评测。
 
-v1.0的可运行实现目前位于`crm/backend`的`model`、`nl2sql`、`knowledge`和`execution`模块。本目录保留未来独立部署与评测资产边界，不需要额外启动服务。DeepSeek已接入，Milvus与BCG-E3暂不启用；查询引擎统一为MySQL。
+v1.5 的可运行实现位于 `crm/backend` 的 `model`、`nl2sql`、`knowledge` 和 `execution` 模块。本目录只保留未来独立部署与评测的扩展位置，不需要额外启动服务。DeepSeek 已接入，Milvus 与 BCG-E3 暂不启用；查询引擎统一为 MySQL。
 
 - `app/`：可部署服务代码。
 - `prompts/`：提示词及版本说明。

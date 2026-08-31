@@ -29,6 +29,8 @@ public class QueryTaskEntity {
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String resolvedCustomerId;
     private String displayQuery;
+    private String customerIdsJson;
+    private String multiCustomersJson;
     private Long stateVersion;
     private Integer repairAttempts;
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
@@ -63,6 +65,10 @@ public class QueryTaskEntity {
     public void setResolvedCustomerId(String value) { resolvedCustomerId=value; }
     public String getDisplayQuery() { return displayQuery; }
     public void setDisplayQuery(String value) { displayQuery=value; }
+    public String getCustomerIdsJson() { return customerIdsJson; }
+    public void setCustomerIdsJson(String value) { customerIdsJson=value; }
+    public String getMultiCustomersJson() { return multiCustomersJson; }
+    public void setMultiCustomersJson(String value) { multiCustomersJson=value; }
     public Long getStateVersion() { return stateVersion; }
     public void setStateVersion(Long stateVersion) { this.stateVersion = stateVersion; }
     public Integer getRepairAttempts() { return repairAttempts; }

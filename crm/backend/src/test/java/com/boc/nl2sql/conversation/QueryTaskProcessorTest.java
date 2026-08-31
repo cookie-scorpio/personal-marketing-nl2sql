@@ -44,7 +44,8 @@ class QueryTaskProcessorTest {
         var planner = new SqlPlanner(scope, 100);
         processor = new QueryTaskProcessor(mapper, states, model, new CompletenessValidator(), planner,
                 new SqlRiskEvaluator(), new SqlSafetyValidator(), new GeneratedSqlScopeValidator(), execution,
-                new ResultAssembler(), new FallbackPlanner(parser, planner, scope, 100), history, audit, json, 2);
+                new ResultAssembler(null), new FallbackPlanner(parser, planner, scope, 100), history, audit, json,
+                new com.boc.nl2sql.nl2sql.application.DisplayConflictGuard(), 2);
         task = new QueryTaskEntity(); task.setTaskId("task"); task.setUserId(1L); task.setSessionId("session");
         task.setQueryText("分析各年龄段客户数量和平均资产"); task.setMergedQueryText(task.getQueryText());
         task.setStatusCode("RECEIVED"); task.setStateVersion(0L); task.setRepairAttempts(0); task.setClarificationRound(0);

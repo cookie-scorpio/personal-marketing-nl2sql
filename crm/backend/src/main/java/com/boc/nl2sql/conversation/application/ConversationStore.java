@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import tools.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Map;
+import java.util.LinkedHashMap;
 
 /** 所有写入由调用方事务包裹：状态、消息、事件在同一 MySQL 事务中提交。 */
 @Service
@@ -36,6 +37,45 @@ public class ConversationStore {
         if(page<1||size<1||size>100)throw new BusinessException(400001,"分页参数不正确");
         return jdbc.queryForList("SELECT session_id,title,active_task_id,state_version,created_at,updated_at FROM conversation_session WHERE user_id=? AND deleted_at IS NULL ORDER BY created_at DESC,session_id DESC LIMIT ? OFFSET ?",user.userId(),size,(long)(page-1)*size);
     }
+    /** @客户名单：批量校验编号是否在用户数据范围内；返回 (在范围内, 不在范围内) 两个集合。 */
+    public record IdScope(java.util.Set<String> inScope, java.util.Set<String> outOfScope) {}
+    public IdScope checkIdsScope(java.util.Collection<String> ids, CurrentUser user) {
+        if (ids.isEmpty()) return new IdScope(java.util.Set.of(), java.util.Set.of());
+        String safeIds = ids.stream().filter(i -> i.matches("C[0-9]{8}")).map(i -> "'" + i + "'")
+                .reduce((a, b) -> a + "," + b).orElse("''");
+        String condition = switch (user.role()) {
+            case CUSTOMER_MANAGER -> "manager_id = '" + user.managerId() + "'";
+            case TEAM_LEAD -> "branch_id = '" + user.branchId() + "'";
+            case ORG_MANAGER -> "region_code = '" + user.regionCode() + "'";
+        };
+        var found = new java.util.HashSet<>(jdbc.queryForList(
+                "SELECT customer_id FROM dim_customer WHERE status_code='ACTIVE' AND " + condition + " AND customer_id IN (" + safeIds + ")",
+                String.class));
+        var inScope = new java.util.LinkedHashSet<String>();
+        var outOfScope = new java.util.LinkedHashSet<String>();
+        for (String id : ids) (found.contains(id) ? inScope : outOfScope).add(id);
+        return new IdScope(inScope, outOfScope);
+    }
+
+    /** v1.5 客户检索前置校验：返回服务端保存的固定条件，前端无权覆盖。 */
+    public CustomerResolver.SearchScope requireActiveCustomerClarification(String id,CurrentUser user){
+        own(id,user);
+        var session=jdbc.queryForMap("SELECT active_task_id,deleted_at FROM conversation_session WHERE session_id=?",id);
+        if(session.get("deleted_at")!=null)throw new BusinessException(404001,"会话不存在");
+        var rows=jdbc.queryForList("SELECT status_code,question_json FROM query_task WHERE task_id=?",session.get("active_task_id"));
+        if(rows.isEmpty())throw new BusinessException(409001,"当前没有待处理的客户定位");
+        String status=(String)rows.get(0).get("status_code");
+        Object q=rows.get(0).get("question_json");
+        Map<?,?> question=q==null?Map.of():json.readValue(q.toString(),Map.class);
+        Object rawType = question.get("type");
+        String type = rawType == null ? "" : String.valueOf(rawType);
+        if(!"ASKING".equals(status) || !type.startsWith("CUSTOMER_"))throw new BusinessException(409001,"当前没有待处理的客户定位");
+        Object rawSlots=question.get("recognized_slots");
+        Map<String,String> slots=new LinkedHashMap<>();
+        if(rawSlots instanceof Map<?,?> values)values.forEach((key,value)->slots.put(String.valueOf(key),String.valueOf(value)));
+        return CustomerResolver.scopeFromSlots(slots);
+    }
+
     public Map<String,Object> detail(String id,CurrentUser user,long before,int size){
         own(id,user);
         if(size<1||size>100)throw new BusinessException(400001,"page_size 必须为1至100");
@@ -54,11 +94,32 @@ public class ConversationStore {
         if(rows.isEmpty() || ((Number)rows.get(0).get("user_id")).longValue()!=user.userId())throw new BusinessException(404001,"会话不存在");
         var session=rows.get(0);
         if(session.get("deleted_at")!=null)return;
-        if(session.get("active_task_id")!=null)throw new BusinessException(409007,"会话中有未结束的查询，请先完成或取消后再删除");
-        jdbc.update("UPDATE conversation_session SET deleted_at=NOW(3),state_version=state_version+1 WHERE session_id=?",id);
+        // v1.5 级联删除：会话有未结束任务时，同一事务内先取消任务再删除。
+        // 取消落库后执行器轮询即停，迟到的模型/SQL结果因任务已终态被丢弃，不会复活已删除会话。
+        if(session.get("active_task_id")!=null)cascadeCancel(id,(String)session.get("active_task_id"),user,requestId);
+        jdbc.update("UPDATE conversation_session SET deleted_at=NOW(3),active_task_id=NULL,state_version=state_version+1 WHERE session_id=?",id);
         jdbc.update("UPDATE query_history h JOIN query_task q ON h.task_id=q.task_id SET h.deleted=TRUE WHERE q.session_id=?",id);
         jdbc.update("INSERT INTO audit_event(request_id,user_id,event_type,event_summary) VALUES(?,?,?,?)",requestId,user.userId(),"CONVERSATION_DELETED","session_id="+id);
     }
+
+    /** 级联取消：非终态任务CAS置为CANCELLED并落终态事件与消息；已是终态则跳过。 */
+    private void cascadeCancel(String sessionId,String taskId,CurrentUser user,String requestId){
+        var rows=jdbc.queryForList("SELECT status_code,state_version,progress FROM query_task WHERE task_id=? FOR UPDATE",taskId);
+        if(rows.isEmpty())return;
+        var task=rows.get(0);
+        String status=(String)task.get("status_code");
+        if(java.util.Set.of("SUCCESS","FAILED","CANCELLED","TIMED_OUT","DEGRADED").contains(status))return;
+        long newVersion=((Number)task.get("state_version")).longValue()+1;
+        int updated=jdbc.update("UPDATE query_task SET status_code='CANCELLED',progress=100,stage_message='会话已删除，查询已自动取消',updated_at=NOW(3),state_version=? WHERE task_id=? AND state_version=?",
+                newVersion,taskId,((Number)task.get("state_version")).longValue());
+        if(updated==0)return;
+        jdbc.update("INSERT INTO query_task_event(task_id,state_version,payload_json,created_at) VALUES(?,?,?,NOW(3))",taskId,newVersion,
+                json.writeValueAsString(Map.of("task_id",taskId,"status","CANCELLED","progress",100,"message","会话已删除，查询已自动取消")));
+        jdbc.update("INSERT INTO conversation_message(session_id,task_id,role_code,message_key,content,created_at,updated_at) VALUES(?,?,?,?,?,NOW(3),NOW(3))",
+                sessionId,taskId,"ASSISTANT","cancel-cascade","会话已删除，查询已自动取消");
+        jdbc.update("INSERT INTO audit_event(request_id,user_id,event_type,event_summary) VALUES(?,?,?,?)",requestId,user.userId(),"QUERY_CANCELLED","cascade by session delete, task_id="+taskId);
+    }
+
     /** 用户消息目录不含助手结果，可按需加载历史页后定位。 */
     public List<Map<String,Object>> anchors(String id,CurrentUser user,long after,int size){
         own(id,user);

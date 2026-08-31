@@ -18,10 +18,12 @@ const width = ref(0)
 const pieItems = computed(() => {
   const measure = props.chart.series[0]
   if (props.chart.type !== 'PIE' || !measure) return []
-  const rows = props.rows.filter(row => number(row[measure.key]) !== null)
-  const sum = rows.reduce((total, row) => total + (number(row[measure.key]) || 0), 0)
+  // 负值不参与构成，合计非正时没有可表达的构成关系，返回空列表避免错误的0.00%展示。
+  const rows = props.rows.filter(row => number(row[measure.key]) !== null && number(row[measure.key])! >= 0)
+  const sum = rows.reduce((total, row) => total + number(row[measure.key])!, 0)
+  if (sum <= 0) return []
   return rows.map((row, index) => ({ name: label(row[props.chart.dimension_key]), value: number(row[measure.key])!,
-    percent: sum > 0 ? ((number(row[measure.key])! / sum) * 100).toFixed(2) : '0.00', color: palette[index % palette.length] }))
+    percent: ((number(row[measure.key])! / sum) * 100).toFixed(2), color: palette[index % palette.length] }))
 })
 // 三栏结果卡片通常不足以安全容纳饼图外标签；窄图使用完整HTML图例承载文字与数值。
 const compactPie = computed(() => width.value < 680 || pieItems.value.length > 6)
@@ -68,11 +70,14 @@ function buildOption(): EChartsCoreOption {
     const data = props.rows.filter(row => number(row[measure.key]) !== null).map(row =>
       [xs.indexOf(label(row[dimension])), ys.indexOf(label(row[second])), number(row[measure.key]) as number])
     const values = data.map(item => item[2]!)
+    // 无有效数值或全部相等时，visualMap 的min/max会是±Infinity或相等，给出安全缺省。
+    const vmin = values.length ? Math.min(...values) : 0
+    const vmax = values.length ? Math.max(...values) : 1
     return { ...base, tooltip: { trigger: 'item', confine: true },
       grid: { left: 15, right: 25, top: 45, bottom: 65, containLabel: true },
       xAxis: { type: 'category', data: xs, axisLabel: { rotate: xs.length > 7 ? 30 : 0 } },
       yAxis: { type: 'category', data: ys },
-      visualMap: { min: Math.min(...values), max: Math.max(...values), calculable: true, orient: 'horizontal',
+      visualMap: { min: vmin, max: vmax > vmin ? vmax : vmin + 1, calculable: true, orient: 'horizontal',
         left: 'center', bottom: 0, inRange: { color: ['#f8ecec', '#d77a82', '#9e1724'] } },
       series: [{ name: measure.label, type: 'heatmap', data, label: { show: data.length <= 30 } }],
     }

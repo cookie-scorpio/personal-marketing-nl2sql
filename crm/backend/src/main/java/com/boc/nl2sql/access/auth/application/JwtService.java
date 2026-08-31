@@ -33,6 +33,10 @@ public class JwtService {
     public JwtService(ObjectMapper objectMapper,
                       @Value("${app.security.jwt-secret}") String secret,
                       @Value("${app.security.jwt-ttl-seconds}") long ttlSeconds) {
+        // 密钥缺失或仍为仓库历史默认值时拒绝启动，防止用公开默认密钥伪造任意身份的令牌。
+        if (secret == null || secret.isBlank() || "nl2sql-local-development-secret-change-before-sharing".equals(secret)) {
+            throw new IllegalStateException("缺少安全的 JWT 签名密钥：请通过环境变量 JWT_SECRET 设置（至少32个随机字符）后再启动。");
+        }
         this.objectMapper = objectMapper;
         this.secret = secret.getBytes(StandardCharsets.UTF_8);
         this.ttlSeconds = ttlSeconds;

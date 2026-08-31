@@ -15,10 +15,12 @@ import java.util.List;
 public class TaskSnapshots {
     private final ObjectMapper json;
     private final int timeout;
+    private final CustomerResolver customers;
     @org.springframework.beans.factory.annotation.Autowired(required=false)
     private com.boc.nl2sql.execution.application.SqlRepairStore repairs;
-    public TaskSnapshots(ObjectMapper json, @Value("${app.query.execution-timeout-seconds:60}") int timeout) {
-        this.json=json; this.timeout=timeout;
+    public TaskSnapshots(ObjectMapper json, @Value("${app.query.execution-timeout-seconds:60}") int timeout,
+                         CustomerResolver customers) {
+        this.json=json; this.timeout=timeout; this.customers=customers;
     }
     @SuppressWarnings("unchecked")
     public TaskStatusResponse of(QueryTaskEntity task) {
@@ -33,7 +35,12 @@ public class TaskSnapshots {
                 confirmation,read(task.getResultJson(),QueryResult.class),task.getErrorMessage()==null?null:Map.of("message",task.getErrorMessage()),
                 task.getRepairAttempts()==null?0:task.getRepairAttempts(),repairs==null?List.of():repairs.list(task.getTaskId()),
                 timeout,!QueryStatus.terminal(task.getStatusCode()),
-                task.getStateVersion(),Boolean.TRUE.equals(task.getThinkingEnabled()),task.getDisplayQuery(),task.getCreatedAt(),task.getUpdatedAt());
+                task.getStateVersion(),Boolean.TRUE.equals(task.getThinkingEnabled()),task.getDisplayQuery(),customerCard(task),task.getCreatedAt(),task.getUpdatedAt());
+    }
+    private TaskStatusResponse.CustomerCard customerCard(QueryTaskEntity task){
+        return customers.card(task.getResolvedCustomerId())
+                .map(card->new TaskStatusResponse.CustomerCard(card.customerId(),card.name(),card.branchId(),card.mobile()))
+                .orElse(null);
     }
     private <T>T read(String value,Class<T> type){return value==null?null:json.readValue(value,type);}
 }

@@ -98,12 +98,35 @@ public class QueryApplicationService {
         if(!java.util.Set.of("AUTO","TABLE","BAR","LINE","AREA","PIE","SCATTER","HEATMAP","METRIC").contains(display))throw new BusinessException(400001,"preferred_display不是支持的展示类型");
         task.setPreferredDisplay(display);
         var previous=conversations.context(session);
-        boolean inherit=followups.followup(request.queryText()) && !customers.explicitIdentity(request.queryText());
+        // @客户名单（方案甲）：解析粘贴的编号集合并做账号范围预检。
+        java.util.LinkedHashSet<String> requestedIds=new java.util.LinkedHashSet<>();
+        if(request.customerIds()!=null){
+            for(String raw:request.customerIds()){
+                if(raw==null)continue;String id=raw.trim().toUpperCase(java.util.Locale.ROOT);
+                if(!id.matches("C[0-9]{8}"))throw new BusinessException(400001,"客户编号格式不正确："+id);
+                requestedIds.add(id);
+            }
+            if(requestedIds.size()>200)throw new BusinessException(400001,"客户名单一次最多200人，请分批查询");
+        }
+        // 用户显式扩大统计对象（全行/全部客户等）时不继承单客约束，避免形成无法解除的澄清循环。
+        boolean expands=followups.expandsScope(request.queryText());
+        boolean inherit=followups.followup(request.queryText()) && !customers.explicitIdentity(request.queryText()) && !expands;
         task.setMergedQueryText(inherit?followups.merge(request.queryText().trim(),previous):request.queryText().trim());
         if(task.getMergedQueryText().length()>8000)throw new BusinessException(400005,"当前上下文过长，请新建会话并明确需要保留的条件");
-        task.setResolvedCustomerId(inherit?previous.customerId():null);
-        task.setContextJson(objectMapper.writeValueAsString(inherit?previous:com.boc.nl2sql.conversation.domain.ConversationContext.empty()));
-        task.setDisplayQuery(customers.redact(task.getMergedQueryText()));
+        task.setResolvedCustomerId(inherit&&!requestedIds.isEmpty()?previous.customerId():(requestedIds.isEmpty()?task.getResolvedCustomerId():null));
+        task.setContextJson(objectMapper.writeValueAsString(inherit&&requestedIds.isEmpty()?previous:com.boc.nl2sql.conversation.domain.ConversationContext.empty()));
+        // 展示文本只用用户原话（含承接提示），内部合并模板只交给模型。
+        String displayBase=customers.redact(followups.displayText(request.queryText().trim(),inherit?previous:null,inherit));
+        // 用户气泡忠实保存本人输入；助手回显、任务文本和模型上下文仍使用脱敏版本。
+        String visibleUserQuery=request.queryText().trim();
+        if(!requestedIds.isEmpty()){
+            // @名单展示与用户消息一致：折叠编号为名单标签，不罗列长串编号。
+            displayBase=displayBase.replaceAll("(?i)C[0-9]{8}(\s*[，,、]?\s*)+"," ").trim()
+                    +"（@客户名单 "+requestedIds.size()+" 人）";
+            visibleUserQuery=visibleUserQuery.replaceAll("(?i)C[0-9]{8}(\s*[，,、]?\s*)+"," ").trim()
+                    +" @客户名单("+requestedIds.size()+"人)";
+        }
+        task.setDisplayQuery(displayBase);
         task.setThinkingEnabled(request.thinkingEnabled()==null||request.thinkingEnabled());
         task.setIdempotencyKey(key);task.setRequestHash(fingerprint);
         task.setStatusCode(QueryStatus.RECEIVED.name());
@@ -113,11 +136,35 @@ public class QueryApplicationService {
         task.setStateVersion(0L);
         task.setRepairAttempts(0);
         task.setConfirmed(false);
+        if(!requestedIds.isEmpty()){
+            // 范围预检：权限内的进入名单，权限外的通过澄清剔除，绝不静默丢弃。
+            var scopeCheck=conversations.checkIdsScope(requestedIds,user);
+            var inScope=new java.util.LinkedHashSet<String>(scopeCheck.inScope());
+            var outOfScope=new java.util.LinkedHashSet<String>(scopeCheck.outOfScope());
+            task.setCustomerIdsJson(objectMapper.writeValueAsString(inScope));
+            if(!outOfScope.isEmpty()){
+                String removed=String.join("、",outOfScope);
+                var q=new com.boc.nl2sql.nl2sql.domain.ClarificationQuestion(UUID.randomUUID().toString(),"CUSTOMER_SCOPE",
+                        "客户名单中有 "+outOfScope.size()+" 人不在您的数据权限范围（"+removed+"），已自动剔除。是否按剩余 "+inScope.size()+" 人继续查询？",
+                        java.util.List.of("剔除后继续（剩余 "+inScope.size()+" 人）","取消本次查询"),
+                        java.util.Map.of("名单总数",String.valueOf(requestedIds.size()),"权限外",removed),
+                        "剔除后继续（剩余 "+inScope.size()+" 人）");
+                task.setQuestionJson(objectMapper.writeValueAsString(q));
+                task.setStatusCode(QueryStatus.ASKING.name());task.setProgress(30);task.setStageMessage(q.prompt());
+                auditService.record(requestId, taskId, user.userId(), "QUERY_ASKING", "CUSTOMER_SCOPE");
+                taskMapper.insert(task);
+                conversations.activate(task.getSessionId(),taskId);
+                conversations.userMessage(task,"query",visibleUserQuery);conversations.record(task);
+                auditService.record(requestId, taskId, user.userId(), "QUERY_RECEIVED", "provider request accepted");
+                return new SubmitQueryResponse(taskId, request.sessionId(), QueryStatus.ASKING.name(), 30,
+                        "/api/v1/queries/" + taskId + "/status");
+            }
+        }
         task.setCreatedAt(LocalDateTime.now());
         task.setUpdatedAt(LocalDateTime.now());
         taskMapper.insert(task);
         conversations.activate(task.getSessionId(),taskId);
-        conversations.userMessage(task,"query",task.getQueryText());conversations.record(task);
+        conversations.userMessage(task,"query",visibleUserQuery);conversations.record(task);
         auditService.record(requestId, taskId, user.userId(), "QUERY_RECEIVED", "provider request accepted");
         enqueue(taskId,user,requestId);
         return new SubmitQueryResponse(taskId, request.sessionId(), QueryStatus.RECEIVED.name(), 0,
@@ -153,14 +200,31 @@ public class QueryApplicationService {
         if (question == null || !question.questionId().equals(request.questionId())) {
             throw new BusinessException(409002, "反问已失效，请刷新任务状态");
         }
+        if("CUSTOMER_SCOPE".equals(question.type())){
+            // @名单权限澄清：剔除后继续（名单已在提交时收敛为权限内集合）或直接取消。
+            if(answer.contains("取消")){
+                cancel(request.taskId(),user,requestId);
+                return new SubmitQueryResponse(request.taskId(),sessionId,"CANCELLED",100,"/api/v1/queries/"+request.taskId()+"/status");
+            }
+            task.setStatusCode(QueryStatus.RECEIVED.name());task.setProgress(10);
+            task.setStageMessage("已确认名单范围，正在重新解析");task.setQuestionJson(null);
+            task.setClarificationRound(task.getClarificationRound()+1);
+            conversations.userMessage(task,"answer-"+question.questionId(),answer);
+            saveOrConflict(task);
+            auditService.record(requestId,task.getTaskId(),user.userId(),"QUERY_CLARIFIED","CUSTOMER_SCOPE");
+            enqueue(task.getTaskId(),user,requestId);
+            return new SubmitQueryResponse(task.getTaskId(),sessionId,QueryStatus.RECEIVED.name(),10,
+                    "/api/v1/queries/"+task.getTaskId()+"/status");
+        }
         String connector = "CONFLICT".equals(question.type()) ? "，最终条件为："
-                : "TIME_BASIS".equals(question.type()) ? "，时间口径：" : "，补充条件：";
-        if(question.type().startsWith("CUSTOMER_"))customers.answer(task,user,question,answer,request.identityType());
+                : "TIME_BASIS".equals(question.type()) ? "，时间口径："
+                : "DISPLAY_CONFLICT".equals(question.type()) ? "，展示口径：" : "，补充条件：";
+        if("CUSTOMER_CONFIRM".equals(question.type()))customers.confirmMulti(task,user,answer);
+        else if(question.type().startsWith("CUSTOMER_"))customers.answer(task,user,question,answer,request.identityType());
         else if("FOLLOWUP_CONTEXT".equals(question.type()))task.setMergedQueryText(answer);
         else task.setMergedQueryText(task.getMergedQueryText() + connector + answer);
         task.setDisplayQuery(customers.redact(task.getMergedQueryText()));
-        String visibleAnswer="CUSTOMER_NAME".equals(request.identityType())?CustomerResolver.mask(answer):customers.redact(answer);
-        conversations.userMessage(task,"answer-"+question.questionId(),request.identityType()==null?visibleAnswer:request.identityType()+"："+visibleAnswer);
+        conversations.userMessage(task,"answer-"+question.questionId(),request.identityType()==null?answer:request.identityType()+"："+answer);
         task.setClarificationRound(task.getClarificationRound() + 1);
         task.setQuestionJson(null);
         task.setStatusCode(QueryStatus.RECEIVED.name());

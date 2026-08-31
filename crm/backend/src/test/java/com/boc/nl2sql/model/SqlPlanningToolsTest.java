@@ -20,7 +20,7 @@ import static org.mockito.Mockito.*;
 class SqlPlanningToolsTest {
     final CurrentUser user=new CurrentUser(1L,"manager01","经理",RoleCode.CUSTOMER_MANAGER,"EAST","B001","M0001");
     final String valid="SELECT c.customer_id FROM dim_customer c WHERE c.manager_id='M0001' LIMIT 100";
-    Nl2SqlPrompts prompts(){var terms=mock(BusinessTermCatalog.class);when(terms.promptContext()).thenReturn("");return new Nl2SqlPrompts(terms,100);}
+    Nl2SqlPrompts prompts(){var terms=mock(BusinessTermCatalog.class);when(terms.promptContext()).thenReturn("");return new Nl2SqlPrompts(terms, null, 100);}
     @Test void toolsEnforceScopeRejectWritesAndNeverReturnRows(){
         var tools=new SqlPlanningTools(prompts(),100);
         assertThat(tools.call("validate_sql",Map.of("sql",valid),user)).containsEntry("ok",true).containsEntry("executed",false).doesNotContainKey("rows");

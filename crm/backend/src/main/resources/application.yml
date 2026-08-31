@@ -35,8 +35,8 @@ mybatis-plus:
 
 app:
   security:
-    # 仅用于本地 MVP。部署到其他环境时必须通过环境变量覆盖。
-    jwt-secret: ${JWT_SECRET:nl2sql-local-development-secret-change-before-sharing}
+    # 必须通过环境变量 JWT_SECRET 提供；缺失时应用拒绝启动，不再提供可猜测的默认值。
+    jwt-secret: ${JWT_SECRET:}
     jwt-ttl-seconds: ${JWT_TTL_SECONDS:28800}
   model:
     provider: ${MODEL_PROVIDER:mock}

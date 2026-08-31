@@ -25,7 +25,9 @@ public record TaskStatusResponse(
         long stateVersion,
         boolean thinkingEnabled,
         String displayQuery,
+        CustomerCard resolvedCustomer,
         java.time.LocalDateTime createdAt,
         java.time.LocalDateTime updatedAt
 ) {
+    public record CustomerCard(String customerId,String name,String branchId,String mobile) {}
 }

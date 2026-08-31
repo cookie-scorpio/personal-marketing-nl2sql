@@ -2,32 +2,40 @@
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { ChatDotRound, Promotion, Loading, VideoPause, Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { apiRequest, apiUrl, ApiError, getToken } from '../../app/api'
+import { apiRequest, apiUrl, ApiError, getToken, operationKey, uuid } from '../../app/api'
 import { useAuth } from '../../app/auth'
 import type { ConversationMessage, ConversationDetail, TaskStatus, SubmitQueryResponse } from '../../app/types'
 import QueryResultView from './QueryResultView.vue'
 import MessageNavigator from './MessageNavigator.vue'
 import MessageActions from './MessageActions.vue'
+import AgentSteps from './AgentSteps.vue'
+import ClarifyPanel from './ClarifyPanel.vue'
 
 const emit = defineEmits<{ 'sessions-changed': [] }>()
 const { user } = useAuth()
 const ownerId = user.value?.user_id
 const storageKey = `nl2sql-session-${ownerId}`
 const editing = ref(false)
-const draft = ref(''), thinking = ref(true), sessionId = ref(crypto.randomUUID() as string)
+const draft = ref(''), thinking = ref(true), sessionId = ref(uuid() as string)
 const messages = ref<ConversationMessage[]>([]), task = ref<TaskStatus | null>(null)
 const sending = ref(false), cancelling = ref(false), loading = ref(false)
 const hasMore = ref(false), connectionNote = ref('')
 const selected = ref(''), answer = ref(''), listHost = ref<HTMLElement>()
-const identityType = ref('')
-const identityQuestion = computed(() => !!task.value?.question?.type.startsWith('CUSTOMER_') && task.value?.question?.type !== 'CUSTOMER_SELECTION')
-const identityLabels: Record<string, string> = { CUSTOMER_ID: '客户编号', CUSTOMER_NAME: '客户虚拟姓名', MOBILE_SUFFIX: '手机号后四位' }
-const identityPlaceholder = computed(() => ({ CUSTOMER_ID: '例如 C00000001', CUSTOMER_NAME: '输入完整虚拟姓名', MOBILE_SUFFIX: '输入4位数字，保留开头的0' }[identityType.value] || '先选择用于定位的信息类型'))
+// v1.5 @客户名单：粘贴含2个以上编号的文本自动折叠为名单标签，随提交送服务端校验。
+const listIds = ref<string[]>([])
+const detectedIds = computed(() => {
+  const found = new Set<string>()
+  for (const m of draft.value.matchAll(/C\d{8}/gi)) found.add(m[0].toUpperCase())
+  return [...found]
+})
+const showListChip = computed(() => detectedIds.value.length >= 2)
 const phases = ref<Record<string, string[]>>({})
+// agent步骤流：记录任务内每个阶段的首次到达时间，驱动前端分步进度展示。
+const stepLog = ref<Record<string, { key: string; label: string; at: string }[]>>({})
 const failedSubmission = ref('')
 const composer = ref<HTMLTextAreaElement>()
 const navigationBusy = computed(() => loading.value || sending.value || cancelling.value || !!failedSubmission.value)
-type Pending = { key: string; text: string; session: string; thinking: boolean }
+type Pending = { key: string; text: string; session: string; thinking: boolean; ids?: string[]; display?: string }
 let pending: Pending | null = null
 let controller: AbortController | null = null
 let generation = 0
@@ -60,10 +68,12 @@ function update(status: TaskStatus) {
   const history = phases.value[status.task_id] ||= []
   const label = phaseLabels[status.status] || status.message
   if (history[history.length - 1] !== label) history.push(label)
+  const steps = stepLog.value[status.task_id] ||= []
+  if (steps[steps.length - 1]?.key !== status.status) steps.push({ key: status.status, label, at: status.updated_at || new Date().toISOString() })
   if (!task.value || status.task_id === task.value.task_id && status.state_version >= task.value.state_version) {
     const oldQuestion = task.value?.question?.question_id
     task.value = status
-    if (oldQuestion !== status.question?.question_id) { answer.value = ''; selected.value = ''; identityType.value = '' }
+    if (oldQuestion !== status.question?.question_id) { answer.value = ''; selected.value = '' }
   }
   if (previous?.task_id !== status.task_id || previous.status !== status.status && (stopped.has(status.status) || waiting.has(status.status))) emit('sessions-changed')
   scroll()
@@ -91,9 +101,11 @@ async function subscribe(id: string) {
         let end: number
         while ((end = buffer.indexOf('\n\n')) >= 0) {
           const event = buffer.slice(0, end); buffer = buffer.slice(end + 2)
-          const data = event.split('\n').filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n')
+          // SSE规范：data行只剥一个前导空格；单条坏事件跳过并继续，不允许一条畸形事件触发无限重连。
+          const data = event.split('\n').filter(line => line.startsWith('data:')).map(line => line.slice(5).replace(/^ /, '')).join('\n')
           if (!data) continue
-          const status = JSON.parse(data) as TaskStatus
+          let status: TaskStatus
+          try { status = JSON.parse(data) as TaskStatus } catch { continue }
           if (epoch !== generation || signal.aborted) return
           update(status); failures = 0
           const eventId = event.split('\n').find(line => line.startsWith('id:'))?.slice(3).trim()
@@ -116,18 +128,20 @@ async function subscribe(id: string) {
   }
 }
 
-function userMessage(text: string, id = '') { messages.value.push({ message_id: crypto.randomUUID(), task_id: id, role_code: 'USER', content: text, created_at: new Date().toISOString() }); scroll(true) }
-function inlineError(text: string, id = '') { messages.value.push({ message_id: crypto.randomUUID(), task_id: id, role_code: 'ASSISTANT', content: text, created_at: new Date().toISOString() }); scroll(true) }
+function userMessage(text: string, id = '') { messages.value.push({ message_id: uuid(), task_id: id, role_code: 'USER', content: text, created_at: new Date().toISOString() }); scroll(true) }
+function inlineError(text: string, id = '') { messages.value.push({ message_id: uuid(), task_id: id, role_code: 'ASSISTANT', content: text, created_at: new Date().toISOString() }); scroll(true) }
 function errorText(error: unknown) { return error instanceof ApiError ? error.message : '请求未完成，请稍后重试。' }
 async function send() {
   if (!canSend.value) return
-  if (identityQuestion.value && !identityType.value) { ElMessage.warning('请先在澄清区域选择身份类型'); return }
   if (task.value?.status === 'ASKING') { const text = draft.value.trim(); draft.value = ''; await clarify(text); return }
   const text = draft.value.trim(); draft.value = ''; editing.value = false; task.value = null; cancelRequested = false
-  pending = { key: crypto.randomUUID(), text, session: sessionId.value, thinking: thinking.value }
+  const ids = [...new Set(text.match(/C\d{8}/gi) || [])].map(v => v.toUpperCase())
+  const collapsed = ids.length >= 2
+  pending = { key: uuid(), text: collapsed ? text : text, session: sessionId.value, thinking: thinking.value, ids: collapsed ? ids : undefined,
+              display: collapsed ? text.replace(new RegExp(ids.join('|'), 'gi'), '').replace(/[，,、\s]{2,}/g, ' ').trim() + ` @客户名单(${ids.length}人)` : text }
   sessionStorage.setItem(`${storageKey}-pending`, JSON.stringify(pending))
   localStorage.setItem(storageKey, sessionId.value)
-  userMessage(text)
+  userMessage(pending.display || pending.text)
   await submitPending()
 }
 async function submitPending() {
@@ -136,7 +150,7 @@ async function submitPending() {
   const operation = pending
   let accepted = false
   try {
-    const result = await apiRequest<SubmitQueryResponse>('/api/v1/queries', { method: 'POST', headers: { 'Idempotency-Key': operation.key }, body: JSON.stringify({ session_id: operation.session, query_text: operation.text, thinking_enabled: operation.thinking, preferred_display: 'AUTO' }) })
+    const result = await apiRequest<SubmitQueryResponse>('/api/v1/queries', { method: 'POST', headers: { 'Idempotency-Key': operation.key }, body: JSON.stringify({ session_id: operation.session, query_text: operation.text, thinking_enabled: operation.thinking, preferred_display: 'AUTO', customer_ids: operation.ids }) })
     accepted = true
     emit('sessions-changed')
     if (destroyed || sessionId.value !== operation.session) return
@@ -157,17 +171,16 @@ async function cancel() {
   if (cancelling.value || loading.value) return
   if (!task.value) { cancelRequested = true; connectionNote.value = '已请求停止，取得任务编号后将立即取消。'; return }
   cancelling.value = true
-  try { const status = await apiRequest<TaskStatus>(`/api/v1/queries/${task.value.task_id}/cancel`, { method: 'POST' }); disconnect(); update(status); connectionNote.value = '' }
+  try { const status = await apiRequest<TaskStatus>(`/api/v1/queries/${task.value.task_id}/cancel`, { method: 'POST', headers: { 'Idempotency-Key': operationKey('cancel', task.value.task_id) } }); disconnect(); update(status); connectionNote.value = '' }
   catch (error) { inlineError(`取消未成功：${errorText(error)} 后台任务可能仍在执行，请重试取消。`, task.value.task_id) }
   finally { cancelling.value = false }
 }
 async function clarify(text = answer.value.trim() || selected.value) {
   const current = task.value
   if (!current?.question || !text || navigationBusy.value) return
-  if (identityQuestion.value && !identityType.value) { ElMessage.warning('请先选择身份类型'); return }
-  sending.value = true; userMessage(identityQuestion.value ? `${identityLabels[identityType.value]}：${text}` : text, current.task_id)
+  sending.value = true; userMessage(text, current.task_id)
   try {
-    await apiRequest(`/api/v1/conversations/${sessionId.value}/messages`, { method: 'POST', body: JSON.stringify({ task_id: current.task_id, question_id: current.question.question_id, answer_text: text, identity_type: identityQuestion.value ? identityType.value : undefined }) })
+    await apiRequest(`/api/v1/conversations/${sessionId.value}/messages`, { method: 'POST', headers: { 'Idempotency-Key': operationKey('clarify', current.task_id, current.question.question_id) }, body: JSON.stringify({ task_id: current.task_id, question_id: current.question.question_id, answer_text: text }) })
     answer.value = ''; selected.value = ''
     update(await apiRequest<TaskStatus>(`/api/v1/queries/${current.task_id}/status`)); void subscribe(current.task_id)
   } catch (error) { inlineError(errorText(error), current.task_id); await refreshTask() }
@@ -179,7 +192,7 @@ async function decide(decision: 'CONFIRM' | 'REJECT') {
   if (decision === 'REJECT') { await cancel(); return }
   sending.value = true
   try {
-    const status = await apiRequest<TaskStatus>(`/api/v1/queries/${current.task_id}/confirmations`, { method: 'POST', body: JSON.stringify({ confirm_token: current.confirmation.confirm_token, decision }) })
+    const status = await apiRequest<TaskStatus>(`/api/v1/queries/${current.task_id}/confirmations`, { method: 'POST', headers: { 'Idempotency-Key': operationKey('confirm', current.task_id, current.confirmation.confirm_token) }, body: JSON.stringify({ confirm_token: current.confirmation.confirm_token, decision }) })
     userMessage('确认并执行', current.task_id); update(status); void subscribe(current.task_id)
   } catch (error) { inlineError(errorText(error), current.task_id); await refreshTask() }
   finally { sending.value = false }
@@ -221,7 +234,7 @@ function editMessage(message: ConversationMessage) {
 function newConversation() {
   if (loading.value || cancelling.value) return false
   if (sending.value || pending) { ElMessage.warning('请先确认本次提交结果，再新建会话'); return false }
-  disconnect(); sessionId.value = crypto.randomUUID(); messages.value = []; task.value = null; draft.value = ''; editing.value = false; thinking.value = true; phases.value = {}; hasMore.value = false; connectionNote.value = ''; failedSubmission.value = ''
+  disconnect(); sessionId.value = uuid(); messages.value = []; task.value = null; draft.value = ''; editing.value = false; thinking.value = true; phases.value = {}; hasMore.value = false; connectionNote.value = ''; failedSubmission.value = ''
   localStorage.removeItem(storageKey)
   void nextTick(() => composer.value?.focus())
   return true
@@ -239,7 +252,7 @@ onUnmounted(() => { destroyed = true; disconnect() })
 
 <template>
   <section class="conversation-card agent-workspace">
-    <header class="conversation-head"><div><p class="section-kicker"><ChatDotRound /> 智能查询助手 · v1.4</p><h2>把问题说清，让数据回答</h2><p>支持连续追问；客户身份、数据权限和统计口径由服务端校验。</p></div></header>
+    <header class="conversation-head"><div><p class="section-kicker"><ChatDotRound /> 智能查询助手 · v1.5</p><h2>把问题说清，让数据回答</h2><p>支持连续追问；客户身份、数据权限和统计口径由服务端校验。</p></div></header>
     <div class="chat-reading-area">
     <MessageNavigator :messages="messages" :session-id="sessionId" :host="listHost" :has-more="hasMore" :load-older="() => openSession(sessionId, true)" />
     <div ref="listHost" class="chat-messages" :aria-busy="loading">
@@ -251,7 +264,13 @@ onUnmounted(() => { destroyed = true; disconnect() })
         <template v-else><div class="assistant-avatar"><ChatDotRound /></div><div class="assistant-body">
           <template v-if="message.payload">
             <p class="query-echo">当前查询内容为：{{ message.payload.display_query || '正在确认查询对象和条件' }}</p>
-            <div class="stage-status" :class="{ 'is-error': ['FAILED', 'TIMED_OUT'].includes(message.payload.status) }" role="status"><Loading v-if="message.payload.cancellable && !waiting.has(message.payload.status)" class="spinning" /><span>{{ phaseLabels[message.payload.status] || message.payload.status }}</span><small v-if="message.payload.status === 'INTENT_ANALYZING'">{{ message.payload.thinking_enabled ? '思考模式已开启' : '思考模式已关闭' }}</small></div>
+            <div v-if="message.payload.resolved_customer" class="resolved-customer-card" aria-label="当前查询客户">
+              <span class="resolved-customer-label">当前查询客户</span>
+              <strong>{{ message.payload.resolved_customer.name }} <small>{{ message.payload.resolved_customer.customer_id }}</small></strong>
+              <span>机构 {{ message.payload.resolved_customer.branch_id }} · {{ message.payload.resolved_customer.mobile }}</span>
+            </div>
+            <AgentSteps v-if="(stepLog[message.task_id]?.length || 0) > 1" :steps="stepLog[message.task_id]" :running="!!message.payload.cancellable && !waiting.has(message.payload.status)" :waiting="waiting.has(message.payload.status)" :failed="['FAILED', 'TIMED_OUT'].includes(message.payload.status)" />
+            <div v-else class="stage-status" :class="{ 'is-error': ['FAILED', 'TIMED_OUT'].includes(message.payload.status) }" role="status"><Loading v-if="message.payload.cancellable && !waiting.has(message.payload.status)" class="spinning" /><span>{{ phaseLabels[message.payload.status] || message.payload.status }}</span><small v-if="message.payload.status === 'INTENT_ANALYZING'">{{ message.payload.thinking_enabled ? '思考模式已开启' : '思考模式已关闭' }}</small></div>
             <details v-if="(phases[message.task_id]?.length || 0) > 1" class="stage-details"><summary>执行阶段</summary><ol><li v-for="(phase, i) in phases[message.task_id]" :key="i">{{ phase }}</li></ol></details>
             <details v-if="message.payload.repairs?.length" class="repair-details">
               <summary>已自动修复 SQL（{{ message.payload.repairs.length }} 次）</summary>
@@ -263,12 +282,7 @@ onUnmounted(() => { destroyed = true; disconnect() })
             </details>
             <p v-if="!message.payload.result" class="assistant-text">{{ message.payload.error?.message || message.payload.message }}</p>
             <template v-if="message.payload.question && task?.task_id === message.task_id && task.question?.question_id === message.payload.question.question_id && task.status === 'ASKING'">
-              <div v-if="task.question.candidates?.length" class="customer-options"><button v-for="candidate in task.question.candidates" :key="candidate.customer_id" :disabled="navigationBusy" @click="clarify(candidate.customer_id)"><strong>{{ candidate.name }} <small>{{ candidate.customer_id }}</small></strong><span>机构 {{ candidate.branch_id }} · {{ candidate.mobile }}</span></button></div>
-              <div class="answer-options"><button v-for="option in task.question.options" :key="option" :disabled="navigationBusy" :class="{ selected: selected === option }" @click="selected = option; answer = ''">{{ option }}</button></div>
-              <div v-if="identityQuestion" class="identity-types" role="radiogroup" aria-label="选择客户定位信息类型"><button v-for="kind in task.question.input_types || ['CUSTOMER_ID', 'CUSTOMER_NAME', 'MOBILE_SUFFIX']" :key="kind" type="button" role="radio" :aria-checked="identityType === kind" :class="{ selected: identityType === kind }" :disabled="navigationBusy" @click="identityType = kind; answer = ''">{{ identityLabels[kind] }}</button></div>
-              <p v-if="identityQuestion && !identityType" class="chart-reason">先选择一种信息，再输入对应内容。</p>
-              <el-button v-if="(identityQuestion && !identityType) || task.question.candidates?.length" :loading="cancelling" @click="cancel">取消查询</el-button>
-              <div v-if="!task.question.candidates?.length && (!identityQuestion || identityType)" class="chat-answer"><el-input v-model="answer" maxlength="200" :placeholder="identityQuestion ? identityPlaceholder : '补充查询条件'" :aria-label="identityQuestion ? identityLabels[identityType] : '补充查询条件'" @keydown.enter="!$event.isComposing && clarify()" /><el-button type="primary" :loading="sending" :disabled="navigationBusy || (!answer.trim() && !selected)" @click="clarify()">补充后继续</el-button><el-button :loading="cancelling" @click="cancel">取消查询</el-button></div>
+              <p class="chart-reason">请在下方选择口径或检索客户；对话中只保留您已提交的选择。</p>
             </template>
             <div v-if="message.payload.confirmation && task?.task_id === message.task_id && task.status === 'CONFIRMING' && task.confirmation?.confirm_token === message.payload.confirmation.confirm_token" class="chat-confirm"><ul><li v-for="reason in task.confirmation.reasons" :key="reason">{{ reason }}</li></ul><el-button :disabled="navigationBusy" @click="decide('REJECT')">取消查询</el-button><el-button type="danger" :loading="sending" @click="decide('CONFIRM')">确认并执行</el-button></div>
             <p v-if="message.payload.legacy_notice" class="chart-reason">{{ message.payload.legacy_notice }}</p>
@@ -282,7 +296,9 @@ onUnmounted(() => { destroyed = true; disconnect() })
       <div v-if="failedSubmission" class="inline-error" role="alert"><p>{{ failedSubmission }}</p><el-button :loading="sending" @click="submitPending"><Refresh /> 重试本次提交</el-button></div>
     </div>
     </div>
-    <div class="chat-composer-wrap"><p v-if="connectionNote" class="connection-note" role="status">{{ connectionNote }}</p><p v-if="editing" class="editing-notice">编辑后发送会新增一条消息，原记录保留。<button type="button" @click="editing = false; draft = ''">取消编辑</button></p><div class="chat-composer">
+      <ClarifyPanel v-if="task?.status === 'ASKING' && task.question" :question="task.question" :session-id="sessionId" :busy="navigationBusy || sending" @select="clarify($event)" @cancel="cancel" />
+  <div v-if="showListChip" class="list-chip-preview">已识别客户名单：{{ detectedIds.length }} 人（提交后自动校验权限，权限外的将剔除）</div>
+<div class="chat-composer-wrap"><p v-if="connectionNote" class="connection-note" role="status">{{ connectionNote }}</p><p v-if="editing" class="editing-notice">编辑后发送会新增一条消息，原记录保留。<button type="button" @click="editing = false; draft = ''">取消编辑</button></p><div class="chat-composer">
       <textarea ref="composer" v-model="draft" :disabled="loading" maxlength="1000" rows="2" :placeholder="task?.status === 'ASKING' ? '补充当前问题所需的信息…' : '输入业务问题，或承接上文继续追问…'" aria-label="业务问题" @keydown.enter="enter" /><button type="button" class="send-button" :class="{ 'stop-button': running || task?.status === 'CONFIRMING' }" :disabled="loading || cancelling || (running ? cancelRequested : task?.status === 'CONFIRMING' ? false : !canSend)" :aria-label="running || task?.status === 'CONFIRMING' ? '停止当前查询' : '发送查询'" @click="running || task?.status === 'CONFIRMING' ? cancel() : send()"><Loading v-if="cancelling" class="spinning" /><VideoPause v-else-if="running || task?.status === 'CONFIRMING'" /><Promotion v-else /></button></div><div class="chat-composer-foot"><label><el-switch v-model="thinking" :disabled="active || navigationBusy" aria-label="思考模式" /><span>思考模式</span><small>默认开启，复杂问题可能需要更长时间</small></label><span>Enter 发送 · Shift+Enter 换行</span></div></div>
   </section>
 </template>

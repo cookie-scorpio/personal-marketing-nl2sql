@@ -25,8 +25,11 @@ public final class SqlAstValidator {
     private static final Set<String> FUNCTIONS=words("count sum avg min max round abs ceil ceiling floor coalesce ifnull nullif if concat concat_ws substring substr left right length char_length lower upper trim date date_format year month day dayofmonth quarter datediff timestampdiff date_add date_sub extract greatest least stddev_pop stddev_samp variance var_pop var_samp power sqrt mod row_number rank dense_rank lag lead first_value last_value ntile");
     private static final Set<String> BINARY=words("AndExpression OrExpression EqualsTo NotEqualsTo GreaterThan GreaterThanEquals MinorThan MinorThanEquals Addition Subtraction Multiplication Division IntegerDivision Modulo LikeExpression");
     private final CurrentUser user;private final Map<String,Object> parameters;private final String customer;
+    private final java.util.Set<String> customerSet;
     private final int maxRows;private int nextId;private int nodes;
-    public SqlAstValidator(CurrentUser user,Map<String,Object> parameters,String customer,int maxRows){this.user=user;this.parameters=parameters;this.customer=customer;this.maxRows=maxRows;}
+    public SqlAstValidator(CurrentUser user,Map<String,Object> parameters,java.util.Collection<String> customers,int maxRows){
+        this.user=user;this.parameters=parameters;this.customerSet=customers==null?null:Set.copyOf(customers);this.maxRows=maxRows;
+        this.customer=customers!=null&&customers.size()==1?customers.iterator().next():null;}
     public void validate(String sql){
         if(sql==null||sql.isBlank()||sql.length()>30000)fail(422101,"SQL为空或超过长度限制");
         lexical(sql);
@@ -140,7 +143,24 @@ public final class SqlAstValidator {
         if(expression instanceof CaseExpression c){expr(c.getSwitchExpression(),scope,ctes,depth,aliases);if(c.getWhenClauses()!=null)for(var w:c.getWhenClauses())expr(w,scope,ctes,depth,aliases);expr(c.getElseExpression(),scope,ctes,depth,aliases);return;}
         if(expression instanceof WhenClause w){expr(w.getWhenExpression(),scope,ctes,depth,aliases);expr(w.getThenExpression(),scope,ctes,depth,aliases);return;}
         if(expression instanceof Between b){expr(b.getLeftExpression(),scope,ctes,depth,aliases);expr(b.getBetweenExpressionStart(),scope,ctes,depth,aliases);expr(b.getBetweenExpressionEnd(),scope,ctes,depth,aliases);return;}
-        if(expression instanceof InExpression i){expr(i.getLeftExpression(),scope,ctes,depth,aliases);expr(i.getRightExpression(),scope,ctes,depth,aliases);return;}
+        if(expression instanceof InExpression i){
+            expr(i.getLeftExpression(),scope,ctes,depth,aliases);
+            // 名单约束证明：customer_id IN (字面量集合) 且集合成员全部在服务端核验名单内时，
+            // 该等值集合与单客等值具有同等约束力（G工作包：@客户名单批量查询）。
+            if(customerSet!=null && !customerSet.isEmpty() && i.getLeftExpression() instanceof Column c){
+                String col=id(c.getColumnName());
+                if("customer_id".equals(col) && c.getTable()!=null && c.getTable().getName()!=null){
+                    var binding=scope.bindings.get(id(c.getTable().getName()));
+                    var values=i.getRightExpression();
+                    java.util.List<String> literals=new java.util.ArrayList<>();
+                    collectLiterals(values,literals);
+                    if(!literals.isEmpty() && customerSet.containsAll(literals)){
+                        listBindingFacts.add(new Node(binding,"customer_id"));
+                    }
+                }
+            }
+            expr(i.getRightExpression(),scope,ctes,depth,aliases);return;
+        }
         if(expression instanceof ExistsExpression e){expr(e.getRightExpression(),scope,ctes,depth,aliases);return;}
         if(expression instanceof IsNullExpression n){expr(n.getLeftExpression(),scope,ctes,depth,aliases);return;}
         if(expression instanceof NotExpression n){expr(n.getExpression(),scope,ctes,depth,aliases);return;}
@@ -175,13 +195,27 @@ public final class SqlAstValidator {
         }
     }
     private Object term(Expression e,Scope scope){if(e instanceof Column c)return resolve(c,scope);if(e instanceof StringValue v)return "literal:"+v.getValue();if(e instanceof JdbcNamedParameter p&&parameters.containsKey(p.getName()))return "literal:"+parameters.get(p.getName());return null;}
+    private final Set<Object> listBindingFacts=new HashSet<>();
+    @SuppressWarnings("unchecked")
+    private void collectLiterals(Expression e,List<String> out){
+        if(e instanceof StringValue v){out.add(v.getValue());return;}
+        if(e instanceof net.sf.jsqlparser.expression.operators.relational.ExpressionList<?> els){
+            for(int i=0;i<els.size();i++){
+                Object o=els.get(i);
+                if(o instanceof Expression ex)collectLiterals(ex,out);
+            }
+        }
+    }
     private void prove(Scope scope,List<Edge> edges){
         if(user==null&&customer==null)return;
         String scopeColumn=user==null?null:switch(user.role()){case CUSTOMER_MANAGER->"manager_id";case TEAM_LEAD->"branch_id";case ORG_MANAGER->"region_code";};
         String scopeValue=user==null?null:switch(user.role()){case CUSTOMER_MANAGER->user.managerId();case TEAM_LEAD->user.branchId();case ORG_MANAGER->user.regionCode();};
         if(user!=null&&(scopeValue==null||scopeValue.isBlank()))fail(403103,"账号数据范围未配置");
         Set<Object> allowed=new HashSet<>(),bound=new HashSet<>(),scopeFacts=new HashSet<>(),identityFacts=new HashSet<>();
-        if(user!=null)scopeFacts.add("literal:"+scopeValue);if(customer!=null)identityFacts.add("literal:"+customer);
+        if(user!=null)scopeFacts.add("literal:"+scopeValue);
+        if(customer!=null)identityFacts.add("literal:"+customer);
+        if(customerSet!=null)for(String id:customerSet)identityFacts.add("literal:"+id);
+        identityFacts.addAll(listBindingFacts);
         for(Scope outer=scope.parent;outer!=null;outer=outer.parent)for(Binding b:outer.bindings.values()){
             if(b.authorized){if(scopeColumn!=null)scopeFacts.add(new Node(b,scopeColumn));allowed.add(new Node(b,"customer_id"));allowed.add(new Node(b,"campaign_id"));}
             if(b.bound)bound.add(new Node(b,"customer_id"));

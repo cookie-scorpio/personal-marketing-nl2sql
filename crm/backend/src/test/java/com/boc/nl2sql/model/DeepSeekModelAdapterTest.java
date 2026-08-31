@@ -191,7 +191,7 @@ class DeepSeekModelAdapterTest {
         DeepSeekModelAdapter adapter() {
             var terms = mock(BusinessTermCatalog.class);
             when(terms.promptContext()).thenReturn("营销转化率：转化客户数/触达客户数");
-            return new DeepSeekModelAdapter(mapper, new Nl2SqlPrompts(terms, 100),
+            return new DeepSeekModelAdapter(mapper, new Nl2SqlPrompts(terms, null, 100),
                     "http://127.0.0.1:" + server.getAddress().getPort(), "local-test-key", "deepseek-v4-flash",
                     false, 4096, 8192, 60);
         }
@@ -225,7 +225,7 @@ class DeepSeekModelAdapterTest {
         });
         server.start();
         try {
-            var adapter = new DeepSeekModelAdapter(mapper, new Nl2SqlPrompts(terms, 100),
+            var adapter = new DeepSeekModelAdapter(mapper, new Nl2SqlPrompts(terms, null, 100),
                     "http://127.0.0.1:" + server.getAddress().getPort(), "local-test-key", "deepseek-v4-flash",
                     false, 4096, 8192, 60);
             var user = new CurrentUser(1L, "manager01", "演示经理", RoleCode.CUSTOMER_MANAGER, "EAST", "B001", "M0001");

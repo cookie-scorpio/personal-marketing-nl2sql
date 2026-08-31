@@ -488,3 +488,55 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .repair-details details summary { width: fit-content; color: var(--accent); cursor: pointer; }
 .repair-details label { display: block; margin: 9px 0 4px; color: #6e625d; }
 .repair-details pre { max-height: 180px; margin: 0; padding: 10px; overflow: auto; border-radius: 6px; background: #f3efec; color: #403835; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* v1.5：agent式分步进度，进行中展开、结束折叠为一行摘要。 */
+.agent-steps { display: grid; gap: 2px; margin: 10px 0 2px; padding: 0; list-style: none; font-size: 12px; color: #6e625d; }
+.agent-steps li { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+.agent-steps li time { margin-left: auto; color: #a0938d; font-variant-numeric: tabular-nums; }
+.agent-step-icon { display: inline-flex; width: 18px; height: 18px; align-items: center; justify-content: center; border-radius: 50%; background: #f3efec; color: #8c7f78; flex-shrink: 0; }
+.agent-step-icon svg { width: 12px; height: 12px; }
+.agent-steps li.is-current .agent-step-icon, .agent-steps li.is-waiting .agent-step-icon { background: #b4232d; color: #fff; }
+.agent-steps li.is-current .agent-step-label, .agent-steps li.is-waiting .agent-step-label { color: #403835; font-weight: 500; }
+.agent-steps-done { margin-top: 10px; font-size: 12px; color: #8c7f78; }
+.agent-steps-done summary { cursor: pointer; color: #6e625d; }
+.agent-steps-done .agent-steps { margin: 8px 0 0; }
+
+/* v1.5：澄清浮窗（输入框上方）与 @名单芯片。 */
+.clarify-panel { margin: 0 16px 10px; padding: 12px; border: 1px solid #e7ddd7; border-radius: 10px; background: #fbfaf8; box-shadow: 0 -2px 10px rgba(64,56,53,.06); }
+.clarify-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.clarify-chip { position: relative; padding: 8px 14px; border: 1px solid #d9cec8; border-radius: 999px; background: #fff; color: #4f4541; font-size: 13px; cursor: pointer; }
+.clarify-chip:hover:not(:disabled) { border-color: #b4232d; color: #b4232d; }
+.clarify-chip.recommended { border-color: #b4232d; background: #fdf4f4; }
+.clarify-recommended-badge { display: inline-block; margin-right: 6px; padding: 1px 6px; border-radius: 6px; background: #b4232d; color: #fff; font-size: 11px; }
+.clarify-search-row { display: flex; margin-bottom: 8px; }
+.clarify-search-icon { width: 15px; height: 15px; color: rgba(110,98,93,.42); }
+.clarify-candidates { display: grid; gap: 6px; max-height: 220px; margin-top: 8px; overflow-y: auto; }
+.clarify-candidate { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 8px 12px; border: 1px solid #e7ddd7; border-radius: 8px; background: #fff; cursor: pointer; text-align: left; }
+.clarify-candidate:hover:not(:disabled) { border-color: #b4232d; }
+.clarify-candidate small { color: #8c7f78; font-weight: 400; margin-left: 4px; }
+.clarify-candidate span { color: #8c7f78; font-size: 12px; }
+.clarify-hint { margin: 6px 0; color: #8c7f78; font-size: 12px; }
+.clarify-error { margin: 6px 0; color: #b4232d; font-size: 12px; }
+.clarify-more { margin-top: 6px; padding: 4px 10px; border: 1px dashed #cfc4be; border-radius: 6px; background: transparent; color: #6e625d; font-size: 12px; cursor: pointer; }
+.clarify-actions { display: flex; justify-content: flex-end; margin-top: 8px; }
+.list-chip-preview { margin: 0 16px 8px; padding: 6px 10px; border: 1px dashed #d9b8ba; border-radius: 8px; background: #fdf4f4; color: #8a4a4e; font-size: 12px; }
+.export-csv { margin-left: auto; padding: 4px 12px; border: 1px solid #d9cec8; border-radius: 6px; background: #fff; color: #6e625d; font-size: 12px; cursor: pointer; }
+.export-csv:hover { border-color: #b4232d; color: #b4232d; }
+
+/* v1.5：浮窗键盘导航与多选形态。 */
+.clarify-chip.highlighted { border-color: #b4232d; box-shadow: 0 0 0 2px rgba(180,35,45,.15); }
+.clarify-chip.checked { background: #fdf4f4; }
+.clarify-option-index { margin-right: 4px; color: #a0938d; }
+.clarify-check-mark { margin-left: 6px; color: #b4232d; }
+.clarify-referent { margin: 0 0 8px; color: #4f4541; font-size: 13px; font-weight: 500; }
+
+/* 唯一客户无需再选择：在任务回复中展示只读客户卡片后继续查询。 */
+.resolved-customer-card { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px 12px; margin: 10px 0; padding: 10px 12px; border: 1px solid #e7ddd7; border-radius: 8px; background: #fff; color: #4f4541; }
+.resolved-customer-label { padding: 2px 7px; border-radius: 5px; background: #f3efec; color: #6e625d; font-size: 11px; }
+.resolved-customer-card strong { min-width: 0; }
+.resolved-customer-card strong small { margin-left: 5px; color: #8c7f78; font-weight: 400; }
+.resolved-customer-card > span:last-child { color: #8c7f78; font-size: 12px; text-align: right; }
+@media (max-width: 720px) {
+  .resolved-customer-card { grid-template-columns: auto 1fr; }
+  .resolved-customer-card > span:last-child { grid-column: 1 / -1; text-align: left; }
+}

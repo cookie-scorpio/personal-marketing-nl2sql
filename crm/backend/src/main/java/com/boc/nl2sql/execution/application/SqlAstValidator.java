@@ -1,6 +1,7 @@
 package com.boc.nl2sql.execution.application;
 
 import com.boc.nl2sql.authorization.domain.CurrentUser;
+import com.boc.nl2sql.authorization.application.DataScopePolicy;
 import com.boc.nl2sql.common.exception.BusinessException;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.schema.*;
@@ -208,8 +209,9 @@ public final class SqlAstValidator {
     }
     private void prove(Scope scope,List<Edge> edges){
         if(user==null&&customer==null)return;
-        String scopeColumn=user==null?null:switch(user.role()){case CUSTOMER_MANAGER->"manager_id";case TEAM_LEAD->"branch_id";case ORG_MANAGER->"region_code";};
-        String scopeValue=user==null?null:switch(user.role()){case CUSTOMER_MANAGER->user.managerId();case TEAM_LEAD->user.branchId();case ORG_MANAGER->user.regionCode();};
+        DataScopePolicy.Scope accountScope = user == null ? null : DataScopePolicy.scopeOf(user);
+        String scopeColumn = accountScope == null ? null : accountScope.column();
+        String scopeValue = accountScope == null ? null : accountScope.value();
         if(user!=null&&(scopeValue==null||scopeValue.isBlank()))fail(403103,"账号数据范围未配置");
         Set<Object> allowed=new HashSet<>(),bound=new HashSet<>(),scopeFacts=new HashSet<>(),identityFacts=new HashSet<>();
         if(user!=null)scopeFacts.add("literal:"+scopeValue);

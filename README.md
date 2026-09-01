@@ -24,13 +24,13 @@
 
 ## 安装与配置
 
-需要 JDK 17、Maven 3.9、Node.js 20、Python 3.9 和 Docker Desktop。
+需要 JDK 17、Maven 3.9.16、Node.js 20、Python 3.9 和 Docker Desktop。
 
-1. 按 [本地基础服务说明](deploy/local/README.md)启动 MySQL 8.4 和 Redis 7。
-2. 按 [后端说明](crm/backend/README.md)准备 `application-local.yml`，至少配置数据库密码和 `JWT_SECRET`。
-3. 首次启动一次后端，让 Flyway 建表并创建演示账号。
-4. 按 [模拟数据说明](scripts/mock-data/README.md)重建稳定业务数据和演示会话。
-5. 按 [前端说明](crm/frontend/README.md)安装依赖并启动页面。
+拉取仓库后，推荐用 VS Code 的“任务: 运行任务”依次执行“启动后端（本地开发）”和“启动前端（本地开发）”。后端任务会自动复制开发用 `.env`、启动 MySQL 8.4 和 Redis 7.x、生成仅在本次进程有效的 RSA 密钥与 JWT 密钥；前端任务会在首次启动时执行 `npm ci`。浏览器访问 `http://localhost:5173`，因为浏览器密码加密仅支持当前的 `localhost` 开发模式。
+
+1. 确认 Docker Desktop 已启动，再按上述 VS Code 任务启动后端和前端。
+2. 首次启动后端时，Flyway 会建表并创建演示账号。
+3. 如需完整的业务演示数据，再按 [模拟数据说明](scripts/mock-data/README.md)写入稳定数据和演示会话。
 
 自由问题需要设置 `MODEL_PROVIDER=deepseek`、`DEEPSEEK_API_KEY` 和相应模型名称；只演示规则查询时可以使用默认的 `mock` 模式。
 
@@ -39,17 +39,13 @@
 后端：
 
 ```powershell
-cd crm/backend
-$env:SPRING_PROFILES_ACTIVE = "local"
-mvn spring-boot:run
+.\scripts\start-backend-local.ps1
 ```
 
 前端：
 
 ```powershell
-cd crm/frontend
-npm install
-npm run dev
+.\scripts\start-frontend-local.ps1
 ```
 
 浏览器访问 `http://127.0.0.1:5173`。演示账号为 `manager01`、`leader01` 和 `director01`，初始密码均为 `Demo@123`。

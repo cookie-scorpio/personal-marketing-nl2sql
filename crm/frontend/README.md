@@ -72,10 +72,11 @@ LoginPage
 
 建议Node.js 20或更高版本：
 
+在 VS Code 中可直接运行仓库根目录的“启动前端（本地开发）”任务；首次任务会按锁定版本安装依赖。也可执行：
+
 ```powershell
-cd D:\code\boc\0824nl2sql\crm\frontend
-npm install
-npm run dev
+cd D:\code\boc\personal-marketing-nl2sql
+.\scripts\start-frontend-local.ps1
 ```
 
 开发地址为`http://127.0.0.1:5173`，Vite默认把`/api`代理到`http://127.0.0.1:8080`。

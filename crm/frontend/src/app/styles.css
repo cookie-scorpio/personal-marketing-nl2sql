@@ -65,6 +65,18 @@ svg { width: 1em; height: 1em; }
 .form-error { padding: 10px 12px; border: 1px solid #edc0c2; border-radius: 8px; color: #97232b; background: #fff1f1; font-size: 12px; }
 .login-note { margin: 18px 0 0; color: #857d79; font-size: 11px; text-align: center; }
 .login-note code { color: #6c3437; }
+.auth-text-action { display: block; margin: 14px auto 0; padding: 4px 6px; border: 0; color: #8f1720; background: transparent; cursor: pointer; font-size: 12px; font-weight: 650; }
+.auth-text-action:hover { color: #b4232d; text-decoration: underline; text-underline-offset: 3px; }
+.field-hint { margin-top: -2px; color: #857d79; font-size: 11px; font-weight: 400; line-height: 1.45; }
+.field-hint.invalid { color: #a22a32; }
+.password-rules { display: flex; flex-wrap: wrap; gap: 6px; margin: -8px 0 -1px; }
+.password-rules span { padding: 4px 7px; border: 1px solid #e8e2de; border-radius: 999px; color: #837a76; background: #faf8f6; font-size: 10px; }
+.password-rules span.met { border-color: #cde2d7; color: #33745a; background: #f3faf6; }
+.registration-success { display: grid; grid-template-columns: auto 1fr; align-items: start; gap: 12px; margin-top: 26px; padding: 18px; border: 1px solid #cde2d7; border-radius: 11px; background: #f4faf6; }
+.registration-success > div { min-width: 0; }
+.registration-success strong { color: #285f49; font-size: 14px; }
+.registration-success p { margin: 5px 0 14px; color: #52665b; font-size: 12px; line-height: 1.55; }
+.registration-success .el-button { grid-column: 2; justify-self: start; }
 
 .app-shell { min-height: 100vh; }
 .sidebar { position: fixed; inset: 0 auto 0 0; z-index: 30; width: var(--sidebar-width); display: flex; flex-direction: column; padding: 22px 14px 16px; color: #d9d3cf; background: #2b2928; border-right: 1px solid #3e3a38; }

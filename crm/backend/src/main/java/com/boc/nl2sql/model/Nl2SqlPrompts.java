@@ -1,7 +1,7 @@
 package com.boc.nl2sql.model;
 
 import com.boc.nl2sql.authorization.domain.CurrentUser;
-import com.boc.nl2sql.common.exception.BusinessException;
+import com.boc.nl2sql.authorization.application.DataScopePolicy;
 import com.boc.nl2sql.knowledge.BusinessTermCatalog;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
@@ -51,18 +51,7 @@ public class Nl2SqlPrompts {
     }
 
     private String scopeCondition(CurrentUser user) {
-        return switch (user.role()) {
-            case CUSTOMER_MANAGER -> "c.manager_id = '" + safeCode(user.managerId()) + "'";
-            case TEAM_LEAD -> "c.branch_id = '" + safeCode(user.branchId()) + "'";
-            case ORG_MANAGER -> "c.region_code = '" + safeCode(user.regionCode()) + "'";
-        };
-    }
-
-    private String safeCode(String value) {
-        if (value == null || !value.matches("[A-Za-z0-9_-]+")) {
-            throw new BusinessException(403103, "当前账号的数据范围配置无效");
-        }
-        return value;
+        return DataScopePolicy.literalCondition("c", user);
     }
 
     private String read(String path) {

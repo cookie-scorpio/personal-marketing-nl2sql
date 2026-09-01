@@ -69,7 +69,9 @@ POST /api/v1/queries
 
 ## 配置
 
-先启动 [本地基础服务](../../deploy/local/README.md)，复制本地配置示例并填写与 `deploy/local/.env` 相同的密码。`application-local.yml` 已被 Git 忽略：
+推荐从 VS Code 运行仓库根目录的“启动后端（本地开发）”任务，或直接执行 `scripts/start-backend-local.ps1`。该脚本会创建本机 `.env`、启动 MySQL 和 Redis、设置临时 JWT 密钥，并让后端自动生成仅在当前进程有效的 RSA 密钥。
+
+需要自定义本地连接配置时，先启动 [本地基础服务](../../deploy/local/README.md)，复制本地配置示例并填写与 `deploy/local/.env` 相同的密码。`application-local.yml` 已被 Git 忽略：
 
 ```powershell
 Copy-Item src\main\resources\application-local.example.yml src\main\resources\application-local.yml
@@ -115,7 +117,7 @@ result-review-enabled: true
 要求JDK 17和Maven 3.9.16：
 
 ```powershell
-cd D:\code\boc\0824nl2sql\crm\backend
+cd D:\code\boc\personal-marketing-nl2sql\crm\backend
 $env:JAVA_HOME = "D:\tools\jdk17" # 按本机 JDK 17 安装位置调整
 $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 mvn test

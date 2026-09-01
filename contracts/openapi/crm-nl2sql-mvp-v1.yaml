@@ -21,7 +21,7 @@ paths:
                   status: { type: string, example: UP }
   /api/v1/auth/login:
     post:
-      summary: 本地数据库账号登录
+      summary: 使用 RSA 加密密码登录
       security: []
       requestBody:
         required: true
@@ -31,8 +31,8 @@ paths:
               type: object
               required: [username, password]
               properties:
-                username: { type: string, maxLength: 64 }
-                password: { type: string, maxLength: 128 }
+                username: { type: string, minLength: 4, maxLength: 64, pattern: '^[a-z]+[0-9]+$' }
+                password: { $ref: "#/components/schemas/EncryptedPassword" }
       responses:
         "200":
           description: 登录成功
@@ -40,6 +40,36 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ApiResponse" }
         "401": { description: 用户名或密码错误 }
+        "403": { description: 账号待审批，暂不可登录 }
+  /api/v1/auth/public-key:
+    get:
+      summary: 获取浏览器密码加密公钥
+      description: 返回 RSA-OAEP-256 的 SPKI Base64 公钥和轮换标识；绝不返回私钥。
+      security: []
+      responses:
+        "200":
+          description: 公钥获取成功
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiResponse" }
+  /api/v1/auth/register:
+    post:
+      summary: 提交待审批注册申请
+      description: 只接收姓名、用户名和 RSA 加密密码。不允许传入角色、区域、网点或客户经理范围。
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RegistrationRequest" }
+      responses:
+        "200":
+          description: 已创建待审批账号
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiResponse" }
+        "400": { description: 用户名、姓名、密码或加密信封不符合规则 }
+        "409": { description: 用户名已存在 }
   /api/v1/auth/me:
     get:
       summary: 获取当前登录用户和数据范围
@@ -335,6 +365,19 @@ components:
       required: true
       schema: { type: string, format: uuid }
   schemas:
+    EncryptedPassword:
+      type: object
+      required: [key_id, encrypted_password]
+      properties:
+        key_id: { type: string, maxLength: 64, description: 服务端公开 RSA 密钥的轮换标识 }
+        encrypted_password: { type: string, maxLength: 8192, description: RSA-OAEP-256 密文的 Base64 编码 }
+    RegistrationRequest:
+      type: object
+      required: [display_name, username, password]
+      properties:
+        display_name: { type: string, minLength: 2, maxLength: 64 }
+        username: { type: string, minLength: 4, maxLength: 64, pattern: '^[a-z]+[0-9]+$' }
+        password: { $ref: "#/components/schemas/EncryptedPassword" }
     ApiResponse:
       type: object
       required: [code, message, request_id]

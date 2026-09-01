@@ -17,6 +17,24 @@ export interface LoginResponse {
   user: CurrentUser
 }
 
+export interface EncryptedPassword {
+  key_id: string
+  encrypted_password: string
+}
+
+export interface PasswordPublicKey {
+  key_id: string
+  algorithm: 'RSA-OAEP-256'
+  public_key: string
+}
+
+export interface RegistrationResponse {
+  username: string
+  display_name: string
+  account_status: 'PENDING'
+  message: string
+}
+
 export interface ClarificationQuestion {
   question_id: string
   type: string

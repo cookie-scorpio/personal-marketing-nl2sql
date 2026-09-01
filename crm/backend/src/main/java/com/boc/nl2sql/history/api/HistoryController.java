@@ -34,7 +34,7 @@ public class HistoryController {
             @AuthenticationPrincipal CurrentUser user,
             HttpServletRequest request) {
         int safeSize = Math.min(Math.max(pageSize, 1), 100);
-        return ApiResponse.success(historyService.page(user.userId(), Math.max(pageNo, 1), safeSize, keyword),
+        return ApiResponse.success(historyService.page(user, Math.max(pageNo, 1), safeSize, keyword),
                 WebRequestSupport.requestId(request));
     }
 
@@ -42,7 +42,7 @@ public class HistoryController {
     public ApiResponse<Map<String, Object>> delete(@PathVariable String historyId,
                                                    @AuthenticationPrincipal CurrentUser user,
                                                    HttpServletRequest request) {
-        historyService.delete(user.userId(), historyId);
+        historyService.delete(user, historyId);
         return ApiResponse.success(Map.of("history_id", historyId, "deleted", true),
                 WebRequestSupport.requestId(request));
     }

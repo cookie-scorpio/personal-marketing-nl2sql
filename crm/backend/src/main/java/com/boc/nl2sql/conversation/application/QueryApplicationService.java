@@ -3,6 +3,7 @@ package com.boc.nl2sql.conversation.application;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.boc.nl2sql.audit.AuditService;
 import com.boc.nl2sql.authorization.domain.CurrentUser;
+import com.boc.nl2sql.authorization.application.AuthorizationCenter;
 import com.boc.nl2sql.common.exception.BusinessException;
 import com.boc.nl2sql.conversation.api.ClarificationRequest;
 import com.boc.nl2sql.conversation.api.ConfirmationRequest;
@@ -41,6 +42,7 @@ public class QueryApplicationService {
     @org.springframework.beans.factory.annotation.Autowired private CustomerResolver customers;
     @org.springframework.beans.factory.annotation.Autowired private FollowupResolver followups;
     @org.springframework.beans.factory.annotation.Autowired private IdempotencyCache idempotency;
+    @org.springframework.beans.factory.annotation.Autowired private AuthorizationCenter authorization;
     @org.springframework.beans.factory.annotation.Autowired private org.springframework.transaction.PlatformTransactionManager transactions;
 
     public QueryApplicationService(QueryTaskMapper taskMapper, QueryTaskProcessor processor,
@@ -69,6 +71,7 @@ public class QueryApplicationService {
     }
 
     public SubmitQueryResponse submit(SubmitQueryRequest request, CurrentUser user, String requestId,String key) {
+        authorization.requireAuthenticated(user);
         if(key==null||!key.matches("[A-Za-z0-9._:-]{8,128}"))throw new BusinessException(400004,"请提供8至128位有效 Idempotency-Key");
         QueryPage page=page(request);
         java.util.List<Object> fingerprintParts=new java.util.ArrayList<>(java.util.List.of(request.sessionId(),request.queryText().trim(),request.preferredDisplay()==null?"AUTO":request.preferredDisplay(),request.thinkingEnabled()==null||request.thinkingEnabled()));
@@ -77,15 +80,15 @@ public class QueryApplicationService {
         }
         String fingerprint=IdempotencyCache.hash(objectMapper.writeValueAsString(fingerprintParts));
         String cached=idempotency.get(user.userId(),key);
-        if(cached!=null){QueryTaskEntity old=taskMapper.selectById(cached);if(old!=null&&old.getUserId().equals(user.userId())&&key.equals(old.getIdempotencyKey()))return replay(old,fingerprint);}
+        if(cached!=null){QueryTaskEntity old=taskMapper.selectById(cached);if(old!=null&&old.getUserId().equals(user.userId())&&key.equals(old.getIdempotencyKey()))return replay(old,fingerprint,user);}
         SubmitQueryResponse response;
         try {
             var template=new org.springframework.transaction.support.TransactionTemplate(transactions);
             template.setIsolationLevel(org.springframework.transaction.TransactionDefinition.ISOLATION_READ_COMMITTED);
             response=template.execute(tx->{
-                var old=findSubmission(user.userId(),key);if(old!=null)return replay(old,fingerprint);
+                var old=findSubmission(user.userId(),key);if(old!=null)return replay(old,fingerprint,user);
                 var session=conversations.lock(request.sessionId(),user,customers.redact(request.queryText().trim()));
-                old=findSubmission(user.userId(),key);if(old!=null)return replay(old,fingerprint);
+                old=findSubmission(user.userId(),key);if(old!=null)return replay(old,fingerprint,user);
                 if(session.get("active_task_id")!=null){
                     var active=taskMapper.selectById(session.get("active_task_id").toString());
                     if(active!=null&&!QueryStatus.terminal(active.getStatusCode()))throw new BusinessException(409006,"本会话仍有未结束的查询，请先完成补充、确认或取消");
@@ -93,13 +96,13 @@ public class QueryApplicationService {
                 return create(request,user,requestId,key,fingerprint,session,page);
             });
         }catch(org.springframework.dao.DuplicateKeyException collision){
-            var old=findSubmission(user.userId(),key);if(old==null)throw collision;response=replay(old,fingerprint);
+            var old=findSubmission(user.userId(),key);if(old==null)throw collision;response=replay(old,fingerprint,user);
         }
         idempotency.put(user.userId(),key,response.taskId());return response;
     }
     private QueryTaskEntity findSubmission(long user,String key){return taskMapper.selectOne(Wrappers.<QueryTaskEntity>lambdaQuery().eq(QueryTaskEntity::getUserId,user).eq(QueryTaskEntity::getIdempotencyKey,key));}
-    private SubmitQueryResponse replay(QueryTaskEntity task,String fingerprint){
-        conversations.visible(task.getSessionId(),task.getUserId());
+    private SubmitQueryResponse replay(QueryTaskEntity task,String fingerprint,CurrentUser user){
+        conversations.own(task.getSessionId(),user);
         if(!fingerprint.equals(task.getRequestHash()))throw new BusinessException(409005,"同一幂等键不能用于不同请求，请为新问题创建新的提交");
         return new SubmitQueryResponse(task.getTaskId(),task.getSessionId(),task.getStatusCode(),task.getProgress(),"/api/v1/queries/"+task.getTaskId()+"/status");
     }
@@ -208,6 +211,7 @@ public class QueryApplicationService {
     }
 
     public TaskStatusResponse status(String taskId, CurrentUser user) {
+        authorization.requireAuthenticated(user);
         QueryTaskEntity task = ownedTask(taskId, user);
         return snapshots.of(task);
     }
@@ -225,6 +229,7 @@ public class QueryApplicationService {
     @org.springframework.transaction.annotation.Transactional
     public SubmitQueryResponse clarify(String sessionId, ClarificationRequest request,
                                        CurrentUser user, String requestId) {
+        authorization.requireAuthenticated(user);
         QueryTaskEntity task = ownedTask(request.taskId(), user);
         conversations.lockTask(task);task=ownedTaskForUpdate(request.taskId(),user);
         if (!task.getSessionId().equals(sessionId) || !QueryStatus.ASKING.name().equals(task.getStatusCode())) {
@@ -276,6 +281,7 @@ public class QueryApplicationService {
     @org.springframework.transaction.annotation.Transactional
     public TaskStatusResponse confirm(String taskId, ConfirmationRequest request,
                                       CurrentUser user, String requestId) {
+        authorization.requireAuthenticated(user);
         QueryTaskEntity task = ownedTask(taskId, user);
         conversations.lockTask(task);task=ownedTaskForUpdate(taskId,user);
         if (!QueryStatus.CONFIRMING.name().equals(task.getStatusCode())
@@ -301,6 +307,7 @@ public class QueryApplicationService {
 
     @org.springframework.transaction.annotation.Transactional
     public TaskStatusResponse cancel(String taskId, CurrentUser user, String requestId) {
+        authorization.requireAuthenticated(user);
         QueryTaskEntity task = ownedTask(taskId, user);
         conversations.lockTask(task);task=ownedTaskForUpdate(taskId,user);
         int changed = taskMapper.update(null, Wrappers.<QueryTaskEntity>lambdaUpdate()
@@ -357,6 +364,7 @@ public class QueryApplicationService {
                 // FOR UPDATE是当前读，避免REPEATABLE READ复用等待会话锁之前的快照。
                 .last(lock?"LIMIT 1 FOR UPDATE":"LIMIT 1"));
         if (task == null) throw new BusinessException(404001, "查询任务不存在");
+        authorization.requireOwner(user, task.getUserId(), "查询任务不存在");
         conversations.own(task.getSessionId(),user);
         return task;
     }

@@ -1,6 +1,7 @@
 package com.boc.nl2sql.access.auth.application;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.boc.nl2sql.authorization.domain.AccountStatus;
 import com.boc.nl2sql.authorization.domain.RoleCode;
 import com.boc.nl2sql.authorization.infrastructure.UserAccountEntity;
 import com.boc.nl2sql.authorization.infrastructure.UserAccountMapper;
@@ -46,6 +47,7 @@ public class DemoAccountBootstrap implements ApplicationRunner {
         account.setBranchId(branchId);
         account.setManagerId(managerId);
         account.setEnabled(true);
+        account.setAccountStatus(AccountStatus.ACTIVE.name());
         account.setCreatedAt(LocalDateTime.now());
         mapper.insert(account);
     }

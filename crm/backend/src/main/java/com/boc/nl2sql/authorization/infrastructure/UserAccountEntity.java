@@ -18,6 +18,7 @@ public class UserAccountEntity {
     private String branchId;
     private String managerId;
     private Boolean enabled;
+    private String accountStatus;
     private LocalDateTime createdAt;
 
     public Long getId() { return id; }
@@ -38,6 +39,8 @@ public class UserAccountEntity {
     public void setManagerId(String managerId) { this.managerId = managerId; }
     public Boolean getEnabled() { return enabled; }
     public void setEnabled(Boolean enabled) { this.enabled = enabled; }
+    public String getAccountStatus() { return accountStatus; }
+    public void setAccountStatus(String accountStatus) { this.accountStatus = accountStatus; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 }

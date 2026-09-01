@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { apiRequest, clearToken, getToken, setToken, TOKEN_KEY } from './api'
-import type { CurrentUser, LoginResponse } from './types'
+import { encryptPassword } from './passwordCrypto'
+import type { CurrentUser, LoginResponse, RegistrationResponse } from './types'
 
 const user = ref<CurrentUser | null>(null)
 const restoring = ref(true)
@@ -8,9 +9,18 @@ let revision = 0
 
 async function login(username: string, password: string): Promise<void> {
   const epoch = ++revision
-  const result = await apiRequest<LoginResponse>('/api/v1/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) })
+  const encryptedPassword = await encryptPassword(password)
+  const result = await apiRequest<LoginResponse>('/api/v1/auth/login', {
+    method: 'POST', body: JSON.stringify({ username, password: encryptedPassword }),
+  })
   if (epoch !== revision) return
   setToken(result.access_token); user.value = result.user
+}
+async function register(displayName: string, username: string, password: string): Promise<RegistrationResponse> {
+  const encryptedPassword = await encryptPassword(password)
+  return apiRequest<RegistrationResponse>('/api/v1/auth/register', {
+    method: 'POST', body: JSON.stringify({ display_name: displayName, username, password: encryptedPassword }),
+  })
 }
 async function restore(): Promise<void> {
   const epoch = ++revision
@@ -32,5 +42,5 @@ window.addEventListener('nl2sql:unauthorized', () => {
   if (user.value) { user.value = null; restoring.value = true; void restore() }
 })
 export function useAuth() {
-  return { user, restoring, authenticated: computed(() => Boolean(user.value)), login, restore, logout }
+  return { user, restoring, authenticated: computed(() => Boolean(user.value)), login, register, restore, logout }
 }

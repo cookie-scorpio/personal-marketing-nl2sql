@@ -7,6 +7,9 @@ spring:
 app:
   security:
     jwt-secret: 请替换为至少32字节的随机字符串
+    # 留空时自动生成只在当前后端进程有效的开发密钥。
+    password-rsa-private-key: ${AUTH_RSA_PRIVATE_KEY:}
+    allow-ephemeral-password-rsa-key: true
   model:
     # 当前默认使用Qwen3-32B；演示纯规则查询可用mock，或改回deepseek。
     provider: qwen

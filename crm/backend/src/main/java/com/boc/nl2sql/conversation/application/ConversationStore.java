@@ -1,11 +1,13 @@
 package com.boc.nl2sql.conversation.application;
 
 import com.boc.nl2sql.authorization.domain.CurrentUser;
+import com.boc.nl2sql.authorization.application.AuthorizationCenter;
 import com.boc.nl2sql.common.exception.BusinessException;
 import com.boc.nl2sql.conversation.domain.ConversationContext;
 import com.boc.nl2sql.conversation.domain.QueryStatus;
 import com.boc.nl2sql.conversation.infrastructure.QueryTaskEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.ObjectMapper;
 import java.util.List;
@@ -16,24 +18,32 @@ import java.util.LinkedHashMap;
 @Service
 public class ConversationStore {
     private final JdbcTemplate jdbc;
+    private final NamedParameterJdbcTemplate namedJdbc;
+    private final AuthorizationCenter authorization;
     private final ObjectMapper json;
     private final TaskSnapshots snapshots;
     @org.springframework.beans.factory.annotation.Autowired(required=false) private com.boc.nl2sql.audit.ConversationLog conversationLog;
-    public ConversationStore(JdbcTemplate jdbc,ObjectMapper json,TaskSnapshots snapshots){this.jdbc=jdbc;this.json=json;this.snapshots=snapshots;}
+    public ConversationStore(JdbcTemplate jdbc, NamedParameterJdbcTemplate namedJdbc, AuthorizationCenter authorization,
+                             ObjectMapper json, TaskSnapshots snapshots) {
+        this.jdbc = jdbc; this.namedJdbc = namedJdbc; this.authorization = authorization;
+        this.json = json; this.snapshots = snapshots;
+    }
     public Map<String,Object> lock(String sessionId,CurrentUser user,String title){
         // ON DUPLICATE KEY取得写锁，避免INSERT IGNORE的共享锁随后升级而产生并发死锁。
         jdbc.update("INSERT INTO conversation_session(session_id,user_id,title,created_at,updated_at) VALUES(?,?,?,NOW(3),NOW(3)) ON DUPLICATE KEY UPDATE session_id=VALUES(session_id)",sessionId,user.userId(),title.substring(0,Math.min(160,title.length())));
         var rows=jdbc.queryForList("SELECT * FROM conversation_session WHERE session_id=? FOR UPDATE",sessionId);
-        if(rows.isEmpty() || ((Number)rows.get(0).get("user_id")).longValue()!=user.userId() || rows.get(0).get("deleted_at")!=null)throw new BusinessException(404001,"会话不存在");
+        if(rows.isEmpty() || rows.get(0).get("deleted_at")!=null)throw new BusinessException(404001,"会话不存在");
+        authorization.requireOwner(user, ((Number) rows.get(0).get("user_id")).longValue(), "会话不存在");
         return rows.get(0);
     }
-    public void own(String id,CurrentUser user){visible(id,user.userId());}
-    public void visible(String id,long userId){
-        if(jdbc.queryForObject("SELECT COUNT(*) FROM conversation_session WHERE session_id=? AND user_id=? AND deleted_at IS NULL",Integer.class,id,userId)!=1)
-            throw new BusinessException(404001,"会话不存在");
+    public void own(String id,CurrentUser user){
+        var rows = jdbc.queryForList("SELECT user_id FROM conversation_session WHERE session_id=? AND deleted_at IS NULL", id);
+        if (rows.isEmpty()) throw new BusinessException(404001, "会话不存在");
+        authorization.requireOwner(user, ((Number) rows.get(0).get("user_id")).longValue(), "会话不存在");
     }
     public void lockTask(QueryTaskEntity task){jdbc.queryForList("SELECT session_id FROM conversation_session WHERE session_id=? AND user_id=? FOR UPDATE",task.getSessionId(),task.getUserId());}
     public List<Map<String,Object>> list(CurrentUser user,int page,int size){
+        authorization.requireAuthenticated(user);
         if(page<1||size<1||size>100)throw new BusinessException(400001,"分页参数不正确");
         return jdbc.queryForList("SELECT session_id,title,active_task_id,state_version,created_at,updated_at FROM conversation_session WHERE user_id=? AND deleted_at IS NULL ORDER BY created_at DESC,session_id DESC LIMIT ? OFFSET ?",user.userId(),size,(long)(page-1)*size);
     }
@@ -41,16 +51,13 @@ public class ConversationStore {
     public record IdScope(java.util.Set<String> inScope, java.util.Set<String> outOfScope) {}
     public IdScope checkIdsScope(java.util.Collection<String> ids, CurrentUser user) {
         if (ids.isEmpty()) return new IdScope(java.util.Set.of(), java.util.Set.of());
-        String safeIds = ids.stream().filter(i -> i.matches("C[0-9]{8}")).map(i -> "'" + i + "'")
-                .reduce((a, b) -> a + "," + b).orElse("''");
-        String condition = switch (user.role()) {
-            case CUSTOMER_MANAGER -> "manager_id = '" + user.managerId() + "'";
-            case TEAM_LEAD -> "branch_id = '" + user.branchId() + "'";
-            case ORG_MANAGER -> "region_code = '" + user.regionCode() + "'";
-        };
-        var found = new java.util.HashSet<>(jdbc.queryForList(
-                "SELECT customer_id FROM dim_customer WHERE status_code='ACTIVE' AND " + condition + " AND customer_id IN (" + safeIds + ")",
-                String.class));
+        var scope = authorization.customerScope(user);
+        var parameters = new org.springframework.jdbc.core.namedparam.MapSqlParameterSource()
+                .addValue("scopeValue", scope.value())
+                .addValue("customerIds", ids.stream().filter(i -> i.matches("C[0-9]{8}")).toList());
+        var found = new java.util.HashSet<>(namedJdbc.queryForList(
+                "SELECT customer_id FROM dim_customer WHERE status_code='ACTIVE' AND " + scope.column()
+                        + "=:scopeValue AND customer_id IN (:customerIds)", parameters, String.class));
         var inScope = new java.util.LinkedHashSet<String>();
         var outOfScope = new java.util.LinkedHashSet<String>();
         for (String id : ids) (found.contains(id) ? inScope : outOfScope).add(id);
@@ -91,7 +98,8 @@ public class ConversationStore {
     @org.springframework.transaction.annotation.Transactional
     public void delete(String id,CurrentUser user,String requestId){
         var rows=jdbc.queryForList("SELECT user_id,active_task_id,deleted_at FROM conversation_session WHERE session_id=? FOR UPDATE",id);
-        if(rows.isEmpty() || ((Number)rows.get(0).get("user_id")).longValue()!=user.userId())throw new BusinessException(404001,"会话不存在");
+        if(rows.isEmpty())throw new BusinessException(404001,"会话不存在");
+        authorization.requireOwner(user, ((Number) rows.get(0).get("user_id")).longValue(), "会话不存在");
         var session=rows.get(0);
         if(session.get("deleted_at")!=null)return;
         // v1.5 级联删除：会话有未结束任务时，同一事务内先取消任务再删除。

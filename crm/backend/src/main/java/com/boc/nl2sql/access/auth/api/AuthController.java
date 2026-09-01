@@ -1,6 +1,8 @@
 package com.boc.nl2sql.access.auth.api;
 
 import com.boc.nl2sql.access.auth.application.AuthService;
+import com.boc.nl2sql.access.auth.application.PasswordCipher;
+import com.boc.nl2sql.access.auth.application.RegistrationService;
 import com.boc.nl2sql.authorization.domain.CurrentUser;
 import com.boc.nl2sql.common.api.ApiResponse;
 import com.boc.nl2sql.common.web.WebRequestSupport;
@@ -17,9 +19,25 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/auth")
 public class AuthController {
     private final AuthService authService;
+    private final RegistrationService registrationService;
+    private final PasswordCipher passwordCipher;
 
-    public AuthController(AuthService authService) {
+    public AuthController(AuthService authService, RegistrationService registrationService, PasswordCipher passwordCipher) {
         this.authService = authService;
+        this.registrationService = registrationService;
+        this.passwordCipher = passwordCipher;
+    }
+
+    /** 只公开 SPKI 公钥与密钥标识，私钥始终停留在部署环境。 */
+    @GetMapping("/public-key")
+    public ApiResponse<PasswordCipher.PublicKeyInfo> publicKey(HttpServletRequest request) {
+        return ApiResponse.success(passwordCipher.publicKey(), WebRequestSupport.requestId(request));
+    }
+
+    @PostMapping("/register")
+    public ApiResponse<RegistrationResponse> register(@Valid @RequestBody RegistrationRequest body,
+                                                       HttpServletRequest request) {
+        return ApiResponse.success(registrationService.register(body), WebRequestSupport.requestId(request));
     }
 
     @PostMapping("/login")

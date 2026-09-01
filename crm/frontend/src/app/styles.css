@@ -48,7 +48,8 @@ svg { width: 1em; height: 1em; }
 .intro-copy { max-width: 520px; margin: auto 0; }
 .intro-copy h1 { max-width: 500px; margin: 0 0 22px; color: #fff8f5; font-size: clamp(42px, 4.3vw, 58px); line-height: 1.12; letter-spacing: -.05em; }
 .intro-statement { max-width: 440px; margin: 0 0 14px; color: #f1d6d4; font-size: clamp(22px, 2vw, 28px); font-weight: 700; line-height: 1.35; letter-spacing: -.025em; }
-.intro-copy > p:last-child { max-width: 490px; margin: 0; color: #e5d4d2; font-size: 14px; line-height: 1.8; }
+.intro-description { max-width: 490px; margin: 0; color: #e5d4d2; font-size: 14px; line-height: 1.8; }
+.intro-description.registration-description { max-width: none; font-size: 13px; white-space: nowrap; }
 .login-panel { display: grid; place-items: center; padding: 48px; }
 .login-card { width: min(100%, 490px); }
 .login-card-head h2 { margin: 10px 0 8px; font-size: 30px; letter-spacing: -.03em; }
@@ -304,7 +305,7 @@ svg { width: 1em; height: 1em; }
   .intro-copy { margin: 24px 0 8px; }
   .intro-copy h1 { margin: 0 0 10px; font-size: 30px; line-height: 1.12; }
   .intro-statement { margin-bottom: 0; font-size: 18px; }
-  .intro-copy > p:last-child { display: none; }
+  .intro-description { display: none; }
   .login-panel { padding: 26px 20px 32px; }
   .login-card-head h2 { font-size: 27px; }
   .demo-accounts { grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 22px 0 20px; }

@@ -193,7 +193,7 @@ class DeepSeekModelAdapterTest {
             when(terms.promptContext()).thenReturn("营销转化率：转化客户数/触达客户数");
             return new DeepSeekModelAdapter(mapper, new Nl2SqlPrompts(terms, null, 100),
                     "http://127.0.0.1:" + server.getAddress().getPort(), "local-test-key", "deepseek-v4-flash",
-                    false, 4096, 8192, 60);
+                    false, 4096, 8192, 60, false, 3, true);
         }
 
         @Override
@@ -227,7 +227,7 @@ class DeepSeekModelAdapterTest {
         try {
             var adapter = new DeepSeekModelAdapter(mapper, new Nl2SqlPrompts(terms, null, 100),
                     "http://127.0.0.1:" + server.getAddress().getPort(), "local-test-key", "deepseek-v4-flash",
-                    false, 4096, 8192, 60);
+                    false, 4096, 8192, 60, false, 3, true);
             var user = new CurrentUser(1L, "manager01", "演示经理", RoleCode.CUSTOMER_MANAGER, "EAST", "B001", "M0001");
 
             var result = adapter.interpret("分析各年龄段客户数量分布", user);

@@ -50,7 +50,7 @@ class SqlPlanningToolsTest {
             exchange.getResponseHeaders().add("Content-Type","application/json");exchange.sendResponseHeaders(200,body.length);exchange.getResponseBody().write(body);exchange.close();
         });server.start();
         try{
-            var adapter=new DeepSeekModelAdapter(json,prompts(),"http://127.0.0.1:"+server.getAddress().getPort(),"local-test","test",true,4096,8192,10);
+            var adapter=new DeepSeekModelAdapter(json,prompts(),"http://127.0.0.1:"+server.getAddress().getPort(),"local-test","test",true,4096,8192,10,true,3,true);
             ReflectionTestUtils.setField(adapter,"sqlTools",new SqlPlanningTools(prompts(),100));ReflectionTestUtils.setField(adapter,"toolsEnabled",true);
             assertThat(adapter.interpret("查询客户",user).generatedSql()).isEqualTo(valid);
             assertThat(requests).hasSize(3);

@@ -51,7 +51,7 @@ public class ModelGateway {
                 .orElseThrow(() -> new BusinessException(503101, "未找到已配置的大模型适配器"));
         if (!adapter.available() || "mock".equalsIgnoreCase(adapter.provider())) {
             throw new BusinessException(503102,
-                    "该问题超出规则快速查询范围，请配置 DeepSeek V4 Flash 后重试");
+                    "该问题超出规则快速查询范围，请配置已选用的模型（" + configuredProvider + "）后重试");
         }
         return thinking!=null?adapter.interpret(queryText,user,active==null?()->true:active,thinking)
                 : active == null ? adapter.interpret(queryText, user) : adapter.interpret(queryText, user, active);

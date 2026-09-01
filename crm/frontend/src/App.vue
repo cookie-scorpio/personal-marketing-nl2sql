@@ -65,13 +65,23 @@ onUnmounted(() => sidebarMedia.removeEventListener('change', resizeSidebar))
   <div v-else class="app-shell">
     <div v-if="sidebarOpen" class="mobile-mask" @click="closeSidebar" />
     <aside id="conversation-sidebar" class="sidebar" :class="{ 'is-open': sidebarOpen }" :inert="narrowScreen && !sidebarOpen" @keydown.esc="closeSidebar">
-      <div class="brand"><span class="brand-seal">中</span><div><strong>中银智析</strong><small>个金营销智能问数</small></div><button class="sidebar-close mobile-only" type="button" aria-label="关闭会话侧栏" @click="closeSidebar"><Close /></button></div>
+      <div class="brand">
+        <span class="brand-boc-logo" role="img" aria-label="中国银行标志">
+          <svg viewBox="0 0 48 48" aria-hidden="true">
+            <circle cx="24" cy="24" r="20" fill="currentColor" />
+            <path d="M20 11h8v26h-8z" fill="#fff8f5" />
+            <path d="M15 19h18v10H15z" fill="#fff8f5" />
+            <path d="M20 19h8v10h-8z" fill="currentColor" />
+          </svg>
+        </span>
+        <div><strong>中银智析</strong><small>个金营销智能平台</small></div>
+        <button class="sidebar-close mobile-only" type="button" aria-label="关闭会话侧栏" @click="closeSidebar"><Close /></button>
+      </div>
       <button ref="newSessionButton" class="new-query-button" type="button" :disabled="workspace?.navigationBusy" @click="newQuery"><Plus /> 新建会话</button>
       <ConversationSidebar :key="user?.user_id" :active-session-id="workspace?.sessionId"
                            :disabled="!!workspace?.navigationBusy" :refresh-version="sessionRevision" @select="selectSession" @deleted="deletedSession" />
       <div class="sidebar-note">
-        <span>当前数据范围</span><strong>{{ scopeLabel }}</strong>
-        <p>查询范围由登录身份决定，前端无法修改。</p>
+        <span>当前登录用户</span><strong>{{ scopeLabel }}</strong>
       </div>
       <div class="sidebar-footer">
         <div class="user-card">
@@ -86,7 +96,7 @@ onUnmounted(() => sidebarMedia.removeEventListener('change', resizeSidebar))
       <header class="topbar">
         <div class="topbar-title">
           <button ref="menuButton" class="icon-button mobile-only" type="button" aria-label="打开会话侧栏" aria-controls="conversation-sidebar" :aria-expanded="sidebarOpen" @click="openSidebar"><Fold /></button>
-          <div><h1>智能问数</h1><p>用业务语言发现客户机会 · 数据范围：{{ scopeLabel }}</p></div>
+          <div><h1>智能问数</h1></div>
         </div>
         <div class="topbar-actions">
           <span class="service-status" :class="{ unavailable: serviceHealthy === false }"><i />{{ serviceHealthy === null ? '正在连接服务' : serviceHealthy ? '服务状态正常' : '服务暂不可用' }}</span>

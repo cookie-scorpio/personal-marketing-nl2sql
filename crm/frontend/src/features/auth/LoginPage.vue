@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { DataAnalysis, Lock, User } from '@element-plus/icons-vue'
+import { Lock, User } from '@element-plus/icons-vue'
 import { ApiError } from '../../app/api'
 import { useAuth } from '../../app/auth'
 
@@ -94,22 +94,27 @@ async function submitRegistration() {
 <template>
   <main class="login-page">
     <section class="login-intro">
-      <div class="login-brand"><span>中</span><strong>中银智析</strong></div>
-      <div class="intro-copy">
-        <p class="section-kicker">个金营销智能平台</p>
-        <h1>{{ mode === 'login' ? '让营销问题，直接得到数据答案' : '提交身份申请，等待授权开通' }}</h1>
-        <p>{{ mode === 'login' ? '面向个人金融营销人员的自然语言查询工作台。系统会补全条件、澄清矛盾，并用表格、图表和分析结论解释查询结果。' : '注册只提交基础身份信息。审批通过并分配数据范围后，账号才可以登录使用智能问数。' }}</p>
+      <div class="login-brand">
+        <span class="boc-logo" role="img" aria-label="中国银行标志">
+          <svg viewBox="0 0 48 48" aria-hidden="true">
+            <circle cx="24" cy="24" r="20" fill="currentColor" />
+            <path d="M20 11h8v26h-8z" fill="#fff8f5" />
+            <path d="M15 19h18v10H15z" fill="#fff8f5" />
+            <path d="M20 19h8v10h-8z" fill="currentColor" />
+          </svg>
+        </span>
+        <strong>中银智析</strong>
       </div>
-      <div class="trust-list">
-        <span><DataAnalysis /> 受控 SQL 与数据范围校验</span>
-        <span><Lock /> RSA 密码保护与待审批账号</span>
+      <div class="intro-copy">
+        <h1>个金营销智能平台</h1>
+        <p class="intro-statement">{{ mode === 'login' ? '让营销问题，直接得到数据答案' : '提交身份申请，等待授权开通' }}</p>
+        <p>{{ mode === 'login' ? '面向个人金融营销人员的自然语言查询工作台。系统会补全条件、澄清矛盾，并用表格、图表和分析结论解释查询结果。' : '注册只提交基础身份信息。审批通过并分配数据范围后，账号才可以登录使用智能问数。' }}</p>
       </div>
     </section>
 
     <section class="login-panel" aria-labelledby="login-title">
       <div class="login-card">
         <div class="login-card-head">
-          <p class="section-kicker">内部演示环境</p>
           <h2 id="login-title">{{ mode === 'login' ? '登录工作台' : '申请注册账号' }}</h2>
           <p>{{ mode === 'login' ? '选择演示身份，查看不同的数据访问范围。' : '提交后需等待管理员分配角色和数据范围。' }}</p>
         </div>
@@ -128,7 +133,6 @@ async function submitRegistration() {
             <div v-if="error" class="form-error" role="alert">{{ error }}</div>
             <el-button native-type="submit" type="primary" size="large" :loading="loading" :disabled="!username || !password">进入智能问数</el-button>
           </form>
-          <p class="login-note">演示密码统一为 <code>Demo@123</code>，数据库仅保存 BCrypt 哈希。</p>
           <button class="auth-text-action" type="button" @click="switchMode('register')">没有账号？申请注册</button>
         </template>
 
@@ -159,7 +163,6 @@ async function submitRegistration() {
             <div v-if="error" class="form-error" role="alert">{{ error }}</div>
             <el-button native-type="submit" type="primary" size="large" :loading="loading">提交注册申请</el-button>
           </form>
-          <p class="login-note">密码会在浏览器中加密后发送；本机请通过 <code>localhost</code> 访问。</p>
           <button class="auth-text-action" type="button" @click="switchMode('login')">返回登录</button>
         </template>
       </div>

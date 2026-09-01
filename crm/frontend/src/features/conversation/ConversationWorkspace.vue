@@ -252,7 +252,7 @@ onUnmounted(() => { destroyed = true; disconnect() })
 
 <template>
   <section class="conversation-card agent-workspace">
-    <header class="conversation-head"><div><p class="section-kicker"><ChatDotRound /> 智能查询助手 · v1.5</p><h2>把问题说清，让数据回答</h2><p>支持连续追问；客户身份、数据权限和统计口径由服务端校验。</p></div></header>
+    <header class="conversation-head"><div><p class="section-kicker"><ChatDotRound /> 智能查询助手</p><h2>把问题说清，让数据回答</h2><p>您好！{{ user?.display_name }}经理</p></div></header>
     <div class="chat-reading-area">
     <MessageNavigator :messages="messages" :session-id="sessionId" :host="listHost" :has-more="hasMore" :load-older="() => openSession(sessionId, true)" />
     <div ref="listHost" class="chat-messages" :aria-busy="loading">

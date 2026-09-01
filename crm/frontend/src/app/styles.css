@@ -35,19 +35,20 @@ svg { width: 1em; height: 1em; }
 .section-kicker { display: flex; align-items: center; gap: 7px; margin: 0; color: var(--accent); font-size: 12px; font-weight: 750; letter-spacing: .05em; }
 .app-loading { min-height: 100vh; display: grid; place-content: center; justify-items: center; gap: 10px; color: var(--muted); }
 .brand-seal { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 10px; color: #fff; background: var(--accent); font-family: serif; font-size: 21px; font-weight: 800; }
+.brand-boc-logo { width: 40px; height: 40px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 10px; color: #c91d2a; background: #fff8f5; }
+.brand-boc-logo svg { width: 30px; height: 30px; }
 
 /* 登录页通过一明一暗两块区域建立可信、克制的内部系统气质。 */
 .login-page { min-height: 100vh; display: grid; grid-template-columns: minmax(430px, .95fr) minmax(520px, 1.05fr); background: #f8f6f3; }
 .login-intro { min-height: 100vh; display: flex; flex-direction: column; padding: 52px clamp(44px, 6vw, 96px); color: #fff8f5; background: #542327; }
 .login-brand { display: flex; align-items: center; gap: 12px; }
-.login-brand span { width: 38px; height: 38px; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.42); border-radius: 9px; font-family: serif; font-size: 20px; }
+.boc-logo { width: 38px; height: 38px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 9px; color: #c91d2a; background: #fff8f5; }
+.boc-logo svg { width: 29px; height: 29px; }
 .login-brand strong { font-size: 20px; letter-spacing: .08em; }
 .intro-copy { max-width: 520px; margin: auto 0; }
-.intro-copy .section-kicker { color: #efc6c7; }
-.intro-copy h1 { max-width: 500px; margin: 18px 0; font-size: clamp(38px, 4.3vw, 62px); line-height: 1.12; letter-spacing: -.05em; }
-.intro-copy > p:last-child { max-width: 490px; color: #e5d4d2; font-size: 16px; line-height: 1.85; }
-.trust-list { display: flex; flex-wrap: wrap; gap: 12px 24px; color: #e8d8d6; font-size: 13px; }
-.trust-list span { display: flex; align-items: center; gap: 8px; }
+.intro-copy h1 { max-width: 500px; margin: 0 0 22px; color: #fff8f5; font-size: clamp(42px, 4.3vw, 58px); line-height: 1.12; letter-spacing: -.05em; }
+.intro-statement { max-width: 440px; margin: 0 0 14px; color: #f1d6d4; font-size: clamp(22px, 2vw, 28px); font-weight: 700; line-height: 1.35; letter-spacing: -.025em; }
+.intro-copy > p:last-child { max-width: 490px; margin: 0; color: #e5d4d2; font-size: 14px; line-height: 1.8; }
 .login-panel { display: grid; place-items: center; padding: 48px; }
 .login-card { width: min(100%, 490px); }
 .login-card-head h2 { margin: 10px 0 8px; font-size: 30px; letter-spacing: -.03em; }
@@ -94,7 +95,6 @@ svg { width: 1em; height: 1em; }
 .sidebar-note { flex-shrink: 0; margin: 12px 0; padding: 14px; border: 1px solid #45413f; border-radius: 10px; background: #302e2d; }
 .sidebar-note span { color: #9f9793; font-size: 10px; }
 .sidebar-note strong { display: block; margin-top: 5px; color: #f2edeb; font-size: 12px; }
-.sidebar-note p { margin: 9px 0 0; color: #8f8884; font-size: 10px; line-height: 1.55; }
 .sidebar-footer { flex-shrink: 0; margin-top: 0; padding-top: 10px; border-top: 1px solid #423e3c; }
 .user-card { display: flex; align-items: center; gap: 10px; margin-top: 7px; padding: 10px 8px 2px; }
 .user-card .el-avatar { background: #f0d6d7; color: #8d2028; font-weight: 700; }
@@ -105,7 +105,7 @@ svg { width: 1em; height: 1em; }
 .logout-button:hover { color: #fff; background: #433e3c; }
 
 .main-area { min-width: 0; margin-left: var(--sidebar-width); }
-.topbar { height: 80px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 0 30px; border-bottom: 1px solid var(--border); background: rgba(255,253,251,.96); }
+.topbar { height: 72px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 0 30px; border-bottom: 1px solid var(--border); background: rgba(255,253,251,.96); }
 .topbar-title { display: flex; align-items: center; gap: 10px; }
 .topbar-title h1 { margin: 0; font-size: 19px; }
 .topbar-title p { margin: 5px 0 0; color: var(--muted); font-size: 11px; }
@@ -280,7 +280,8 @@ svg { width: 1em; height: 1em; }
   .login-page { grid-template-columns: 1fr; }
   .login-intro { min-height: auto; padding: 24px; }
   .intro-copy { margin: 34px 0 26px; }
-  .intro-copy h1 { margin: 12px 0; font-size: 34px; }
+  .intro-copy h1 { margin: 0 0 14px; font-size: 36px; }
+  .intro-statement { margin-bottom: 10px; font-size: 21px; }
   .login-panel { padding: 32px 22px; }
   .mobile-mask { position: fixed; inset: 0; z-index: 25; display: block; background: rgba(37,31,29,.48); }
   .sidebar { transform: translateX(-100%); transition: transform .2s ease; }
@@ -288,7 +289,7 @@ svg { width: 1em; height: 1em; }
   .main-area { margin-left: 0; }
   .mobile-only { display: grid; }
   .topbar { height: 72px; padding: 0 16px; }
-  .topbar-title p, .service-status, .topbar-actions .el-badge { display: none; }
+  .service-status, .topbar-actions .el-badge { display: none; }
   .workspace-grid { padding: 14px; }
   .conversation-card { padding: 21px 16px 16px; }
   .clarification-panel { grid-template-columns: 38px 1fr; }
@@ -297,11 +298,13 @@ svg { width: 1em; height: 1em; }
 @media (max-width: 560px) {
   /* 手机首屏优先呈现登录任务，只保留足够识别产品的品牌信息。 */
   .login-intro { padding: 20px; }
-  .login-brand span { width: 34px; height: 34px; font-size: 18px; }
+  .boc-logo { width: 34px; height: 34px; }
+  .boc-logo svg { width: 26px; height: 26px; }
   .login-brand strong { font-size: 18px; }
   .intro-copy { margin: 24px 0 8px; }
-  .intro-copy h1 { margin: 9px 0 0; font-size: 30px; line-height: 1.12; }
-  .intro-copy > p:last-child, .trust-list { display: none; }
+  .intro-copy h1 { margin: 0 0 10px; font-size: 30px; line-height: 1.12; }
+  .intro-statement { margin-bottom: 0; font-size: 18px; }
+  .intro-copy > p:last-child { display: none; }
   .login-panel { padding: 26px 20px 32px; }
   .login-card-head h2 { font-size: 27px; }
   .demo-accounts { grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 22px 0 20px; }
@@ -340,7 +343,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
 /* v1.2：对话为主体，结果附属于消息，输入区始终可达。 */
 .workspace-grid.conversation-layout { display: block; padding: 20px 28px; }
-.agent-workspace { max-width: 1320px; height: calc(100vh - 130px); min-height: 520px; margin: 0 auto; display: flex; flex-direction: column; padding: 24px 28px 16px; }
+.agent-workspace { max-width: 1320px; height: calc(100vh - 122px); min-height: 520px; margin: 0 auto; display: flex; flex-direction: column; padding: 24px 28px 16px; }
 .agent-workspace .conversation-head { flex-shrink: 0; margin-bottom: 12px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
 .agent-workspace .conversation-head h2 { font-size: 21px; }
 .chat-messages { flex: 1; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; padding: 10px 8px 24px 0; overscroll-behavior: contain; }

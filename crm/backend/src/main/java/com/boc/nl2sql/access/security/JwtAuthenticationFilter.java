@@ -5,6 +5,9 @@ import com.boc.nl2sql.authorization.domain.CurrentUser;
 import com.boc.nl2sql.common.api.ApiResponse;
 import com.boc.nl2sql.common.exception.BusinessException;
 import com.boc.nl2sql.common.web.WebRequestSupport;
+import com.boc.nl2sql.quality.collection.QualityFacts;
+import com.boc.nl2sql.quality.event.QualityEventType;
+import com.boc.nl2sql.quality.event.QualityFact;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -25,10 +28,12 @@ import tools.jackson.databind.ObjectMapper;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtService jwtService;
     private final ObjectMapper objectMapper;
+    private final QualityFacts qualityFacts;
 
-    public JwtAuthenticationFilter(JwtService jwtService, ObjectMapper objectMapper) {
+    public JwtAuthenticationFilter(JwtService jwtService, ObjectMapper objectMapper, QualityFacts qualityFacts) {
         this.jwtService = jwtService;
         this.objectMapper = objectMapper;
+        this.qualityFacts = qualityFacts;
     }
 
     @Override
@@ -42,6 +47,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                         user, "", List.of(new SimpleGrantedAuthority("ROLE_" + user.role().name())));
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             } catch (BusinessException exception) {
+                qualityFacts.publish(QualityFact.builder(QualityEventType.ACCESS_AUTHENTICATION_FAILED, "ACCESS")
+                        .requestId(WebRequestSupport.requestId(request)).summary("invalid token")
+                        .detail("method", request.getMethod()).detail("path", request.getRequestURI())
+                        .detail("code", exception.code()).build());
                 response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                 response.setContentType("application/json;charset=UTF-8");
                 response.getWriter().write(objectMapper.writeValueAsString(

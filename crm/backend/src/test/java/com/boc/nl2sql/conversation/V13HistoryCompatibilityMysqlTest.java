@@ -83,6 +83,7 @@ class V13HistoryCompatibilityMysqlTest {
         assertThat(store.feedback(session,id,"DISLIKE",user)).containsEntry("feedback","DISLIKE");
         assertThat(((List<Map<String,Object>>)store.detail(session,user,0,100).get("messages")).get(1)).containsEntry("feedback","DISLIKE");
         store.feedback(session,id,"NONE",user);
+        assertThat(jdbc.queryForObject("SELECT feedback_code FROM quality_feedback_current WHERE message_id=?",String.class,id)).isEqualTo("NONE");
         assertThat(jdbc.queryForObject("SELECT feedback_code FROM conversation_message WHERE message_id=?",String.class,id)).isNull();
         assertThatThrownBy(()->store.feedback(session,id,"LIKE",other)).isInstanceOf(BusinessException.class);
         assertThatThrownBy(()->store.feedback(session,((Number)rows.get(0).get("message_id")).longValue(),"LIKE",user)).isInstanceOf(BusinessException.class);

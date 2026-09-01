@@ -28,6 +28,7 @@ public class DataScopePolicy {
             case CUSTOMER_MANAGER -> new Scope("manager_id", user.managerId(), "scopeManagerId");
             case TEAM_LEAD -> new Scope("branch_id", user.branchId(), "scopeBranchId");
             case ORG_MANAGER -> new Scope("region_code", user.regionCode(), "scopeRegionCode");
+            case QUALITY_ADMIN -> throw new BusinessException(403106, "质量管理员不具备业务数据查询权限");
         };
         if (scope.value() == null || !scope.value().matches("[A-Za-z0-9_-]+")) {
             throw new BusinessException(403103, "当前账号的数据范围配置无效");

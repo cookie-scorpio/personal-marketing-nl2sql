@@ -11,14 +11,27 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+import com.boc.nl2sql.authorization.domain.CurrentUser;
+import com.boc.nl2sql.quality.collection.QualityFacts;
+import com.boc.nl2sql.quality.event.QualityEventType;
+import com.boc.nl2sql.quality.event.QualityFact;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private QualityFacts qualityFacts;
 
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiResponse<Void>> business(BusinessException exception, HttpServletRequest request) {
         HttpStatus status = statusOf(exception.code());
+        if (qualityFacts != null && (status == HttpStatus.UNAUTHORIZED || status == HttpStatus.FORBIDDEN)) {
+            qualityFacts.publish(QualityFact.builder(QualityEventType.ACCESS_AUTHORIZATION_DENIED, "ACCESS")
+                    .requestId(WebRequestSupport.requestId(request)).userId(currentUserId()).summary(exception.getMessage())
+                    .detail("code", exception.code()).detail("method", request.getMethod())
+                    .detail("path", request.getRequestURI()).build());
+        }
         return ResponseEntity.status(status)
                 .body(ApiResponse.error(exception.code(), exception.getMessage(), WebRequestSupport.requestId(request)));
     }
@@ -61,7 +74,16 @@ public class GlobalExceptionHandler {
         log.error("Unhandled request error: type={}, message={}, rootType={}, rootMessage={}, frames={}",
                 exception.getClass().getName(), exception.getMessage(), root.getClass().getName(), root.getMessage(),
                 java.util.Arrays.toString(exception.getStackTrace()));
+        if (qualityFacts != null) qualityFacts.publish(QualityFact.builder(QualityEventType.RUNTIME_FAILURE, "COMMON")
+                .requestId(WebRequestSupport.requestId(request)).userId(currentUserId()).summary(exception.getClass().getSimpleName())
+                .detail("method", request.getMethod()).detail("path", request.getRequestURI())
+                .detail("error_type", exception.getClass().getName()).detail("error_message", exception.getMessage()).build());
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(ApiResponse.error(500000, "系统暂时无法处理该请求，请稍后重试", WebRequestSupport.requestId(request)));
+    }
+
+    private Long currentUserId() {
+        var authentication = SecurityContextHolder.getContext().getAuthentication();
+        return authentication != null && authentication.getPrincipal() instanceof CurrentUser user ? user.userId() : null;
     }
 }

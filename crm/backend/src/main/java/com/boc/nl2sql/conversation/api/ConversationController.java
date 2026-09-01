@@ -43,12 +43,13 @@ public class ConversationController {
             @RequestParam(defaultValue="0",name="after_message_id") long after,@RequestParam(defaultValue="100",name="page_size") int size,HttpServletRequest request){
         return ApiResponse.success(store.anchors(id,user,after,size),WebRequestSupport.requestId(request));
     }
-    public record FeedbackRequest(String feedback){}
+    public record FeedbackRequest(String feedback,String reasonCode,String comment){}
 
     @PostMapping("/{id}/messages/{messageId}/feedback")
     public ApiResponse<Map<String,Object>> feedback(@PathVariable String id,@PathVariable long messageId,@RequestBody FeedbackRequest body,
             @AuthenticationPrincipal CurrentUser user,HttpServletRequest request){
-        return ApiResponse.success(store.feedback(id,messageId,body.feedback(),user),WebRequestSupport.requestId(request));
+        return ApiResponse.success(store.feedback(id,messageId,body.feedback(),body.reasonCode(),body.comment(),user,
+                WebRequestSupport.requestId(request)),WebRequestSupport.requestId(request));
     }
     
     @GetMapping("/{id}")

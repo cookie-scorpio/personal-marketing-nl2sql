@@ -1,6 +1,5 @@
 package com.boc.nl2sql.conversation.application;
 
-import com.boc.nl2sql.audit.AuditService;
 import com.boc.nl2sql.authorization.domain.CurrentUser;
 import com.boc.nl2sql.common.exception.BusinessException;
 import com.boc.nl2sql.conversation.domain.QueryStatus;
@@ -14,6 +13,11 @@ import com.boc.nl2sql.history.application.HistoryService;
 import com.boc.nl2sql.model.ModelGateway;
 import com.boc.nl2sql.model.QueryInterpretation;
 import com.boc.nl2sql.nl2sql.application.CompletenessValidator;
+import com.boc.nl2sql.quality.collection.QualityFacts;
+import com.boc.nl2sql.quality.collection.SqlFactRecorder;
+import com.boc.nl2sql.quality.event.QualityEventType;
+import com.boc.nl2sql.quality.event.QualityFact;
+import com.boc.nl2sql.quality.persistence.RepairFactStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -40,26 +44,26 @@ public class QueryTaskProcessor {
     private final ResultAssembler assembler;
     private final FallbackPlanner fallbackPlanner;
     private final HistoryService history;
-    private final AuditService audit;
+    private final QualityFacts qualityFacts;
     private final ObjectMapper json;
     private final int maxClarifications;
     @org.springframework.beans.factory.annotation.Autowired private CustomerResolver customers;
     @org.springframework.beans.factory.annotation.Autowired private FollowupResolver followups;
     @org.springframework.beans.factory.annotation.Autowired private CustomerQueryPlanner customerPlanner;
-    @org.springframework.beans.factory.annotation.Autowired private SqlReviewLog sqlLog;
-    @org.springframework.beans.factory.annotation.Autowired(required=false) private SqlRepairStore repairStore;
+    @org.springframework.beans.factory.annotation.Autowired private SqlFactRecorder sqlFacts;
+    @org.springframework.beans.factory.annotation.Autowired private RepairFactStore repairFacts;
 
     public QueryTaskProcessor(QueryTaskMapper taskMapper, TaskStateStore states, ModelGateway modelGateway,
             CompletenessValidator completeness, SqlPlanner planner, SqlRiskEvaluator risks,
             SqlSafetyValidator safety, GeneratedSqlScopeValidator scope, QueryExecutionGateway execution,
             ResultAssembler assembler, FallbackPlanner fallbackPlanner, HistoryService history,
-            AuditService audit, ObjectMapper json,
+            QualityFacts qualityFacts, ObjectMapper json,
             com.boc.nl2sql.nl2sql.application.DisplayConflictGuard conflictGuard,
             @Value("${app.query.max-clarification-rounds:5}") int maxClarifications) {
         this.taskMapper = taskMapper; this.states = states; this.modelGateway = modelGateway;
         this.completeness = completeness; this.planner = planner; this.risks = risks; this.safety = safety;
         this.scope = scope; this.execution = execution; this.assembler = assembler;
-        this.fallbackPlanner = fallbackPlanner; this.history = history; this.audit = audit;
+        this.fallbackPlanner = fallbackPlanner; this.history = history; this.qualityFacts = qualityFacts;
         this.json = json; this.maxClarifications = maxClarifications; this.conflictGuard = conflictGuard;
     }
     private final com.boc.nl2sql.nl2sql.application.DisplayConflictGuard conflictGuard;
@@ -185,7 +189,7 @@ public class QueryTaskProcessor {
         if (risk.requiresConfirmation()) {
             task.setConfirmationToken(UUID.randomUUID().toString().replace("-", ""));
             stage(task, QueryStatus.CONFIRMING, 65, "当前SQL需要确认后执行");
-            audit.record(requestId, task.getTaskId(), user.userId(), "QUERY_CONFIRMING", "NEW_PLAN");
+            fact(QualityEventType.QUERY_CONFIRMING,task,user,requestId,"NEW_PLAN",details("sql",plan.sql(),"risk",risk));
             return false;
         }
         return true;
@@ -243,7 +247,7 @@ public class QueryTaskProcessor {
                 if (task.getFallbackJson() != null) {finishNoData(task,"固定模板未能完成查询，请调整条件或稍后重试。",requestId);return;}
                 throw error;
             }
-            audit.record(requestId,task.getTaskId(),user.userId(),"QUERY_SQL_ERROR",reason.get());
+            fact(QualityEventType.QUERY_SQL_ERROR,task,user,requestId,reason.get(),details("sql",plan.sql(),"reason",reason.get()),true);
             RepairCandidate candidate=requestRepair(task,plan,user,requestId,"EXECUTION",reason.get());
             if(candidate==null){fallback(task,user,requestId,"SQL已达到两次修复上限或模型未形成可执行计划。");return;}
             runPlan(task,candidate.plan(),user,requestId,candidate.attempt());
@@ -256,7 +260,8 @@ public class QueryTaskProcessor {
                 var verdict=modelGateway.reviewResult(modelText(task),user,plan.sql(),resultSummary(plan,rows),Boolean.TRUE.equals(task.getThinkingEnabled()));
                 review(task,requestId,verdict.aligned()?"RESULT_ALIGNED":"RESULT_MISMATCH",plan,verdict.reason());
                 if(!verdict.aligned()){
-                    audit.record(requestId,task.getTaskId(),user.userId(),"QUERY_RESULT_MISMATCH",shorten(verdict.reason()));
+                    fact(QualityEventType.QUERY_RESULT_MISMATCH,task,user,requestId,shorten(verdict.reason()),
+                            details("sql",plan.sql(),"reason",verdict.reason()),true);
                     RepairCandidate candidate=requestRepair(task,plan,user,requestId,"RESULT_REVIEW",verdict.reason());
                     if(candidate==null){fallback(task,user,requestId,"结果结构复核未通过，且已达到两次修复上限或模型未形成可用计划。");return;}
                     runPlan(task,candidate.plan(),user,requestId,candidate.attempt());return;
@@ -265,7 +270,8 @@ public class QueryTaskProcessor {
             }catch(BusinessException unavailable){
                 // 复核服务不可用不丢弃已经通过权限校验并成功执行的结果；记录后继续组装。
                 review(task,requestId,"RESULT_REVIEW_UNAVAILABLE",plan,unavailable.code()+" "+unavailable.getMessage());
-                audit.record(requestId,task.getTaskId(),user.userId(),"QUERY_RESULT_REVIEW_UNAVAILABLE",String.valueOf(unavailable.code()));
+                fact(QualityEventType.QUERY_RESULT_REVIEW_UNAVAILABLE,task,user,requestId,String.valueOf(unavailable.code()),
+                        details("code",unavailable.code(),"message",unavailable.getMessage()));
             }
         }
         stage(task, QueryStatus.PACKAGING, 90, "正在整理全部指标、图表与数据分析");
@@ -281,28 +287,26 @@ public class QueryTaskProcessor {
         if(!modelGenerated(task.getInterpretationSource())||task.getRepairAttempts()>=MAX_REPAIRS)return null;
         int attempt=task.getRepairAttempts()+1;task.setRepairAttempts(attempt);
         String why=switch(trigger){case "VALIDATION"->"候选SQL未通过AST、对象或数据范围校验";case "EXECUTION"->"已校验SQL触发可修复的MySQL表达错误";default->"执行结果结构与原始问题明显不一致";};
-        if(repairStore!=null)repairStore.start(task.getTaskId(),attempt,trigger,failed.sql(),failure,why);
+        repairFacts.started(task.getTaskId(),user.userId(),attempt,trigger,failed.sql(),failure,why);
         stage(task,QueryStatus.REPAIRING,70,"正在安全修复SQL（"+attempt+"/"+MAX_REPAIRS+"）");
-        audit.record(requestId,task.getTaskId(),user.userId(),"QUERY_REPAIR_STARTED","attempt="+attempt+",trigger="+trigger);
         try{
             states.ensureActive(task.getTaskId());
             QueryInterpretation repaired=task.getThinkingEnabled()==null?modelGateway.repair(modelText(task),user,failed.sql(),failure)
                     :modelGateway.repair(modelText(task),user,failed.sql(),failure,task.getThinkingEnabled());
             states.ensureActive(task.getTaskId());
             if(!repaired.hasGeneratedSql()||repaired.clarification()!=null){
-                if(repairStore!=null)repairStore.modelFailed(task.getTaskId(),attempt,"模型未返回完整只读SQL");return null;
+                repairFacts.modelFailed(task.getTaskId(),user.userId(),attempt,"模型未返回完整只读SQL");return null;
             }
             PlannedQuery candidate=requestedDisplay(task,fromInterpretation(repaired));
-            if(repairStore!=null)repairStore.generated(task.getTaskId(),attempt,candidate.sql());
-            audit.record(requestId,task.getTaskId(),user.userId(),"QUERY_REPAIR_GENERATED","attempt="+attempt);
+            repairFacts.generated(task.getTaskId(),user.userId(),attempt,candidate.sql());
             return new RepairCandidate(candidate,attempt);
         }catch(QueryTerminatedException stopped){throw stopped;
         }catch(TaskStateStore.TaskChangedException changed){throw changed;
         }catch(BusinessException failedCall){
-            if(repairStore!=null)repairStore.modelFailed(task.getTaskId(),attempt,failedCall.code()+" "+failedCall.getMessage());
+            repairFacts.modelFailed(task.getTaskId(),user.userId(),attempt,failedCall.code()+" "+failedCall.getMessage());
             return null;
         }catch(RuntimeException unexpected){
-            if(repairStore!=null)repairStore.modelFailed(task.getTaskId(),attempt,"模型修复调用异常");
+            repairFacts.modelFailed(task.getTaskId(),user.userId(),attempt,"模型修复调用异常");
             log.warn("SQL修复调用异常：taskId={}, attempt={}, exceptionType={}",task.getTaskId(),attempt,
                     unexpected.getClass().getSimpleName());
             return null;
@@ -323,8 +327,8 @@ public class QueryTaskProcessor {
         if(value==null)return "UNKNOWN";if(value instanceof Number)return "NUMBER";if(value instanceof Boolean)return "BOOLEAN";
         if(value instanceof java.time.temporal.TemporalAccessor||value instanceof java.util.Date)return "DATE_TIME";return "TEXT";
     }
-    private void repairApplied(QueryTaskEntity task,int attempt){if(repairStore!=null)repairStore.applied(task.getTaskId(),attempt);}
-    private void repairRejected(QueryTaskEntity task,int attempt,String reason){if(repairStore!=null)repairStore.rejected(task.getTaskId(),attempt,reason);}
+    private void repairApplied(QueryTaskEntity task,int attempt){repairFacts.applied(task.getTaskId(),task.getUserId(),attempt);}
+    private void repairRejected(QueryTaskEntity task,int attempt,String reason){repairFacts.rejected(task.getTaskId(),task.getUserId(),attempt,reason);}
     private String shorten(String text){String value=text==null?"":text.strip();return value.substring(0,Math.min(500,value.length()));}
     private record RepairCandidate(PlannedQuery plan,int attempt){}
 
@@ -335,8 +339,9 @@ public class QueryTaskProcessor {
                 false, List.of("可简化为按年龄段或性别统计客户数量与当前平均资产，并明确开户时间范围。"));
         task.setFallbackJson(json.writeValueAsString(info));
         states.save(task);
-        audit.record(requestId, task.getTaskId(), user.userId(), "QUERY_FALLBACK",
-                template.map(FallbackPlanner.Template::id).orElse("NO_MATCH"));
+        fact(QualityEventType.QUERY_FALLBACK,task,user,requestId,
+                template.map(FallbackPlanner.Template::id).orElse("NO_MATCH"),
+                details("reason",reason,"template_id",template.map(FallbackPlanner.Template::id).orElse("NO_MATCH")),true);
         if (template.isEmpty()) {
             finishNoData(task, reason + " 没有能完整覆盖原问题的固定模板，未返回替代口径的数据。", requestId);
             return;
@@ -388,7 +393,8 @@ public class QueryTaskProcessor {
         try {
             history.save(task.getTaskId(), task.getUserId(), task.getQueryText(), task.getIntentCode(),
                     task.getStatusCode(), task.getSqlText(), summary);
-            audit.record(requestId, task.getTaskId(), task.getUserId(), "QUERY_" + task.getStatusCode(), summary);
+            fact(QualityEventType.valueOf("QUERY_" + task.getStatusCode()),task,null,requestId,summary,
+                    terminalDetails(task),Set.of("FAILED","TIMED_OUT","DEGRADED").contains(task.getStatusCode()));
         } catch (RuntimeException error) {
             log.error("任务终态附属记录失败：taskId={}, status={}", task.getTaskId(), task.getStatusCode());
         }
@@ -401,7 +407,8 @@ public class QueryTaskProcessor {
     }
     private void ask(QueryTaskEntity task,com.boc.nl2sql.nl2sql.domain.ClarificationQuestion question,String requestId){
         if(task.getClarificationRound()>=maxClarifications){fail(task,"补充次数已达上限，仍需明确："+question.prompt(),requestId);return;}
-        task.setQuestionJson(json.writeValueAsString(question));stage(task,QueryStatus.ASKING,30,question.prompt());audit.record(requestId,task.getTaskId(),task.getUserId(),"QUERY_ASKING",question.type());
+        task.setQuestionJson(json.writeValueAsString(question));stage(task,QueryStatus.ASKING,30,question.prompt());
+        fact(QualityEventType.QUERY_ASKING,task,null,requestId,question.type(),Map.of("question",question));
     }
     private String modelText(QueryTaskEntity task){
         if(task.getCustomerIdsJson()!=null){
@@ -412,5 +419,31 @@ public class QueryTaskProcessor {
         }
         return task.getMergedQueryText()+(task.getResolvedCustomerId()==null?"":"\n服务端已确认客户编号："+task.getResolvedCustomerId()+"。每个客户来源必须使用此 customer_id 限制，不可更换客户或扩大范围。若用户明确要求统计超出该客户的范围，不得编造数据，应在clarification_question中建议用户新建会话后单独提问。");
     }
-    private void review(QueryTaskEntity task,String request,String phase,PlannedQuery plan,String result){if(sqlLog!=null)sqlLog.record(task.getTaskId(),request,task.getInterpretationSource(),phase,plan,result);}
+    private void review(QueryTaskEntity task,String request,String phase,PlannedQuery plan,String result){
+        sqlFacts.record(task.getTaskId(),request,task.getUserId(),task.getInterpretationSource(),phase,
+                plan.sql(),plan.parameters(),result);
+    }
+
+    private void fact(QualityEventType type,QueryTaskEntity task,CurrentUser user,String requestId,
+                      String summary,Map<String,?> details){fact(type,task,user,requestId,summary,details,false);}
+    private void fact(QualityEventType type,QueryTaskEntity task,CurrentUser user,String requestId,
+                      String summary,Map<String,?> details,boolean candidate){
+        qualityFacts.publish(QualityFact.builder(type,"CONVERSATION").requestId(requestId)
+                .sessionId(task.getSessionId()).taskId(task.getTaskId())
+                .userId(user==null?task.getUserId():user.userId()).summary(summary)
+                .details(details).evaluationCandidate(candidate).build());
+    }
+    private Map<String,Object> terminalDetails(QueryTaskEntity task){
+        var details=new LinkedHashMap<String,Object>();
+        details.put("status",task.getStatusCode());details.put("query_text",task.getQueryText());
+        details.put("merged_query_text",task.getMergedQueryText());details.put("sql",task.getSqlText());
+        details.put("sql_parameters_json",task.getSqlParametersJson());details.put("result_json",task.getResultJson());
+        details.put("error_message",task.getErrorMessage());details.put("interpretation_source",task.getInterpretationSource());
+        details.values().removeIf(Objects::isNull);return details;
+    }
+    private Map<String,Object> details(Object... pairs){
+        var result=new LinkedHashMap<String,Object>();
+        for(int i=0;i+1<pairs.length;i+=2)if(pairs[i]!=null&&pairs[i+1]!=null)result.put(String.valueOf(pairs[i]),pairs[i+1]);
+        return result;
+    }
 }

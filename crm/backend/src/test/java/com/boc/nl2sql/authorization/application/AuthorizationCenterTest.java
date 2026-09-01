@@ -19,4 +19,10 @@ class AuthorizationCenterTest {
         assertThrows(BusinessException.class, () -> authorization.requireOwner(manager, 2L, "资源不存在"));
         assertDoesNotThrow(() -> authorization.customerScope(manager));
     }
+
+    @Test
+    void qualityAdministratorHasNoBusinessDataScope() {
+        var qualityAdmin = new CurrentUser(9L,"quality01","质量管理员",RoleCode.QUALITY_ADMIN,null,null,null);
+        assertThrows(BusinessException.class,()->authorization.customerScope(qualityAdmin));
+    }
 }

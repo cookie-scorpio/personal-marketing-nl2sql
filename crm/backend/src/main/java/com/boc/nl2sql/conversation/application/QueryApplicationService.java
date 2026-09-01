@@ -1,7 +1,6 @@
 package com.boc.nl2sql.conversation.application;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.boc.nl2sql.audit.AuditService;
 import com.boc.nl2sql.authorization.domain.CurrentUser;
 import com.boc.nl2sql.authorization.application.AuthorizationCenter;
 import com.boc.nl2sql.common.exception.BusinessException;
@@ -16,6 +15,9 @@ import com.boc.nl2sql.conversation.infrastructure.QueryTaskMapper;
 import com.boc.nl2sql.execution.domain.QueryResult;
 import com.boc.nl2sql.execution.domain.QueryPage;
 import com.boc.nl2sql.nl2sql.domain.ClarificationQuestion;
+import com.boc.nl2sql.quality.collection.QualityFacts;
+import com.boc.nl2sql.quality.event.QualityEventType;
+import com.boc.nl2sql.quality.event.QualityFact;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.ObjectMapper;
 
@@ -28,7 +30,7 @@ public class QueryApplicationService {
     private final QueryTaskMapper taskMapper;
     private final QueryTaskProcessor processor;
     private final SessionContextStore contextStore;
-    private final AuditService auditService;
+    private final QualityFacts qualityFacts;
     private final ObjectMapper objectMapper;
     private final TaskStateStore states;
     private final com.boc.nl2sql.execution.QueryExecutionGateway execution;
@@ -46,7 +48,7 @@ public class QueryApplicationService {
     @org.springframework.beans.factory.annotation.Autowired private org.springframework.transaction.PlatformTransactionManager transactions;
 
     public QueryApplicationService(QueryTaskMapper taskMapper, QueryTaskProcessor processor,
-                                   SessionContextStore contextStore, AuditService auditService,
+                                    SessionContextStore contextStore, QualityFacts qualityFacts,
                                    ObjectMapper objectMapper, TaskStateStore states,
                                    com.boc.nl2sql.execution.QueryExecutionGateway execution,
                                    com.boc.nl2sql.history.application.HistoryService history,
@@ -60,7 +62,7 @@ public class QueryApplicationService {
         this.taskMapper = taskMapper;
         this.processor = processor;
         this.contextStore = contextStore;
-        this.auditService = auditService;
+        this.qualityFacts = qualityFacts;
         this.objectMapper = objectMapper;
         this.states = states; this.execution = execution; this.history = history; this.timeoutSeconds = timeoutSeconds;
         this.defaultPageSize = defaultPageSize; this.maxPageSize = maxPageSize; this.maxOffset = maxOffset;
@@ -190,11 +192,11 @@ public class QueryApplicationService {
                         "剔除后继续（剩余 "+inScope.size()+" 人）");
                 task.setQuestionJson(objectMapper.writeValueAsString(q));
                 task.setStatusCode(QueryStatus.ASKING.name());task.setProgress(30);task.setStageMessage(q.prompt());
-                auditService.record(requestId, taskId, user.userId(), "QUERY_ASKING", "CUSTOMER_SCOPE");
+                fact(QualityEventType.QUERY_ASKING,requestId,task,user,"CUSTOMER_SCOPE",Map.of("clarification_type","CUSTOMER_SCOPE"));
                 taskMapper.insert(task);
                 conversations.activate(task.getSessionId(),taskId);
                 conversations.userMessage(task,"query",visibleUserQuery);conversations.record(task);
-                auditService.record(requestId, taskId, user.userId(), "QUERY_RECEIVED", "provider request accepted");
+                fact(QualityEventType.QUERY_RECEIVED,requestId,task,user,"provider request accepted",taskDetails(task));
                 return new SubmitQueryResponse(taskId, request.sessionId(), QueryStatus.ASKING.name(), 30,
                         "/api/v1/queries/" + taskId + "/status");
             }
@@ -204,7 +206,7 @@ public class QueryApplicationService {
         taskMapper.insert(task);
         conversations.activate(task.getSessionId(),taskId);
         conversations.userMessage(task,"query",visibleUserQuery);conversations.record(task);
-        auditService.record(requestId, taskId, user.userId(), "QUERY_RECEIVED", "provider request accepted");
+        fact(QualityEventType.QUERY_RECEIVED,requestId,task,user,"provider request accepted",taskDetails(task));
         enqueue(taskId,user,requestId);
         return new SubmitQueryResponse(taskId, request.sessionId(), QueryStatus.RECEIVED.name(), 0,
                 "/api/v1/queries/" + taskId + "/status");
@@ -252,7 +254,7 @@ public class QueryApplicationService {
             task.setClarificationRound(task.getClarificationRound()+1);
             conversations.userMessage(task,"answer-"+question.questionId(),answer);
             saveOrConflict(task);
-            auditService.record(requestId,task.getTaskId(),user.userId(),"QUERY_CLARIFIED","CUSTOMER_SCOPE");
+            fact(QualityEventType.QUERY_CLARIFIED,requestId,task,user,"CUSTOMER_SCOPE",Map.of("answer",answer));
             enqueue(task.getTaskId(),user,requestId);
             return new SubmitQueryResponse(task.getTaskId(),sessionId,QueryStatus.RECEIVED.name(),10,
                     "/api/v1/queries/"+task.getTaskId()+"/status");
@@ -272,7 +274,7 @@ public class QueryApplicationService {
         task.setProgress(10);
         task.setStageMessage("已收到补充条件，正在重新解析");
         saveOrConflict(task);
-        auditService.record(requestId, task.getTaskId(), user.userId(), "QUERY_CLARIFIED", question.type());
+        fact(QualityEventType.QUERY_CLARIFIED,requestId,task,user,question.type(),Map.of("answer",answer,"clarification_type",question.type()));
         enqueue(task.getTaskId(), user, requestId);
         return new SubmitQueryResponse(task.getTaskId(), sessionId, task.getStatusCode(), task.getProgress(),
                 "/api/v1/queries/" + task.getTaskId() + "/status");
@@ -300,7 +302,7 @@ public class QueryApplicationService {
         task.setStageMessage("已确认，准备执行查询");
         conversations.userMessage(task,"confirm-"+request.confirmToken(),"确认并执行");
         saveOrConflict(task);
-        auditService.record(requestId, taskId, user.userId(), "QUERY_CONFIRMED", "user confirmed high scope query");
+        fact(QualityEventType.QUERY_CONFIRMED,requestId,task,user,"user confirmed high scope query",Map.of());
         enqueue(taskId, user, requestId);
         return status(taskId, user);
     }
@@ -322,7 +324,7 @@ public class QueryApplicationService {
             afterCommit(()->execution.cancel(taskId));
             try {
                 history.save(taskId, user.userId(), task.getQueryText(), task.getIntentCode(), "CANCELLED", task.getSqlText(), "查询已取消");
-                auditService.record(requestId, taskId, user.userId(), "QUERY_CANCELLED", "USER_REQUEST");
+                fact(QualityEventType.QUERY_CANCELLED,requestId,task,user,"USER_REQUEST",Map.of("reason","USER_REQUEST"));
             } catch (RuntimeException recordFailure) {
                 org.slf4j.LoggerFactory.getLogger(QueryApplicationService.class)
                         .error("取消任务的附属记录写入失败：taskId={}", taskId);
@@ -367,6 +369,23 @@ public class QueryApplicationService {
         authorization.requireOwner(user, task.getUserId(), "查询任务不存在");
         conversations.own(task.getSessionId(),user);
         return task;
+    }
+
+    private void fact(QualityEventType type,String requestId,QueryTaskEntity task,CurrentUser user,
+                      String summary,Map<String,?> details){
+        qualityFacts.publish(QualityFact.builder(type,"CONVERSATION").requestId(requestId)
+                .sessionId(task.getSessionId()).taskId(task.getTaskId()).userId(user.userId())
+                .summary(summary).details(details).build());
+    }
+
+    private Map<String,Object> taskDetails(QueryTaskEntity task){
+        var details=new java.util.LinkedHashMap<String,Object>();
+        details.put("query_text",task.getQueryText());details.put("merged_query_text",task.getMergedQueryText());
+        details.put("display_query",task.getDisplayQuery());details.put("context_json",task.getContextJson());
+        details.put("customer_ids_json",task.getCustomerIdsJson());details.put("page_no",task.getPageNo());
+        details.put("page_size",task.getPageSize());details.put("page_offset",task.getPageOffset());
+        details.put("preferred_display",task.getPreferredDisplay());details.put("thinking_enabled",task.getThinkingEnabled());
+        details.values().removeIf(java.util.Objects::isNull);return details;
     }
 
     private <T> T read(String json, Class<T> type) {

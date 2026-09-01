@@ -7,6 +7,9 @@ import com.boc.nl2sql.authorization.domain.AccountStatus;
 import com.boc.nl2sql.authorization.infrastructure.UserAccountEntity;
 import com.boc.nl2sql.authorization.infrastructure.UserAccountMapper;
 import com.boc.nl2sql.common.exception.BusinessException;
+import com.boc.nl2sql.quality.collection.QualityFacts;
+import com.boc.nl2sql.quality.event.QualityEventType;
+import com.boc.nl2sql.quality.event.QualityFact;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -19,6 +22,8 @@ public class RegistrationService {
     private final PasswordCipher passwordCipher;
     private final PasswordPolicy passwordPolicy;
     private final UsernamePolicy usernamePolicy;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private QualityFacts qualityFacts;
 
     public RegistrationService(UserAccountMapper accounts, PasswordEncoder passwordEncoder, PasswordCipher passwordCipher,
                                PasswordPolicy passwordPolicy, UsernamePolicy usernamePolicy) {
@@ -56,6 +61,11 @@ public class RegistrationService {
         } catch (DuplicateKeyException exception) {
             throw usernameAlreadyUsed();
         }
+        if (qualityFacts != null) qualityFacts.publish(QualityFact.builder(
+                        QualityEventType.ACCESS_REGISTRATION_SUBMITTED, "ACCESS")
+                .requestId(org.slf4j.MDC.get("requestId")).summary("registration pending")
+                .detail("username", username).detail("display_name", displayName)
+                .detail("account_status", AccountStatus.PENDING.name()).build());
         return new RegistrationResponse(username, displayName, AccountStatus.PENDING.name(),
                 "注册申请已提交，账号待审批，暂不可登录");
     }

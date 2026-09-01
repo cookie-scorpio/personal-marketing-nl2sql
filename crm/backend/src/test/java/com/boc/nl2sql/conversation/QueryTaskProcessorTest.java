@@ -1,6 +1,5 @@
 package com.boc.nl2sql.conversation;
 
-import com.boc.nl2sql.audit.AuditService;
 import com.boc.nl2sql.authorization.application.DataScopePolicy;
 import com.boc.nl2sql.authorization.domain.CurrentUser;
 import com.boc.nl2sql.authorization.domain.RoleCode;
@@ -12,9 +11,13 @@ import com.boc.nl2sql.execution.domain.*;
 import com.boc.nl2sql.history.application.HistoryService;
 import com.boc.nl2sql.model.*;
 import com.boc.nl2sql.nl2sql.application.*;
+import com.boc.nl2sql.quality.collection.QualityFacts;
+import com.boc.nl2sql.quality.collection.SqlFactRecorder;
+import com.boc.nl2sql.quality.persistence.RepairFactStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.BadSqlGrammarException;
+import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.PropertyNamingStrategies;
 import tools.jackson.databind.json.JsonMapper;
 import java.sql.SQLException;
@@ -30,7 +33,9 @@ class QueryTaskProcessorTest {
     private final ModelGateway model = mock(ModelGateway.class);
     private final QueryExecutionGateway execution = mock(QueryExecutionGateway.class);
     private final HistoryService history = mock(HistoryService.class);
-    private final AuditService audit = mock(AuditService.class);
+    private final QualityFacts qualityFacts = mock(QualityFacts.class);
+    private final SqlFactRecorder sqlFacts = mock(SqlFactRecorder.class);
+    private final RepairFactStore repairFacts = mock(RepairFactStore.class);
     private final JsonMapper json = JsonMapper.builder().propertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE).build();
     private final CurrentUser user = new CurrentUser(1L, "manager01", "经理", RoleCode.CUSTOMER_MANAGER, "EAST", "B001", "M0001");
     private final String sql = "SELECT c.age_band_code, COUNT(*) AS customer_count FROM dim_customer c WHERE c.manager_id = 'M0001' GROUP BY c.age_band_code LIMIT 100";
@@ -44,8 +49,10 @@ class QueryTaskProcessorTest {
         var planner = new SqlPlanner(scope, 100);
         processor = new QueryTaskProcessor(mapper, states, model, new CompletenessValidator(), planner,
                 new SqlRiskEvaluator(), new SqlSafetyValidator(), new GeneratedSqlScopeValidator(), execution,
-                new ResultAssembler(null), new FallbackPlanner(parser, planner, scope, 100), history, audit, json,
+                new ResultAssembler(null), new FallbackPlanner(parser, planner, scope, 100), history, qualityFacts, json,
                 new com.boc.nl2sql.nl2sql.application.DisplayConflictGuard(), 2);
+        ReflectionTestUtils.setField(processor,"sqlFacts",sqlFacts);
+        ReflectionTestUtils.setField(processor,"repairFacts",repairFacts);
         task = new QueryTaskEntity(); task.setTaskId("task"); task.setUserId(1L); task.setSessionId("session");
         task.setQueryText("分析各年龄段客户数量和平均资产"); task.setMergedQueryText(task.getQueryText());
         task.setStatusCode("RECEIVED"); task.setStateVersion(0L); task.setRepairAttempts(0); task.setClarificationRound(0);

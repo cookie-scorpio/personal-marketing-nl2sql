@@ -32,6 +32,9 @@ mybatis-plus:
     banner: false
 
 app:
+  quality:
+    spool-dir: ${QUALITY_SPOOL_DIR:./logs/quality-spool}
+    spool-retry-interval-ms: ${QUALITY_SPOOL_RETRY_INTERVAL_MS:30000}
   security:
     # 必须通过环境变量 JWT_SECRET 提供；缺失时应用拒绝启动，不再提供可猜测的默认值。
     jwt-secret: ${JWT_SECRET:jdjahsbdasbdiuidjsknfjksdnfjndskjfnjkdsnfkjdsnfkjdsnfkjdsnfk}
@@ -100,7 +103,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,metrics
   endpoint:
     health:
       show-details: never

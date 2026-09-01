@@ -6,6 +6,12 @@ import com.boc.nl2sql.common.exception.BusinessException;
 import com.boc.nl2sql.conversation.domain.ConversationContext;
 import com.boc.nl2sql.conversation.domain.QueryStatus;
 import com.boc.nl2sql.conversation.infrastructure.QueryTaskEntity;
+import com.boc.nl2sql.quality.collection.ConversationFactRecorder;
+import com.boc.nl2sql.quality.collection.QualityFacts;
+import com.boc.nl2sql.quality.event.QualityEventType;
+import com.boc.nl2sql.quality.event.QualityFact;
+import com.boc.nl2sql.quality.feedback.FeedbackApplication;
+import com.boc.nl2sql.quality.feedback.FeedbackQuery;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -22,11 +28,16 @@ public class ConversationStore {
     private final AuthorizationCenter authorization;
     private final ObjectMapper json;
     private final TaskSnapshots snapshots;
-    @org.springframework.beans.factory.annotation.Autowired(required=false) private com.boc.nl2sql.audit.ConversationLog conversationLog;
+    private final ConversationFactRecorder conversationFacts;
+    private final QualityFacts qualityFacts;
+    private final FeedbackApplication feedbacks;
+    private final FeedbackQuery feedbackQuery;
     public ConversationStore(JdbcTemplate jdbc, NamedParameterJdbcTemplate namedJdbc, AuthorizationCenter authorization,
-                             ObjectMapper json, TaskSnapshots snapshots) {
+                             ObjectMapper json, TaskSnapshots snapshots, ConversationFactRecorder conversationFacts,
+                             QualityFacts qualityFacts, FeedbackApplication feedbacks, FeedbackQuery feedbackQuery) {
         this.jdbc = jdbc; this.namedJdbc = namedJdbc; this.authorization = authorization;
-        this.json = json; this.snapshots = snapshots;
+        this.json = json; this.snapshots = snapshots; this.conversationFacts = conversationFacts;
+        this.qualityFacts = qualityFacts; this.feedbacks = feedbacks; this.feedbackQuery = feedbackQuery;
     }
     public Map<String,Object> lock(String sessionId,CurrentUser user,String title){
         // ON DUPLICATE KEY取得写锁，避免INSERT IGNORE的共享锁随后升级而产生并发死锁。
@@ -88,9 +99,13 @@ public class ConversationStore {
         if(size<1||size>100)throw new BusinessException(400001,"page_size 必须为1至100");
         var session=jdbc.queryForMap("SELECT session_id,title,active_task_id,state_version,context_json FROM conversation_session WHERE session_id=?",id);
         var rows=before<=0
-                ?jdbc.queryForList("SELECT message_id,task_id,role_code,content,payload_json,created_at,updated_at,feedback_code AS feedback FROM conversation_message WHERE session_id=? ORDER BY created_at DESC,message_id DESC LIMIT ?",id,size)
-                :jdbc.queryForList("SELECT message_id,task_id,role_code,content,payload_json,created_at,updated_at,feedback_code AS feedback FROM conversation_message WHERE session_id=? AND (created_at,message_id)<(?,?) ORDER BY created_at DESC,message_id DESC LIMIT ?",id,cursorTime(id,before),before,size);
-        rows.forEach(row->{Object payload=row.remove("payload_json");row.put("payload",payload==null?null:json.readValue(payload.toString(),Map.class));});
+                ?jdbc.queryForList("SELECT message_id,task_id,role_code,content,payload_json,created_at,updated_at FROM conversation_message WHERE session_id=? ORDER BY created_at DESC,message_id DESC LIMIT ?",id,size)
+                :jdbc.queryForList("SELECT message_id,task_id,role_code,content,payload_json,created_at,updated_at FROM conversation_message WHERE session_id=? AND (created_at,message_id)<(?,?) ORDER BY created_at DESC,message_id DESC LIMIT ?",id,cursorTime(id,before),before,size);
+        var messageIds=rows.stream().map(row->((Number)row.get("message_id")).longValue()).toList();
+        var currentFeedback=feedbackQuery.currentForMessages(user.userId(),messageIds);
+        rows.forEach(row->{Object payload=row.remove("payload_json");row.put("payload",payload==null?null:json.readValue(payload.toString(),Map.class));
+            String feedback=currentFeedback.get(((Number)row.get("message_id")).longValue());
+            row.put("feedback","NONE".equals(feedback)?null:feedback);});
         java.util.Collections.reverse(rows);
         Object context=session.remove("context_json");session.put("context",context==null?null:json.readValue(context.toString(),Map.class));
         session.put("messages",rows);session.put("has_more",rows.size()==size);return session;
@@ -107,7 +122,9 @@ public class ConversationStore {
         if(session.get("active_task_id")!=null)cascadeCancel(id,(String)session.get("active_task_id"),user,requestId);
         jdbc.update("UPDATE conversation_session SET deleted_at=NOW(3),active_task_id=NULL,state_version=state_version+1 WHERE session_id=?",id);
         jdbc.update("UPDATE query_history h JOIN query_task q ON h.task_id=q.task_id SET h.deleted=TRUE WHERE q.session_id=?",id);
-        jdbc.update("INSERT INTO audit_event(request_id,user_id,event_type,event_summary) VALUES(?,?,?,?)",requestId,user.userId(),"CONVERSATION_DELETED","session_id="+id);
+        qualityFacts.publish(QualityFact.builder(QualityEventType.CONVERSATION_DELETED,"CONVERSATION")
+                .requestId(requestId).sessionId(id).userId(user.userId()).summary("session deleted")
+                .detail("session_id",id).build());
     }
 
     /** 级联取消：非终态任务CAS置为CANCELLED并落终态事件与消息；已是终态则跳过。 */
@@ -125,7 +142,9 @@ public class ConversationStore {
                 json.writeValueAsString(Map.of("task_id",taskId,"status","CANCELLED","progress",100,"message","会话已删除，查询已自动取消")));
         jdbc.update("INSERT INTO conversation_message(session_id,task_id,role_code,message_key,content,created_at,updated_at) VALUES(?,?,?,?,?,NOW(3),NOW(3))",
                 sessionId,taskId,"ASSISTANT","cancel-cascade","会话已删除，查询已自动取消");
-        jdbc.update("INSERT INTO audit_event(request_id,user_id,event_type,event_summary) VALUES(?,?,?,?)",requestId,user.userId(),"QUERY_CANCELLED","cascade by session delete, task_id="+taskId);
+        qualityFacts.publish(QualityFact.builder(QualityEventType.QUERY_CANCELLED,"CONVERSATION")
+                .requestId(requestId).sessionId(sessionId).taskId(taskId).userId(user.userId())
+                .summary("cascade by session delete").detail("reason","SESSION_DELETED").build());
     }
 
     /** 用户消息目录不含助手结果，可按需加载历史页后定位。 */
@@ -141,32 +160,40 @@ public class ConversationStore {
         return rows.get(0).get("created_at");
     }
     @org.springframework.transaction.annotation.Transactional
-    public Map<String,Object> feedback(String session,long messageId,String value,CurrentUser user){
+    public Map<String,Object> feedback(String session,long messageId,String value,String reasonCode,String comment,
+                                       CurrentUser user,String requestId){
         // 与删除共用会话锁；不允许删除后写入反馈。
         jdbc.queryForList("SELECT session_id FROM conversation_session WHERE session_id=? AND user_id=? FOR UPDATE",session,user.userId());own(session,user);
         if(value==null || !List.of("LIKE","DISLIKE","NONE").contains(value))throw new BusinessException(400001,"feedback只能为LIKE、DISLIKE或NONE");
-        var rows=jdbc.queryForList("SELECT role_code,payload_json FROM conversation_message WHERE session_id=? AND message_id=?",session,messageId);
+        var rows=jdbc.queryForList("SELECT task_id,role_code,payload_json FROM conversation_message WHERE session_id=? AND message_id=?",session,messageId);
         if(rows.isEmpty() || !"ASSISTANT".equals(rows.get(0).get("role_code")))throw new BusinessException(404001,"助手回复不存在");
         Object payload=rows.get(0).get("payload_json");
         String state=payload==null?"":json.readTree(payload.toString()).path("status").asText();
         if(!List.of("ASKING","CONFIRMING","SUCCESS","FAILED","CANCELLED","TIMED_OUT","DEGRADED").contains(state))throw new BusinessException(409008,"回复尚未完成，请稍后评价");
-        jdbc.update("UPDATE conversation_message SET feedback_code=?,feedback_updated_at=NOW(3) WHERE message_id=?",value.equals("NONE")?null:value,messageId);
-        return Map.of("message_id",messageId,"feedback",value);
+        String taskId=(String)rows.get(0).get("task_id");
+        return feedbacks.record(new FeedbackApplication.FeedbackCommand(requestId,session,taskId,messageId,user.userId(),
+                value,reasonCode,comment)).response();
+    }
+    /** 兼容现有内部测试与调用；公开入口会传入完整可追踪参数。 */
+    public Map<String,Object> feedback(String session,long messageId,String value,CurrentUser user){
+        return feedback(session,messageId,value,null,null,user,org.slf4j.MDC.get("requestId"));
     }
     public ConversationContext context(Map<String,Object> session){
         var value=session.get("context_json");return value==null?ConversationContext.empty():json.readValue(value.toString(),ConversationContext.class);
     }
     public void activate(String session,String task){jdbc.update("UPDATE conversation_session SET active_task_id=?,state_version=state_version+1,updated_at=NOW(3) WHERE session_id=?",task,session);}
     public void userMessage(QueryTaskEntity task,String key,String text){
-        if(conversationLog!=null)conversationLog.record(task,"USER",text);
         jdbc.update("INSERT INTO conversation_message(session_id,task_id,role_code,message_key,content,created_at,updated_at) VALUES(?,?,'USER',?,?,NOW(3),NOW(3))",task.getSessionId(),task.getTaskId(),key,text);
+        conversationFacts.record(org.slf4j.MDC.get("requestId"),task.getSessionId(),task.getTaskId(),task.getUserId(),
+                "USER",task.getStatusCode(),task.getStateVersion(),text,null);
     }
     public void record(QueryTaskEntity task){
-        if(conversationLog!=null)conversationLog.record(task,"ASSISTANT",task.getStageMessage());
         String payload=json.writeValueAsString(snapshots.of(task));
         jdbc.update("INSERT INTO query_task_event(task_id,state_version,payload_json,created_at) VALUES(?,?,?,NOW(3))",task.getTaskId(),task.getStateVersion(),payload);
         jdbc.update("INSERT INTO conversation_message(session_id,task_id,role_code,message_key,content,payload_json,created_at,updated_at) VALUES(?,?,'ASSISTANT',?,?,?,NOW(3),NOW(3)) ON DUPLICATE KEY UPDATE content=VALUES(content),payload_json=VALUES(payload_json),updated_at=NOW(3)",
                 task.getSessionId(),task.getTaskId(),"assistant-"+task.getClarificationRound(),task.getStageMessage(),payload);
+        conversationFacts.record(org.slf4j.MDC.get("requestId"),task.getSessionId(),task.getTaskId(),task.getUserId(),
+                "ASSISTANT",task.getStatusCode(),task.getStateVersion(),task.getStageMessage(),json.readValue(payload,Map.class));
         if(QueryStatus.terminal(task.getStatusCode())){
             // 只在有可用结果时更新后续上下文。取消/失败不能污染上一次成功条件。
             boolean usable="SUCCESS".equals(task.getStatusCode()) || ("DEGRADED".equals(task.getStatusCode()) && task.getResultJson()!=null && json.readTree(task.getResultJson()).path("fallback").path("data_available").asBoolean(false));

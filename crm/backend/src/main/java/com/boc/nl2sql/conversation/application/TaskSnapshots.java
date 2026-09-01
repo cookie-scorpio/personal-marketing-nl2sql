@@ -17,7 +17,7 @@ public class TaskSnapshots {
     private final int timeout;
     private final CustomerResolver customers;
     @org.springframework.beans.factory.annotation.Autowired(required=false)
-    private com.boc.nl2sql.execution.application.SqlRepairStore repairs;
+    private com.boc.nl2sql.quality.persistence.RepairFactStore repairs;
     public TaskSnapshots(ObjectMapper json, @Value("${app.query.execution-timeout-seconds:60}") int timeout,
                          CustomerResolver customers) {
         this.json=json; this.timeout=timeout; this.customers=customers;
@@ -33,7 +33,10 @@ public class TaskSnapshots {
         return new TaskStatusResponse(task.getTaskId(),task.getSessionId(),task.getStatusCode(),task.getProgress(),
                 task.getStageMessage(),task.getIntentCode(),task.getClarificationRound(),read(task.getQuestionJson(),ClarificationQuestion.class),
                 confirmation,read(task.getResultJson(),QueryResult.class),task.getErrorMessage()==null?null:Map.of("message",task.getErrorMessage()),
-                task.getRepairAttempts()==null?0:task.getRepairAttempts(),repairs==null?List.of():repairs.list(task.getTaskId()),
+                task.getRepairAttempts()==null?0:task.getRepairAttempts(),repairs==null?List.of():repairs.list(task.getTaskId()).stream()
+                        .map(repair->new com.boc.nl2sql.conversation.api.SqlRepairResponse(repair.repairId(),repair.attemptNo(),
+                                repair.triggerPhase(),repair.status(),repair.originalSql(),repair.failureReason(),repair.repairReason(),
+                                repair.repairedSql(),repair.createdAt(),repair.updatedAt())).toList(),
                 timeout,!QueryStatus.terminal(task.getStatusCode()),
                 task.getStateVersion(),Boolean.TRUE.equals(task.getThinkingEnabled()),task.getDisplayQuery(),customerCard(task),task.getCreatedAt(),task.getUpdatedAt());
     }

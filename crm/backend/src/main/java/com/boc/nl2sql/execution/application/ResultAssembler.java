@@ -6,6 +6,8 @@ import com.boc.nl2sql.execution.domain.ChartSeries;
 import com.boc.nl2sql.execution.domain.ChartSpec;
 import com.boc.nl2sql.execution.domain.PlannedQuery;
 import com.boc.nl2sql.execution.domain.QueryResult;
+import com.boc.nl2sql.execution.domain.PagedQueryRows;
+import com.boc.nl2sql.execution.domain.QueryPage;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
@@ -107,13 +109,24 @@ public class ResultAssembler {
 
     public QueryResult assemble(PlannedQuery planned, List<Map<String, Object>> rows,
                                 String interpretationSource, double confidence) {
+        return assemble(planned,new PagedQueryRows(rows,rows.size(),new QueryPage(1,Math.max(1,rows.size()),0)),
+                interpretationSource,confidence);
+    }
+
+    public QueryResult assemble(PlannedQuery planned, PagedQueryRows page,
+                                String interpretationSource, double confidence) {
+        List<Map<String,Object>> rows=page.rows();
         List<Map<String, Object>> normalized = rows.stream().map(this::normalizeKeys).toList();
         var keys = new java.util.LinkedHashSet<String>();
         normalized.forEach(row -> keys.addAll(row.keySet()));
         List<ColumnMeta> columns = keys.stream().map(key -> column(key, normalized, planned.columnHints())).toList();
         List<Map<String, Object>> metrics = buildMetrics(columns, normalized);
-        String summary = normalized.isEmpty() ? emptySummary()
+        String summary = normalized.isEmpty() ? (page.total()>0
+                ? "查询完成，共 " + page.total() + " 条，当前分页位置没有数据。"
+                : emptySummary())
                 : allZeroSingleRow(columns, normalized) ? "查询完成，但当前条件下没有匹配数据（计数与金额均为0）。"+coverageNote()
+                : page.total()>normalized.size() || page.page().offset()>0
+                ? "查询完成，共 " + page.total() + " 条；当前第 " + page.page().pageNo() + " 页返回 " + normalized.size() + " 条。"
                 : "查询完成，共返回 " + normalized.size() + " 行模拟业务数据。";
         var charts=buildCharts(planned,columns,normalized);
         var analysis=analyze(columns,normalized,summary);
@@ -125,8 +138,10 @@ public class ResultAssembler {
         }
         return new QueryResult(planned.resultType(), planned.title(), summary, columns, normalized, metrics,
                 charts, analysis,
-                planned.sql() == null ? "" : planned.sql().strip().replaceAll("\\s+", " "),
-                LocalDate.now(), interpretationSource, confidence, null);
+                page.sqlPreview()!=null?page.sqlPreview().strip().replaceAll("\\s+", " "):
+                        planned.sql() == null ? "" : planned.sql().strip().replaceAll("\\s+", " "),
+                LocalDate.now(), interpretationSource, confidence, page.total(), page.page().pageNo(),
+                page.page().pageSize(), page.page().offset(), page.hasMore(), null);
     }
 
     private ColumnMeta column(String key, List<Map<String, Object>> rows,

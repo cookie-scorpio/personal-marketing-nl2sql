@@ -31,6 +31,9 @@ public class QueryTaskEntity {
     private String displayQuery;
     private String customerIdsJson;
     private String multiCustomersJson;
+    private Integer pageNo;
+    private Integer pageSize;
+    private Long pageOffset;
     private Long stateVersion;
     private Integer repairAttempts;
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
@@ -69,6 +72,12 @@ public class QueryTaskEntity {
     public void setCustomerIdsJson(String value) { customerIdsJson=value; }
     public String getMultiCustomersJson() { return multiCustomersJson; }
     public void setMultiCustomersJson(String value) { multiCustomersJson=value; }
+    public Integer getPageNo() { return pageNo; }
+    public void setPageNo(Integer value) { pageNo=value; }
+    public Integer getPageSize() { return pageSize; }
+    public void setPageSize(Integer value) { pageSize=value; }
+    public Long getPageOffset() { return pageOffset; }
+    public void setPageOffset(Long value) { pageOffset=value; }
     public Long getStateVersion() { return stateVersion; }
     public void setStateVersion(Long stateVersion) { this.stateVersion = stateVersion; }
     public Integer getRepairAttempts() { return repairAttempts; }

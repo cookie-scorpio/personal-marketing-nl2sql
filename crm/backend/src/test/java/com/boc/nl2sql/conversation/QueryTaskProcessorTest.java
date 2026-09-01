@@ -63,11 +63,14 @@ class QueryTaskProcessorTest {
     private BadSqlGrammarException sqlError() {
         return new BadSqlGrammarException("query", sql, new SQLException("not exposed", "42S22", 1054));
     }
+    private PagedQueryRows page(List<Map<String,Object>> rows) {
+        return new PagedQueryRows(rows,rows.size(),new QueryPage(1,100,0));
+    }
 
     @Test
     void repairsExactlyTwiceThenExecutesTemplateAndStopsModelCalls() {
-        when(execution.execute(eq("task"), any(), any())).thenThrow(sqlError()).thenThrow(sqlError()).thenThrow(sqlError())
-                .thenReturn(List.of(Map.of("age_band_code", "20-29", "customer_count", 3, "avg_asset_wan", 20)));
+        when(execution.execute(eq("task"), any(), any(), any())).thenThrow(sqlError()).thenThrow(sqlError()).thenThrow(sqlError())
+                .thenReturn(page(List.of(Map.of("age_band_code", "20-29", "customer_count", 3, "avg_asset_wan", 20))));
         processor.processAsync("task", user, "request");
         assertThat(task.getStatusCode()).isEqualTo("DEGRADED");
         assertThat(task.getRepairAttempts()).isEqualTo(2);
@@ -75,12 +78,12 @@ class QueryTaskProcessorTest {
         assertThat(result.fallback().templateId()).isEqualTo("CUSTOMER_AGE_ASSETS");
         assertThat(result.fallback().dataAvailable()).isTrue();
         verify(model, times(2)).repair(anyString(), eq(user), anyString(), anyString());
-        verify(execution, times(4)).execute(eq("task"), any(), any());
+        verify(execution, times(4)).execute(eq("task"), any(), any(), any());
     }
 
     @Test
     void succeedsOnFirstRepairWithoutFurtherCalls() {
-        when(execution.execute(eq("task"), any(), any())).thenThrow(sqlError()).thenReturn(List.of());
+        when(execution.execute(eq("task"), any(), any(), any())).thenThrow(sqlError()).thenReturn(page(List.of()));
         processor.processAsync("task", user, "request");
         assertThat(task.getStatusCode()).isEqualTo("SUCCESS");
         verify(model, times(1)).repair(anyString(), eq(user), anyString(), anyString());
@@ -88,37 +91,37 @@ class QueryTaskProcessorTest {
 
     @Test
     void timeoutAndCancellationNeverRepairOrFallback() {
-        when(execution.execute(eq("task"), any(), any())).thenThrow(new QueryTerminatedException(true));
+        when(execution.execute(eq("task"), any(), any(), any())).thenThrow(new QueryTerminatedException(true));
         processor.processAsync("task", user, "request");
         assertThat(task.getStatusCode()).isEqualTo("TIMED_OUT");
         verify(model, never()).repair(anyString(), any(), anyString(), anyString());
-        verify(execution, times(1)).execute(eq("task"), any(), any());
+        verify(execution, times(1)).execute(eq("task"), any(), any(), any());
         assertThat(task.getFallbackJson()).isNull();
     }
 
     @Test
     void noMatchingFallbackReturnsNoFabricatedRows() {
         task.setMergedQueryText("分析南京各年龄段客户数量和平均资产");
-        when(execution.execute(eq("task"), any(), any())).thenThrow(sqlError());
+        when(execution.execute(eq("task"), any(), any(), any())).thenThrow(sqlError());
         processor.processAsync("task", user, "request");
         assertThat(task.getStatusCode()).isEqualTo("DEGRADED");
         var result = json.readValue(task.getResultJson(), QueryResult.class);
         assertThat(result.rows()).isEmpty(); assertThat(result.fallback().dataAvailable()).isFalse();
-        verify(execution, times(3)).execute(eq("task"), any(), any());
+        verify(execution, times(3)).execute(eq("task"), any(), any(), any());
     }
 
     @Test
     void repairedSqlRequiresFreshConfirmationAndRetainsRepairBudget() {
-        when(execution.execute(eq("task"), any(), any())).thenThrow(sqlError());
+        when(execution.execute(eq("task"), any(), any(), any())).thenThrow(sqlError());
         when(model.repair(anyString(), eq(user), anyString(), anyString())).thenReturn(plan(
                 "SELECT c.customer_id FROM fct_transaction t JOIN dim_customer c ON c.customer_id=t.customer_id WHERE c.manager_id = 'M0001' LIMIT 100"));
         processor.processAsync("task", user, "request");
         assertThat(task.getStatusCode()).isEqualTo("CONFIRMING");
         assertThat(task.getConfirmed()).isFalse(); assertThat(task.getConfirmationToken()).isNotBlank();
         assertThat(task.getRepairAttempts()).isEqualTo(1);
-        verify(execution, times(1)).execute(eq("task"), any(), any());
+        verify(execution, times(1)).execute(eq("task"), any(), any(), any());
         task.setStatusCode("RECEIVED"); task.setConfirmed(true);
-        when(execution.execute(eq("task"), any(), any())).thenReturn(List.of());
+        when(execution.execute(eq("task"), any(), any(), any())).thenReturn(page(List.of()));
         processor.processAsync("task", user, "request2");
         assertThat(task.getStatusCode()).isEqualTo("SUCCESS"); assertThat(task.getRepairAttempts()).isEqualTo(1);
         verify(model, times(1)).interpret(anyString(), eq(user), any());
@@ -127,33 +130,33 @@ class QueryTaskProcessorTest {
 
     @Test
     void blockedScopeInRepairIsNeverExecuted() {
-        when(execution.execute(eq("task"), any(), any())).thenThrow(sqlError()).thenReturn(List.of());
+        when(execution.execute(eq("task"), any(), any(), any())).thenThrow(sqlError()).thenReturn(page(List.of()));
         when(model.repair(anyString(), eq(user), anyString(), anyString())).thenReturn(plan(sql.replace("M0001", "M9999")));
         processor.processAsync("task", user, "request");
         assertThat(task.getStatusCode()).isEqualTo("DEGRADED");
         verify(model,times(2)).repair(anyString(),eq(user),anyString(),anyString());
-        verify(execution, never()).execute(anyString(), argThat(query -> query.sql().contains("M9999")), any());
+        verify(execution, never()).execute(anyString(), argThat(query -> query.sql().contains("M9999")), any(), any());
     }
 
     @Test
     void validationFailureIsRepairedAndEveryCandidateIsRevalidated() {
         String invalid="SELECT c.unknown_column FROM dim_customer c WHERE c.manager_id='M0001' LIMIT 100";
         when(model.interpret(anyString(),eq(user),any())).thenReturn(plan(invalid));
-        when(execution.execute(eq("task"),any(),any())).thenReturn(List.of());
+        when(execution.execute(eq("task"),any(),any(),any())).thenReturn(page(List.of()));
 
         processor.processAsync("task",user,"request");
 
         assertThat(task.getStatusCode()).isEqualTo("SUCCESS");
         assertThat(task.getRepairAttempts()).isEqualTo(1);
         verify(model).repair(anyString(),eq(user),eq(invalid),contains("字段不存在"));
-        verify(execution,times(1)).execute(eq("task"),argThat(query->query.sql().equals(sql)),any());
+        verify(execution,times(1)).execute(eq("task"),argThat(query->query.sql().equals(sql)),any(),any());
     }
 
     @Test
     void obviousResultShapeMismatchUsesSameRepairBudgetWithoutSendingRowValues() {
         var firstRows=List.<Map<String,Object>>of(Map.of("customer_id","C00000001"));
         var repairedRows=List.<Map<String,Object>>of(Map.of("age_band_code","20-29","customer_count",3));
-        when(execution.execute(eq("task"),any(),any())).thenReturn(firstRows,repairedRows);
+        when(execution.execute(eq("task"),any(),any(),any())).thenReturn(page(firstRows),page(repairedRows));
         when(model.reviewResult(anyString(),eq(user),anyString(),anyMap(),anyBoolean()))
                 .thenReturn(new SqlResultReview(false,"用户要求分组统计，但返回了客户明细"),new SqlResultReview(true,"结构一致"));
 
@@ -164,7 +167,7 @@ class QueryTaskProcessorTest {
         verify(model).repair(anyString(),eq(user),anyString(),contains("返回了客户明细"));
         verify(model,times(2)).reviewResult(anyString(),eq(user),anyString(),argThat(summary->
                 !summary.toString().contains("C00000001")&&!summary.toString().contains("20-29")),anyBoolean());
-        verify(execution,times(2)).execute(eq("task"),any(),any());
+        verify(execution,times(2)).execute(eq("task"),any(),any(),any());
     }
 
     @Test
@@ -177,7 +180,7 @@ class QueryTaskProcessorTest {
 
     @Test
     void connectionFailureDoesNotConsumeRepairBudget() {
-        when(execution.execute(eq("task"), any(), any())).thenThrow(new org.springframework.jdbc.CannotGetJdbcConnectionException("internal"));
+        when(execution.execute(eq("task"), any(), any(), any())).thenThrow(new org.springframework.jdbc.CannotGetJdbcConnectionException("internal"));
         processor.processAsync("task", user, "request");
         assertThat(task.getStatusCode()).isEqualTo("FAILED"); assertThat(task.getRepairAttempts()).isZero();
         verify(model, never()).repair(anyString(), any(), anyString(), anyString());

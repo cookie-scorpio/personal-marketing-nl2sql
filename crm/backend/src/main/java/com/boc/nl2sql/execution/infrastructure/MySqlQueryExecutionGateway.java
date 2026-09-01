@@ -4,6 +4,8 @@ import com.boc.nl2sql.execution.QueryExecutionGateway;
 import com.boc.nl2sql.execution.QueryTerminatedException;
 import com.boc.nl2sql.execution.application.SqlSafetyValidator;
 import com.boc.nl2sql.execution.domain.PlannedQuery;
+import com.boc.nl2sql.execution.domain.PagedQueryRows;
+import com.boc.nl2sql.execution.domain.QueryPage;
 import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.ColumnMapRowMapper;
@@ -26,7 +28,7 @@ public class MySqlQueryExecutionGateway implements QueryExecutionGateway {
     private final NamedParameterJdbcTemplate jdbc;
     private final SqlSafetyValidator safety;
     private final int timeoutSeconds;
-    private final int maxRows;
+    private final int maxPageSize;
     private final Map<String, RunningQuery> running = new ConcurrentHashMap<>();
     private final ScheduledExecutorService watcher = Executors.newScheduledThreadPool(2, runnable -> {
         Thread thread = new Thread(runnable, "nl2sql-cancel-watch");
@@ -36,38 +38,58 @@ public class MySqlQueryExecutionGateway implements QueryExecutionGateway {
 
     public MySqlQueryExecutionGateway(NamedParameterJdbcTemplate jdbc, SqlSafetyValidator safety,
             @Value("${app.query.execution-timeout-seconds:60}") int timeoutSeconds,
-            @Value("${app.query.max-result-rows:100}") int maxRows) {
-        if (timeoutSeconds < 1 || maxRows < 1) throw new IllegalArgumentException("SQL超时和行数上限必须为正数");
+            @Value("${app.query.max-page-size:500}") int maxPageSize) {
+        if (timeoutSeconds < 1 || maxPageSize < 1) throw new IllegalArgumentException("SQL超时和分页上限必须为正数");
         this.jdbc = jdbc;
         this.safety = safety;
         this.timeoutSeconds = timeoutSeconds;
-        this.maxRows = maxRows;
+        this.maxPageSize = maxPageSize;
     }
 
     @Override
-    public List<Map<String, Object>> execute(String taskId, PlannedQuery query, BooleanSupplier active) {
+    public PagedQueryRows execute(String taskId, PlannedQuery query, QueryPage page, BooleanSupplier active) {
         safety.validate(query.sql());
+        if (page.pageSize() > maxPageSize) throw new IllegalArgumentException("单页条数超过执行层上限");
         if (!active.getAsBoolean()) throw new QueryTerminatedException(false);
-        return jdbc.execute(query.sql(), query.parameters(), statement -> {
+        QueryPaginationSql.Statements statements = QueryPaginationSql.build(query.sql(), page);
+        long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(timeoutSeconds);
+        long total = run(taskId, statements.countSql(), query.parameters(), active, deadline, 1, statement -> {
+            try (var resultSet = statement.executeQuery()) {
+                return resultSet.next() ? resultSet.getLong(1) : 0L;
+            }
+        });
+        if (!active.getAsBoolean()) throw new QueryTerminatedException(false);
+        List<Map<String, Object>> rows = run(taskId, statements.pageSql(), query.parameters(), active, deadline,
+                page.pageSize(), statement -> {
+            try (var resultSet = statement.executeQuery()) {
+                List<Map<String, Object>> result = new ArrayList<>();
+                var rowMapper = new ColumnMapRowMapper();
+                while (resultSet.next()) {
+                    RunningQuery handle = running.get(taskId);
+                    if (handle != null) handle.throwIfStopped();
+                    result.add(rowMapper.mapRow(resultSet, result.size()));
+                }
+                return result;
+            }
+        });
+        return new PagedQueryRows(rows, total, page, statements.pageSql());
+    }
+
+    private <T> T run(String taskId, String sql, Map<String, ?> parameters, BooleanSupplier active,
+                      long deadline, int maxRows, SqlWork<T> work) {
+        return jdbc.execute(sql, parameters, statement -> {
             statement.setQueryTimeout(timeoutSeconds);
             statement.setMaxRows(maxRows);
-            RunningQuery handle = new RunningQuery(statement, active, timeoutSeconds);
+            RunningQuery handle = new RunningQuery(statement, active, deadline);
             if (running.putIfAbsent(taskId, handle) != null) throw new IllegalStateException("同一任务不能并行执行SQL");
             var watch = watcher.scheduleWithFixedDelay(handle::check, 0, 200, TimeUnit.MILLISECONDS);
             try {
                 handle.check();
                 handle.throwIfStopped();
-                try (var resultSet = statement.executeQuery()) {
-                    List<Map<String, Object>> rows = new ArrayList<>();
-                    var rowMapper = new ColumnMapRowMapper();
-                    while (resultSet.next() && rows.size() < maxRows) {
-                        handle.throwIfStopped();
-                        rows.add(rowMapper.mapRow(resultSet, rows.size()));
-                    }
-                    handle.check();
-                    handle.throwIfStopped();
-                    return rows;
-                }
+                T result = work.execute(statement);
+                handle.check();
+                handle.throwIfStopped();
+                return result;
             } catch (SQLException exception) {
                 handle.throwIfStopped();
                 if (exception instanceof SQLTimeoutException || exception.getErrorCode() == 3024) {
@@ -82,6 +104,9 @@ public class MySqlQueryExecutionGateway implements QueryExecutionGateway {
             }
         });
     }
+
+    @FunctionalInterface
+    private interface SqlWork<T> { T execute(PreparedStatement statement) throws SQLException; }
 
     @Override
     public void cancel(String taskId) {
@@ -100,10 +125,10 @@ public class MySqlQueryExecutionGateway implements QueryExecutionGateway {
         private volatile boolean stopped;
         private volatile boolean timedOut;
 
-        RunningQuery(PreparedStatement statement, BooleanSupplier active, int seconds) {
+        RunningQuery(PreparedStatement statement, BooleanSupplier active, long deadline) {
             this.statement = statement;
             this.active = active;
-            this.deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(seconds);
+            this.deadline = deadline;
         }
 
         synchronized void check() {

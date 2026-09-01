@@ -1,13 +1,13 @@
 package com.boc.nl2sql.execution;
 
 import com.boc.nl2sql.execution.domain.PlannedQuery;
-
-import java.util.List;
-import java.util.Map;
+import com.boc.nl2sql.execution.domain.PagedQueryRows;
+import com.boc.nl2sql.execution.domain.QueryPage;
 
 /** MySQL查询执行边界，业务编排不直接依赖具体JDBC实现。 */
 public interface QueryExecutionGateway {
-    List<Map<String, Object>> execute(String taskId, PlannedQuery query, java.util.function.BooleanSupplier active);
+    PagedQueryRows execute(String taskId, PlannedQuery query, QueryPage page,
+                           java.util.function.BooleanSupplier active);
 
     void cancel(String taskId);
 }

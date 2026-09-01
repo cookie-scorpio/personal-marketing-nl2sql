@@ -224,11 +224,15 @@ public class QueryTaskProcessor {
 
     private void executePlan(QueryTaskEntity task, PlannedQuery plan, CurrentUser user, String requestId) {
         stage(task, QueryStatus.EXECUTING, 75, "正在查询已授权的营销数据");
+        PagedQueryRows page;
         List<Map<String, Object>> rows;
         try {
             review(task,requestId,"EXECUTING",plan,null);
-            rows = execution.execute(task.getTaskId(), plan, () -> states.active(task.getTaskId()));
-            review(task,requestId,"EXECUTED",plan,"rows="+rows.size());
+            QueryPage requested = new QueryPage(task.getPageNo()==null?1:task.getPageNo(),
+                    task.getPageSize()==null?100:task.getPageSize(),task.getPageOffset()==null?0:task.getPageOffset());
+            page = execution.execute(task.getTaskId(), plan, requested, () -> states.active(task.getTaskId()));
+            rows = page.rows();
+            review(task,requestId,"EXECUTED",plan,"rows="+rows.size()+",total="+page.total());
         } catch(QueryTerminatedException stopped){
             review(task,requestId,stopped.timedOut()?"TIMED_OUT":"CANCELLED",plan,null);throw stopped;
         } catch (DataAccessException error) {
@@ -265,7 +269,7 @@ public class QueryTaskProcessor {
             }
         }
         stage(task, QueryStatus.PACKAGING, 90, "正在整理全部指标、图表与数据分析");
-        QueryResult result = assembler.assemble(plan, rows, task.getInterpretationSource(),
+        QueryResult result = assembler.assemble(plan, page, task.getInterpretationSource(),
                 task.getInterpretationConfidence() == null ? 1.0 : task.getInterpretationConfidence());
         FallbackInfo info = fallbackInfo(task);
         if (info != null) result = result.withFallback(new FallbackInfo(info.reason(), info.templateId(), true, info.suggestions()));

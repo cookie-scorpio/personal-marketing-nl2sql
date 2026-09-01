@@ -11,5 +11,6 @@ export function messageText(message: ConversationMessage): string {
   if (!result) return payload?.question ? [payload.question.prompt, ...(payload.question.options || []), ...(payload.question.candidates || []).map(c => `${c.name} ${c.customer_id} ${c.mobile}`)].join('\n') : payload?.error?.message || message.content
   const r = normalizeResult(result)
   const table = r.rows.length ? [r.columns.map(c => c.label).join('\t'), ...r.rows.map(row => r.columns.map(c => String(row[c.key] ?? '—')).join('\t'))].join('\n') : ''
-  return [r.title, r.summary, ...r.metrics.map(m => `${m.label}：${m.value ?? '—'}${m.unit || ''}`), ...r.analysis.insights, ...r.analysis.suggestions, table, r.sql_preview ? `SQL：\n${r.sql_preview}` : ''].filter(Boolean).join('\n\n')
+  const pagination = typeof r.total === 'number' ? `分页：共${r.total}条，第${r.page_no || 1}页，每页${r.page_size || r.rows.length}条${r.has_more ? '，后续仍有数据' : '，已到最后一页'}` : ''
+  return [r.title, r.summary, pagination, ...r.metrics.map(m => `${m.label}：${m.value ?? '—'}${m.unit || ''}`), ...r.analysis.insights, ...r.analysis.suggestions, table, r.sql_preview ? `SQL：\n${r.sql_preview}` : ''].filter(Boolean).join('\n\n')
 }

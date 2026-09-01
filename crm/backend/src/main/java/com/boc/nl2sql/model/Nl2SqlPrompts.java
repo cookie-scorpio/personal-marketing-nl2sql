@@ -21,7 +21,7 @@ public class Nl2SqlPrompts {
     private final String systemPrompt;
     private final String schemaContext;
 
-    public Nl2SqlPrompts(BusinessTermCatalog terms, DataInsightProvider insights, @Value("${app.query.max-result-rows:100}") int maxRows) {
+    public Nl2SqlPrompts(BusinessTermCatalog terms, DataInsightProvider insights, @Value("${app.query.max-sql-limit:500}") int maxRows) {
         this.insights = insights;
         this.terms = terms;
         this.maxRows = maxRows;
@@ -37,7 +37,7 @@ public class Nl2SqlPrompts {
         var sb = new StringBuilder(schemaContext)
                 .append("\n数据库业务术语（优先采用）：\n").append(terms.promptContext())
                 .append("\n当前日期：").append(LocalDate.now())
-                .append("\n最大返回行数：").append(maxRows);
+                .append("\n分页由服务端统一处理；不要添加LIMIT/OFFSET。用户要求Top N时改用ROW_NUMBER排名条件，N不得超过：").append(maxRows);
         // v1.5 注入数据概览：模型可据此选择合理的时间粒度与空结果说明，减少对快照日期的猜测。
         if (insights != null) {
         var snapshot = insights.latestSnapshot();

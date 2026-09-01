@@ -19,6 +19,8 @@ import java.util.regex.Pattern;
 @Component
 public class SqlRiskEvaluator {
     private static final Pattern LIMIT = Pattern.compile("(?i)\\blimit\\s+(\\d+)");
+    @org.springframework.beans.factory.annotation.Value("${app.query.max-sql-limit:500}")
+    private int maxSqlLimit = 500;
 
     public QueryRisk assess(PlannedQuery planned) {
         String normalized = planned.sql().toLowerCase(Locale.ROOT).replaceAll("\\s+", " ");
@@ -35,8 +37,8 @@ public class SqlRiskEvaluator {
             reasons.add("明细查询未限定时间范围，耗时可能较长");
         }
         Matcher limit = LIMIT.matcher(normalized);
-        if (limit.find() && Integer.parseInt(limit.group(1)) > 100) {
-            reasons.add("结果行数上限超过100行");
+        if (limit.find() && Integer.parseInt(limit.group(1)) > maxSqlLimit) {
+            reasons.add("用户指定的Top N结果超过"+maxSqlLimit+"行");
         }
         List<String> distinct = reasons.stream().distinct().toList();
         if (distinct.isEmpty()) return QueryRisk.low();

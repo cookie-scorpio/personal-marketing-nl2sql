@@ -2,6 +2,7 @@ package com.boc.nl2sql.execution;
 
 import com.boc.nl2sql.execution.application.SqlSafetyValidator;
 import com.boc.nl2sql.execution.domain.PlannedQuery;
+import com.boc.nl2sql.execution.domain.QueryPage;
 import com.boc.nl2sql.execution.infrastructure.MySqlQueryExecutionGateway;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.PreparedStatementCallback;
@@ -19,6 +20,7 @@ import static org.mockito.Mockito.*;
 
 class MySqlQueryExecutionGatewayTest {
     private final PlannedQuery plan = new PlannedQuery("SELECT customer_id FROM dim_customer LIMIT 100", Map.of(), "TABLE", "测试", false);
+    private final QueryPage page = new QueryPage(1,100,0);
 
     @SuppressWarnings("unchecked")
     private NamedParameterJdbcTemplate jdbc(PreparedStatement statement) {
@@ -31,11 +33,13 @@ class MySqlQueryExecutionGatewayTest {
     @Test
     void configuresPerStatementTimeoutAndMaxRowsAndReleasesCancelHandle() throws Exception {
         var statement = mock(PreparedStatement.class);
-        when(statement.executeQuery()).thenReturn(mock(ResultSet.class));
+        var resultSet=mock(ResultSet.class);
+        when(resultSet.next()).thenReturn(true,false);
+        when(statement.executeQuery()).thenReturn(resultSet);
         var gateway = new MySqlQueryExecutionGateway(jdbc(statement), new SqlSafetyValidator(), 60, 100);
         try {
-            assertThat(gateway.execute("task", plan, () -> true)).isEmpty();
-            verify(statement).setQueryTimeout(60); verify(statement).setMaxRows(100);
+            assertThat(gateway.execute("task", plan, page, () -> true).rows()).isEmpty();
+            verify(statement,times(2)).setQueryTimeout(60); verify(statement).setMaxRows(1); verify(statement).setMaxRows(100);
             gateway.cancel("task"); verify(statement, never()).cancel();
         } finally { gateway.close(); }
     }
@@ -45,7 +49,7 @@ class MySqlQueryExecutionGatewayTest {
         var jdbc = mock(NamedParameterJdbcTemplate.class);
         var gateway = new MySqlQueryExecutionGateway(jdbc, new SqlSafetyValidator(), 60, 100);
         try {
-            assertThatThrownBy(() -> gateway.execute("task", plan, () -> false)).isInstanceOf(QueryTerminatedException.class);
+            assertThatThrownBy(() -> gateway.execute("task", plan, page, () -> false)).isInstanceOf(QueryTerminatedException.class);
             verifyNoInteractions(jdbc);
         } finally { gateway.close(); }
     }
@@ -64,7 +68,7 @@ class MySqlQueryExecutionGatewayTest {
         var gateway = new MySqlQueryExecutionGateway(jdbc(statement), new SqlSafetyValidator(), 60, 100);
         var worker = Executors.newSingleThreadExecutor();
         try {
-            var future = worker.submit(() -> gateway.execute("task", plan, active::get));
+            var future = worker.submit(() -> gateway.execute("task", plan, page, active::get));
             assertThat(entered.await(2, TimeUnit.SECONDS)).isTrue(); active.set(false);
             assertThatThrownBy(() -> future.get(3, TimeUnit.SECONDS)).hasCauseInstanceOf(QueryTerminatedException.class);
             verify(statement, atLeastOnce()).cancel();
@@ -77,7 +81,7 @@ class MySqlQueryExecutionGatewayTest {
         when(statement.executeQuery()).thenThrow(new SQLTimeoutException("expired"));
         var gateway = new MySqlQueryExecutionGateway(jdbc(statement), new SqlSafetyValidator(), 60, 100);
         try {
-            assertThatThrownBy(() -> gateway.execute("task", plan, () -> true))
+            assertThatThrownBy(() -> gateway.execute("task", plan, page, () -> true))
                     .isInstanceOfSatisfying(QueryTerminatedException.class, error -> assertThat(error.timedOut()).isTrue());
         } finally { gateway.close(); }
     }

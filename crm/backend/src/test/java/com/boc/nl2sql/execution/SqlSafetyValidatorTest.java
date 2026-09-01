@@ -25,9 +25,9 @@ class SqlSafetyValidatorTest {
     }
 
     @Test
-    void rejectsSelectWithoutLimit() {
-        assertThatThrownBy(() -> validator.validate("SELECT customer_id FROM dim_customer"))
-                .isInstanceOf(BusinessException.class);
+    void acceptsSelectWithoutLimitBecauseExecutionAddsPagination() {
+        assertThatCode(() -> validator.validate("SELECT customer_id FROM dim_customer"))
+                .doesNotThrowAnyException();
     }
 
     @Test
@@ -58,7 +58,6 @@ class SqlSafetyValidatorTest {
         "SELECT c.customer_id FROM dim_customer c WINDOW w AS(ORDER BY SLEEP(3)) LIMIT 10",
         "SELECT SQL_CALC_FOUND_ROWS c.customer_id FROM dim_customer c LIMIT 10",
         "SELECT DISTINCT ON (SLEEP(3)) c.customer_id FROM dim_customer c LIMIT 10",
-        "SELECT c.customer_id FROM dim_customer c WHERE c.customer_id IN(SELECT customer_id FROM dim_customer LIMIT 10)",
         "SELECT customer_id FROM dim_customer LIMIT 1000",
         "SELECT customer_id FROM dim_customer LIMIT 10 FOR UPDATE",
         "WITH RECURSIVE a AS(SELECT customer_id FROM dim_customer) SELECT a.customer_id FROM a LIMIT 10",

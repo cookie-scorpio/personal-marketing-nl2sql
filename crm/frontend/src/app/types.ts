@@ -57,6 +57,11 @@ export interface QueryResult {
   data_as_of: string
   interpretation_source: 'RULE' | 'DEEPSEEK' | string
   confidence: number
+  total?: number
+  page_no?: number
+  page_size?: number
+  offset?: number
+  has_more?: boolean
   fallback?: { reason: string; template_id?: string; data_available: boolean; suggestions: string[] }
 }
 

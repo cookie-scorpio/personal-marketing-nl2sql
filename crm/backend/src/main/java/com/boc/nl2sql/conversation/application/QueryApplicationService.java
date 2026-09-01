@@ -13,6 +13,7 @@ import com.boc.nl2sql.conversation.domain.QueryStatus;
 import com.boc.nl2sql.conversation.infrastructure.QueryTaskEntity;
 import com.boc.nl2sql.conversation.infrastructure.QueryTaskMapper;
 import com.boc.nl2sql.execution.domain.QueryResult;
+import com.boc.nl2sql.execution.domain.QueryPage;
 import com.boc.nl2sql.nl2sql.domain.ClarificationQuestion;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.ObjectMapper;
@@ -32,6 +33,9 @@ public class QueryApplicationService {
     private final com.boc.nl2sql.execution.QueryExecutionGateway execution;
     private final com.boc.nl2sql.history.application.HistoryService history;
     private final int timeoutSeconds;
+    private final int defaultPageSize;
+    private final int maxPageSize;
+    private final long maxOffset;
     @org.springframework.beans.factory.annotation.Autowired private ConversationStore conversations;
     @org.springframework.beans.factory.annotation.Autowired private TaskSnapshots snapshots;
     @org.springframework.beans.factory.annotation.Autowired private CustomerResolver customers;
@@ -44,13 +48,20 @@ public class QueryApplicationService {
                                    ObjectMapper objectMapper, TaskStateStore states,
                                    com.boc.nl2sql.execution.QueryExecutionGateway execution,
                                    com.boc.nl2sql.history.application.HistoryService history,
-                                   @org.springframework.beans.factory.annotation.Value("${app.query.execution-timeout-seconds:60}") int timeoutSeconds) {
+                                   @org.springframework.beans.factory.annotation.Value("${app.query.execution-timeout-seconds:60}") int timeoutSeconds,
+                                   @org.springframework.beans.factory.annotation.Value("${app.query.default-page-size:100}") int defaultPageSize,
+                                   @org.springframework.beans.factory.annotation.Value("${app.query.max-page-size:500}") int maxPageSize,
+                                   @org.springframework.beans.factory.annotation.Value("${app.query.max-offset:100000}") long maxOffset) {
+        if (defaultPageSize < 1 || maxPageSize < defaultPageSize || maxOffset < 0) {
+            throw new IllegalArgumentException("查询分页默认值、上限或最大偏移量配置无效");
+        }
         this.taskMapper = taskMapper;
         this.processor = processor;
         this.contextStore = contextStore;
         this.auditService = auditService;
         this.objectMapper = objectMapper;
         this.states = states; this.execution = execution; this.history = history; this.timeoutSeconds = timeoutSeconds;
+        this.defaultPageSize = defaultPageSize; this.maxPageSize = maxPageSize; this.maxOffset = maxOffset;
     }
 
     public SubmitQueryResponse submit(SubmitQueryRequest request, CurrentUser user, String requestId) {
@@ -59,7 +70,12 @@ public class QueryApplicationService {
 
     public SubmitQueryResponse submit(SubmitQueryRequest request, CurrentUser user, String requestId,String key) {
         if(key==null||!key.matches("[A-Za-z0-9._:-]{8,128}"))throw new BusinessException(400004,"请提供8至128位有效 Idempotency-Key");
-        String fingerprint=IdempotencyCache.hash(objectMapper.writeValueAsString(java.util.List.of(request.sessionId(),request.queryText().trim(),request.preferredDisplay()==null?"AUTO":request.preferredDisplay(),request.thinkingEnabled()==null||request.thinkingEnabled())));
+        QueryPage page=page(request);
+        java.util.List<Object> fingerprintParts=new java.util.ArrayList<>(java.util.List.of(request.sessionId(),request.queryText().trim(),request.preferredDisplay()==null?"AUTO":request.preferredDisplay(),request.thinkingEnabled()==null||request.thinkingEnabled()));
+        if(request.pageNo()!=null||request.pageSize()!=null||request.limit()!=null||request.offset()!=null){
+            fingerprintParts.add(page.pageNo());fingerprintParts.add(page.pageSize());fingerprintParts.add(page.offset());
+        }
+        String fingerprint=IdempotencyCache.hash(objectMapper.writeValueAsString(fingerprintParts));
         String cached=idempotency.get(user.userId(),key);
         if(cached!=null){QueryTaskEntity old=taskMapper.selectById(cached);if(old!=null&&old.getUserId().equals(user.userId())&&key.equals(old.getIdempotencyKey()))return replay(old,fingerprint);}
         SubmitQueryResponse response;
@@ -74,7 +90,7 @@ public class QueryApplicationService {
                     var active=taskMapper.selectById(session.get("active_task_id").toString());
                     if(active!=null&&!QueryStatus.terminal(active.getStatusCode()))throw new BusinessException(409006,"本会话仍有未结束的查询，请先完成补充、确认或取消");
                 }
-                return create(request,user,requestId,key,fingerprint,session);
+                return create(request,user,requestId,key,fingerprint,session,page);
             });
         }catch(org.springframework.dao.DuplicateKeyException collision){
             var old=findSubmission(user.userId(),key);if(old==null)throw collision;response=replay(old,fingerprint);
@@ -87,7 +103,26 @@ public class QueryApplicationService {
         if(!fingerprint.equals(task.getRequestHash()))throw new BusinessException(409005,"同一幂等键不能用于不同请求，请为新问题创建新的提交");
         return new SubmitQueryResponse(task.getTaskId(),task.getSessionId(),task.getStatusCode(),task.getProgress(),"/api/v1/queries/"+task.getTaskId()+"/status");
     }
-    private SubmitQueryResponse create(SubmitQueryRequest request,CurrentUser user,String requestId,String key,String fingerprint,Map<String,Object> session){
+    private QueryPage page(SubmitQueryRequest request){
+        boolean numbered=request.pageNo()!=null||request.pageSize()!=null;
+        boolean ranged=request.limit()!=null||request.offset()!=null;
+        if(numbered&&ranged)throw new BusinessException(400001,"page_no/page_size 与 limit/offset 不能同时传入");
+        int size=ranged?(request.limit()==null?defaultPageSize:request.limit()):(request.pageSize()==null?defaultPageSize:request.pageSize());
+        if(size<1||size>maxPageSize)throw new BusinessException(400001,"每页条数必须在1至"+maxPageSize+"之间");
+        long offset;
+        int pageNo;
+        if(ranged){
+            offset=request.offset()==null?0:request.offset();
+            pageNo=(int)Math.min(Integer.MAX_VALUE,offset/size+1);
+        }else{
+            pageNo=request.pageNo()==null?1:request.pageNo();
+            if(pageNo<1)throw new BusinessException(400001,"page_no必须大于等于1");
+            try{offset=Math.multiplyExact((long)pageNo-1,size);}catch(ArithmeticException overflow){throw new BusinessException(400001,"分页偏移量过大");}
+        }
+        if(offset<0||offset>maxOffset)throw new BusinessException(400001,"offset必须在0至"+maxOffset+"之间；大结果集请缩小条件范围");
+        return new QueryPage(pageNo,size,offset);
+    }
+    private SubmitQueryResponse create(SubmitQueryRequest request,CurrentUser user,String requestId,String key,String fingerprint,Map<String,Object> session,QueryPage page){
         String taskId = UUID.randomUUID().toString();
         QueryTaskEntity task = new QueryTaskEntity();
         task.setTaskId(taskId);
@@ -127,6 +162,7 @@ public class QueryApplicationService {
                     +" @客户名单("+requestedIds.size()+"人)";
         }
         task.setDisplayQuery(displayBase);
+        task.setPageNo(page.pageNo());task.setPageSize(page.pageSize());task.setPageOffset(page.offset());
         task.setThinkingEnabled(request.thinkingEnabled()==null||request.thinkingEnabled());
         task.setIdempotencyKey(key);task.setRequestHash(fingerprint);
         task.setStatusCode(QueryStatus.RECEIVED.name());

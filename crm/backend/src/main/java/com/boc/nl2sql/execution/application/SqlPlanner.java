@@ -18,12 +18,10 @@ import java.util.Map;
 @Component
 public class SqlPlanner {
     private final DataScopePolicy dataScopePolicy;
-    private final int maxRows;
 
     public SqlPlanner(DataScopePolicy dataScopePolicy,
-                      @Value("${app.query.max-result-rows:100}") int maxRows) {
+                      @Value("${app.query.max-sql-limit:500}") int ignoredMaxSqlLimit) {
         this.dataScopePolicy = dataScopePolicy;
-        this.maxRows = maxRows;
     }
 
     public PlannedQuery plan(SemanticQuery query, CurrentUser user) {
@@ -49,9 +47,8 @@ public class SqlPlanner {
                          c.branch_id
                     FROM dim_customer c
                    WHERE %s
-                   ORDER BY c.total_asset_amount DESC
-                   LIMIT %d
-                  """.formatted(where, maxRows)
+                   ORDER BY c.total_asset_amount DESC, c.customer_id
+                  """.formatted(where)
                 : """
                   SELECT c.branch_id,
                          COUNT(*) AS customer_count,
@@ -60,9 +57,8 @@ public class SqlPlanner {
                     FROM dim_customer c
                    WHERE %s
                    GROUP BY c.branch_id
-                   ORDER BY customer_count DESC
-                   LIMIT %d
-                  """.formatted(where, maxRows);
+                   ORDER BY customer_count DESC, c.branch_id
+                  """.formatted(where);
         return new PlannedQuery(sql, parameters, detail ? "TABLE" : "SUMMARY",
                 detail ? "符合条件的客户" : "客户筛选结果", query.broadRequested());
     }
@@ -83,9 +79,8 @@ public class SqlPlanner {
                   JOIN dim_customer c ON c.customer_id = t.customer_id
                  WHERE %s AND t.status_code = 'SUCCESS'
                  GROUP BY c.branch_id
-                 ORDER BY transaction_amount_wan DESC
-                 LIMIT %d
-                """.formatted(where, maxRows);
+                 ORDER BY transaction_amount_wan DESC, c.branch_id
+                """.formatted(where);
         return new PlannedQuery(sql, parameters, "SUMMARY", "交易分析结果", query.broadRequested());
     }
 
@@ -105,9 +100,8 @@ public class SqlPlanner {
                     FROM fct_product_holding h
                     JOIN dim_customer c ON c.customer_id = h.customer_id
                    WHERE %s
-                   ORDER BY h.market_value_amount DESC
-                   LIMIT %d
-                  """.formatted(where, maxRows)
+                   ORDER BY h.market_value_amount DESC, h.holding_id
+                  """.formatted(where)
                 : """
                   SELECT h.product_category_code,
                          COUNT(DISTINCT c.customer_id) AS customer_count,
@@ -118,9 +112,8 @@ public class SqlPlanner {
                     JOIN dim_customer c ON c.customer_id = h.customer_id
                    WHERE %s
                    GROUP BY h.product_category_code
-                   ORDER BY market_value_yi DESC
-                   LIMIT %d
-                  """.formatted(where, maxRows);
+                   ORDER BY market_value_yi DESC, h.product_category_code
+                  """.formatted(where);
         return new PlannedQuery(sql, parameters, query.detailRequested() ? "TABLE" : "SUMMARY",
                 "产品持有分析结果", query.broadRequested());
     }
@@ -147,9 +140,8 @@ public class SqlPlanner {
                   JOIN dim_customer c ON c.customer_id = m.customer_id
                  WHERE %s
                  GROUP BY p.campaign_id, p.campaign_name
-                 ORDER BY conversion_rate DESC
-                 LIMIT %d
-                """.formatted(where, maxRows);
+                 ORDER BY conversion_rate DESC, p.campaign_id
+                """.formatted(where);
         return new PlannedQuery(sql, parameters, "SUMMARY", "营销活动效果", query.broadRequested());
     }
 

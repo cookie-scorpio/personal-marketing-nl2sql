@@ -354,6 +354,10 @@ components:
           type: string
           description: 非AUTO时优先采用请求展示形式；否则使用模型建议及实际数据适配，非法数据形态不会强行绘图。
           example: AUTO
+        page_no: { type: integer, minimum: 1, default: 1, description: 与page_size配套；不能和limit/offset同时传入 }
+        page_size: { type: integer, minimum: 1, maximum: 500, default: 100 }
+        limit: { type: integer, minimum: 1, maximum: 500, description: 与offset配套；不能和page_no/page_size同时传入 }
+        offset: { type: integer, format: int64, minimum: 0, maximum: 100000, default: 0 }
     TaskStatus:
       type: object
       required: [task_id, session_id, status, progress, message, clarification_round, repair_attempts, repairs, execution_timeout_seconds, cancellable, state_version, thinking_enabled]
@@ -508,6 +512,11 @@ components:
         rows:
           type: array
           items: { type: object, additionalProperties: true }
+        total: { type: integer, format: int64, minimum: 0, description: 应用分页前的结果总条数 }
+        page_no: { type: integer, minimum: 1 }
+        page_size: { type: integer, minimum: 1, maximum: 500 }
+        offset: { type: integer, format: int64, minimum: 0 }
+        has_more: { type: boolean, description: 当前页后是否仍有结果 }
         metrics:
           type: array
           items:

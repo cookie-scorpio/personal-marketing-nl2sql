@@ -3,14 +3,14 @@ JSON结构示例：
 {"intent":"GENERIC_ANALYSIS","confidence":0.95,"needs_clarification":false,
  "clarification_question":"","clarification_options":[],"conflicts":[],
  "recognized_slots":{"分析维度":"年龄段"},
- "sql":"SELECT age_band_code, COUNT(*) AS customer_count FROM dim_customer c WHERE c.status_code='ACTIVE' AND c.manager_id = 'M0001' GROUP BY age_band_code ORDER BY customer_count DESC LIMIT 100",
+ "sql":"SELECT age_band_code, COUNT(*) AS customer_count FROM dim_customer c WHERE c.status_code='ACTIVE' AND c.manager_id = 'M0001' GROUP BY age_band_code ORDER BY customer_count DESC, age_band_code",
  "title":"客户年龄分布","preferred_display":"BAR"}
 说明：示例中的 c.manager_id = 'M0001' 演示数据范围条件的写法；实际生成时必须原样替换为服务端注入的"必须使用的数据范围条件"，不得改写、省略或翻译。
 规则：
 - 信息不足或存在互斥条件时needs_clarification=true，提出一个可以直接回答的问题，此时sql必须为空。
 - clarification_options：给出一组可直接点选的回答选项，每项为{"label":"展示给用户的完整口径描述","value":"用户选中后原样回传的口径"}，最多4项；与用户显式要求最接近、最符合其原意的口径放在第一位并加"recommended":true。不需要选项时给空数组。
 - 只能生成单条只读SELECT；可以使用非递归CTE、派生表、关联子查询、UNION/UNION ALL和窗口函数。每个物理数据源必须独立受授权范围约束。禁止SELECT *、递归CTE、变量、注释和任何写操作；关联使用INNER或LEFT JOIN和明确ON条件。
-- 明细与分组查询都必须有LIMIT且不得超过服务端给出的最大返回行数；金额优先换算为万元或亿元并使用清晰英文别名。
+- 分页由服务端统一处理，不得添加LIMIT/OFFSET；用户明确要求Top N时使用ROW_NUMBER排名条件表达业务语义。金额优先换算为万元或亿元并使用清晰英文别名。
 - 必须把服务端给出的数据范围条件原样放进WHERE；涉及客户的数据必须过滤c.status_code='ACTIVE'。
 - 时间表达必须根据服务端给出的当前日期换算成明确日期；避免使用NOW()造成口径漂移。
 - 查询列使用snake_case英文别名。preferred_display可为AUTO、TABLE、BAR、LINE、AREA、PIE、SCATTER、HEATMAP、METRIC。
@@ -57,13 +57,13 @@ JSON结构示例：
 {"intent":"MARKETING_ANALYSIS","confidence":0.92,"needs_clarification":false,
  "clarification_question":"","clarification_options":[],"conflicts":[],
  "recognized_slots":{"分组":"触达渠道","时间":"今年以来"},
- "sql":"SELECT m.contact_channel_code, COUNT(DISTINCT m.customer_id) AS contacted_customers, COUNT(DISTINCT CASE WHEN m.conversion_flag = 1 THEN m.customer_id END) AS converted_customers, ROUND(COUNT(DISTINCT CASE WHEN m.conversion_flag = 1 THEN m.customer_id END) * 100.0 / NULLIF(COUNT(DISTINCT m.customer_id), 0), 2) AS conversion_rate_pct FROM fct_customer_marketing m INNER JOIN dim_customer c ON m.customer_id = c.customer_id WHERE c.region_code = 'EAST' AND c.status_code = 'ACTIVE' AND m.contact_time >= '2026-01-01' GROUP BY m.contact_channel_code ORDER BY contacted_customers DESC LIMIT 100",
+ "sql":"SELECT m.contact_channel_code, COUNT(DISTINCT m.customer_id) AS contacted_customers, COUNT(DISTINCT CASE WHEN m.conversion_flag = 1 THEN m.customer_id END) AS converted_customers, ROUND(COUNT(DISTINCT CASE WHEN m.conversion_flag = 1 THEN m.customer_id END) * 100.0 / NULLIF(COUNT(DISTINCT m.customer_id), 0), 2) AS conversion_rate_pct FROM fct_customer_marketing m INNER JOIN dim_customer c ON m.customer_id = c.customer_id WHERE c.region_code = 'EAST' AND c.status_code = 'ACTIVE' AND m.contact_time >= '2026-01-01' GROUP BY m.contact_channel_code ORDER BY contacted_customers DESC, m.contact_channel_code",
  "title":"各渠道营销转化率","preferred_display":"BAR",
  "columns":[{"key":"contact_channel_code","label":"触达渠道","role":"DIMENSION","unit":"","aggregation":"NONE"},{"key":"contacted_customers","label":"触达客户数","role":"MEASURE","unit":"人","aggregation":"COUNT"},{"key":"converted_customers","label":"转化客户数","role":"MEASURE","unit":"人","aggregation":"COUNT"},{"key":"conversion_rate_pct","label":"转化率","role":"MEASURE","unit":"%","aggregation":"AVERAGE"}]}
 例3（金额分档——先按客户聚合到一人一行，左闭右开、末档含上限、无持有按0）：
 {"intent":"GENERIC_ANALYSIS","confidence":0.9,"needs_clarification":false,
  "clarification_question":"","clarification_options":[],"conflicts":[],
  "recognized_slots":{"分档":"0-100万，每20万，左闭右开，末档含上限","指标":"存款市值，无持有按0","对象":"EAST区域ACTIVE客户"},
- "sql":"WITH scoped AS (SELECT c.customer_id, COALESCE(SUM(h.market_value_amount), 0) AS deposit_amount FROM dim_customer c LEFT JOIN fct_product_holding h ON h.customer_id = c.customer_id AND h.product_category_code = 'DEPOSIT' AND h.snapshot_date = '2026-08-26' WHERE c.region_code = 'EAST' AND c.status_code = 'ACTIVE' GROUP BY c.customer_id) SELECT CASE WHEN deposit_amount < 200000 THEN '0-20万' WHEN deposit_amount < 400000 THEN '20-40万' WHEN deposit_amount < 600000 THEN '40-60万' WHEN deposit_amount < 800000 THEN '60-80万' ELSE '80-100万' END AS deposit_band, COUNT(*) AS customer_count FROM scoped GROUP BY deposit_band ORDER BY deposit_band LIMIT 100",
+ "sql":"WITH scoped AS (SELECT c.customer_id, COALESCE(SUM(h.market_value_amount), 0) AS deposit_amount FROM dim_customer c LEFT JOIN fct_product_holding h ON h.customer_id = c.customer_id AND h.product_category_code = 'DEPOSIT' AND h.snapshot_date = '2026-08-26' WHERE c.region_code = 'EAST' AND c.status_code = 'ACTIVE' GROUP BY c.customer_id) SELECT CASE WHEN deposit_amount < 200000 THEN '0-20万' WHEN deposit_amount < 400000 THEN '20-40万' WHEN deposit_amount < 600000 THEN '40-60万' WHEN deposit_amount < 800000 THEN '60-80万' ELSE '80-100万' END AS deposit_band, COUNT(*) AS customer_count FROM scoped GROUP BY deposit_band ORDER BY deposit_band",
  "title":"客户存款市值分档分布","preferred_display":"PIE",
  "columns":[{"key":"deposit_band","label":"存款市值区间","role":"DIMENSION","unit":"","aggregation":"NONE"},{"key":"customer_count","label":"客户数量","role":"MEASURE","unit":"人","aggregation":"COUNT"}]}

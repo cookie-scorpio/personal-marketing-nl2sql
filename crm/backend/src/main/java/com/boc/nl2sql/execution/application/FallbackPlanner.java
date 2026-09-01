@@ -15,10 +15,9 @@ public class FallbackPlanner {
     private final RuleBasedSemanticParser parser;
     private final SqlPlanner planner;
     private final DataScopePolicy scope;
-    private final int maxRows;
     public FallbackPlanner(RuleBasedSemanticParser parser, SqlPlanner planner, DataScopePolicy scope,
-                           @Value("${app.query.max-result-rows:100}") int maxRows) {
-        this.parser = parser; this.planner = planner; this.scope = scope; this.maxRows = maxRows;
+                           @Value("${app.query.max-sql-limit:500}") int ignoredMaxSqlLimit) {
+        this.parser = parser; this.planner = planner; this.scope = scope;
     }
     public Optional<Template> plan(String text, CurrentUser user) {
         var semantic = parser.parse(text);
@@ -50,7 +49,7 @@ public class FallbackPlanner {
         }
         String sql = "SELECT c." + dimension + ", COUNT(DISTINCT c.customer_id) AS customer_count, "
                 + "ROUND(AVG(c.total_asset_amount) / 10000, 2) AS avg_asset_wan FROM dim_customer c WHERE "
-                + where + " GROUP BY c." + dimension + " ORDER BY c." + dimension + " LIMIT " + maxRows;
+                + where + " GROUP BY c." + dimension + " ORDER BY c." + dimension;
         return Optional.of(new Template(age ? "CUSTOMER_AGE_ASSETS" : "CUSTOMER_GENDER_ASSETS",
                 new PlannedQuery(sql, parameters, "AUTO", (age ? "年龄段" : "性别") + "客户数量与当前平均资产", false)));
     }

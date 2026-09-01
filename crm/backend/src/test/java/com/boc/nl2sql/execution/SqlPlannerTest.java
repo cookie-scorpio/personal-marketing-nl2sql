@@ -36,6 +36,6 @@ class SqlPlannerTest {
 
         assertThat(planned.sql()).contains("c.manager_id = :scopeManagerId");
         assertThat(planned.parameters()).containsEntry("scopeManagerId", "M0001");
-        assertThat(planned.sql()).contains("LIMIT 100");
+        assertThat(planned.sql()).doesNotContain("LIMIT").contains("ORDER BY c.total_asset_amount DESC, c.customer_id");
     }
 }

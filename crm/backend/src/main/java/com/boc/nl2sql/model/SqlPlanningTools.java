@@ -13,10 +13,10 @@ import java.util.Map;
 public class SqlPlanningTools {
     private final Nl2SqlPrompts prompts;
     private final int maxRows;
-    public SqlPlanningTools(Nl2SqlPrompts prompts,@Value("${app.query.max-result-rows:100}") int maxRows){this.prompts=prompts;this.maxRows=maxRows;}
+    public SqlPlanningTools(Nl2SqlPrompts prompts,@Value("${app.query.max-sql-limit:500}") int maxRows){this.prompts=prompts;this.maxRows=maxRows;}
     public List<Map<String,Object>> definitions(){
         return List.of(function("get_query_schema","读取允许查询的表结构、业务口径、当前账号范围；不返回客户数据。",Map.of(),List.of()),
-                function("validate_sql","在提交最终JSON之前检查完整SQL的只读、字段、账号范围和LIMIT。失败时修正SQL再检查。此工具不执行SQL、不替代最终校验或风险确认。",Map.of("sql",Map.of("type","string","description","完整单条MySQL SELECT，最外层包含LIMIT")),List.of("sql")));
+                function("validate_sql","在提交最终JSON之前检查完整SQL的只读、字段和账号范围。失败时修正SQL再检查。此工具不执行SQL、不替代最终校验或风险确认。",Map.of("sql",Map.of("type","string","description","完整单条MySQL SELECT；分页由服务端统一添加")),List.of("sql")));
     }
     private Map<String,Object> function(String name,String description,Map<String,Object> properties,List<String> required){
         return Map.of("type","function","function",Map.of("name",name,"description",description,"parameters",Map.of("type","object","properties",properties,"required",required,"additionalProperties",false)));

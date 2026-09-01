@@ -9,9 +9,17 @@ public record SubmitQueryRequest(
         @NotBlank @Size(max = 1000) String queryText,
         String preferredDisplay,
         Boolean thinkingEnabled,
-        List<String> customerIds
+        List<String> customerIds,
+        Integer pageNo,
+        Integer pageSize,
+        Integer limit,
+        Long offset
 ) {
     public SubmitQueryRequest(String sessionId,String queryText,String preferredDisplay) {
-        this(sessionId,queryText,preferredDisplay,true,null);
+        this(sessionId,queryText,preferredDisplay,true,null,null,null,null,null);
+    }
+    public SubmitQueryRequest(String sessionId,String queryText,String preferredDisplay,
+                              Boolean thinkingEnabled,List<String> customerIds) {
+        this(sessionId,queryText,preferredDisplay,thinkingEnabled,customerIds,null,null,null,null);
     }
 }

@@ -36,7 +36,7 @@ public final class SqlAstValidator {
         try{
             var statements=CCJSqlParserUtil.parseStatements(sql,p->p.withTimeOut(2000));
             if(statements.size()!=1||!(statements.get(0) instanceof Select))fail(422101,"仅允许单条只读SELECT");
-            Select select=(Select)statements.get(0);checkLimit(select,true);analyze(select,null,new LinkedHashMap<>(),0);
+            Select select=(Select)statements.get(0);checkLimit(select,false);analyze(select,null,new LinkedHashMap<>(),0);
         }catch(BusinessException e){throw e;}catch(Exception e){fail(422101,"SQL语法无法解析或尚未支持");}
     }
     private static void lexical(String sql){

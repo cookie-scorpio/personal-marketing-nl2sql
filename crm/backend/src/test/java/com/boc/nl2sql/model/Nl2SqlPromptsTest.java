@@ -22,7 +22,7 @@ class Nl2SqlPromptsTest {
         assertThat(prompts.systemPrompt()).contains("JSON", "needs_clarification", "GENERIC_ANALYSIS");
         assertThat(prompts.userPrompt("比较本季度不同渠道的营销转化率", user))
                 .contains("fct_customer_marketing", "不提供历史资产序列", "测试口径：按触达客户去重",
-                        LocalDate.now().toString(), "最大返回行数：50", "c.region_code = 'EAST'",
+                        LocalDate.now().toString(), "分页由服务端统一处理", "不得超过：50", "c.region_code = 'EAST'",
                         "用户问题：比较本季度不同渠道的营销转化率");
     }
 

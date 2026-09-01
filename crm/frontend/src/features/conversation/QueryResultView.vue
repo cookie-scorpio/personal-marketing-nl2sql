@@ -40,6 +40,11 @@ function exportCsv() {
 <template>
   <section class="chat-result">
     <header><h3>{{ result.title }}</h3><p>{{ result.summary }}</p></header>
+    <p v-if="typeof result.total === 'number'" class="chart-reason" role="status">
+      共 {{ format(result.total) }} 条 · 第 {{ result.page_no || 1 }} 页 · 每页 {{ result.page_size || result.rows.length }} 条
+      <strong v-if="result.has_more"> · 后续仍有数据，本页不是全部结果</strong>
+      <span v-else> · 已到最后一页</span>
+    </p>
     <div v-if="result.fallback" class="fallback-notice"><strong>{{ result.fallback.data_available ? '已使用受控模板完成查询' : '本次未获得可用数据' }}</strong><p>{{ result.fallback.reason }}</p></div>
     <div v-if="result.metrics.length" class="metric-grid">
       <div v-for="metric in result.metrics" :key="metric.key || metric.label"><span>{{ metric.label }}</span><strong>{{ format(metric.value) }} <small>{{ metric.unit }}</small></strong><span>{{ metric.note }}</span></div>

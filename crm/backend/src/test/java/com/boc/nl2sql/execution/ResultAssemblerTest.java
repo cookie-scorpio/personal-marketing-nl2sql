@@ -10,6 +10,15 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class ResultAssemblerTest {
+    @Test void exposesTotalAndPaginationInsteadOfSilentTruncation(){
+        var rows=java.util.stream.IntStream.range(0,100).mapToObj(i->Map.<String,Object>of("customer_id",String.format("C%08d",i))).toList();
+        var page=new com.boc.nl2sql.execution.domain.PagedQueryRows(rows,205,
+                new com.boc.nl2sql.execution.domain.QueryPage(1,100,0));
+        var result=new ResultAssembler(null).assemble(new PlannedQuery("SELECT customer_id FROM dim_customer",Map.of(),"TABLE","分页",false),page,"RULE",1.0);
+        assertThat(result.total()).isEqualTo(205);assertThat(result.pageNo()).isEqualTo(1);
+        assertThat(result.pageSize()).isEqualTo(100);assertThat(result.hasMore()).isTrue();
+        assertThat(result.summary()).contains("共 205 条","当前第 1 页返回 100 条");
+    }
     @Test void masksCustomerFieldsBeforeRowsAndAnalysisAreBuilt(){
         var result=assemble("TABLE",List.of(Map.of("CUSTOMER_NAME","李验甲","mobile_masked","90000008877","asset_wan",10)));
         assertThat(result.rows().get(0)).containsEntry("customer_name","李*甲").containsEntry("mobile_masked","900****8877");

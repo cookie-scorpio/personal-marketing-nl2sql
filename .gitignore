@@ -55,3 +55,6 @@ artifacts/
 Thumbs.db
 desktop.ini
 docs/architecture/仓库架构说明.docx
+.workbuddy/memory/2026-08-31.md
+contracts/openapi/crm-nl2sql-mvp-v1.yaml
+docs/六人职责与业务调用速查.md

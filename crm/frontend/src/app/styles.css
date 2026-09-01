@@ -188,6 +188,12 @@ svg { width: 1em; height: 1em; }
 .metric-grid > div { display: flex; min-width: 0; flex-direction: column; gap: 5px; padding: 13px 14px; border: 1px solid var(--border); border-radius: 9px; background: #fff; }
 .metric-grid span { color: var(--muted); font-size: 10px; }
 .metric-grid strong { overflow: hidden; font-size: 19px; text-overflow: ellipsis; }
+.primary-results { margin: 18px 0 16px; padding: 15px; border: 1px solid #e8d8d4; border-radius: 10px; background: #fffdfc; }
+.primary-results h4 { display: flex; align-items: center; gap: 8px; margin: 0; color: #342e2b; font-size: 14px; line-height: 1.3; }
+.primary-results h4::before { width: 3px; height: 16px; border-radius: 2px; background: var(--accent); content: ''; }
+.primary-results .metric-grid { margin: 12px 0 0; }
+.primary-results .metric-grid > div { background: #fff; }
+.primary-results .metric-grid strong { color: #302927; font-size: 22px; }
 .result-tabs { display: flex; gap: 4px; margin: 18px 0 10px; padding: 4px; border-radius: 9px; background: #f2efec; }
 .result-tabs button { min-width: 106px; padding: 7px 12px; border: 0; border-radius: 7px; color: #756d69; background: transparent; cursor: pointer; font-size: 11px; }
 .result-tabs button.active { color: #342e2b; background: #fff; box-shadow: 0 1px 4px rgba(55,42,35,.09); font-weight: 700; }
@@ -492,18 +498,6 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .pie-readable-legend span { overflow-wrap: anywhere; line-height: 1.5; }
 .pie-readable-legend strong { min-width: 0; font-weight: 500; color: var(--muted); text-align: right; overflow-wrap: anywhere; }
 @media (max-width: 560px) { .user-message-body { max-width: 94%; } .pie-readable-legend li { grid-template-columns: 8px minmax(0,1fr); } .pie-readable-legend strong { grid-column: 2; } }
-
-/* v1.4：修复轨迹默认收起，展开后仍以原因优先，SQL仅作审计核查。 */
-.repair-details { margin-top: 10px; border: 1px solid #e7ddd7; border-radius: 8px; background: #fbfaf8; color: var(--muted); font-size: 12px; }
-.repair-details > summary { padding: 10px 12px; color: #5f514c; cursor: pointer; }
-.repair-details > ol { display: grid; gap: 10px; margin: 0; padding: 0 12px 12px; list-style: none; }
-.repair-details > ol > li { padding-top: 10px; border-top: 1px solid #ebe4df; }
-.repair-details li > div { display: flex; justify-content: space-between; gap: 12px; color: #4f4541; }
-.repair-details li > div span { flex-shrink: 0; }
-.repair-details p { margin: 7px 0; line-height: 1.6; overflow-wrap: anywhere; }
-.repair-details details summary { width: fit-content; color: var(--accent); cursor: pointer; }
-.repair-details label { display: block; margin: 9px 0 4px; color: #6e625d; }
-.repair-details pre { max-height: 180px; margin: 0; padding: 10px; overflow: auto; border-radius: 6px; background: #f3efec; color: #403835; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* v1.5：agent式分步进度，进行中展开、结束折叠为一行摘要。 */
 .agent-steps { display: grid; gap: 2px; margin: 10px 0 2px; padding: 0; list-style: none; font-size: 12px; color: #6e625d; }

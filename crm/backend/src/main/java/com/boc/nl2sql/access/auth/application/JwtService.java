@@ -1,6 +1,7 @@
 package com.boc.nl2sql.access.auth.application;
 
 import com.boc.nl2sql.authorization.domain.CurrentUser;
+import com.boc.nl2sql.authorization.domain.BusinessDataScopeLevel;
 import com.boc.nl2sql.authorization.domain.RoleCode;
 import com.boc.nl2sql.common.exception.BusinessException;
 import org.springframework.beans.factory.annotation.Value;
@@ -48,9 +49,12 @@ public class JwtService {
         claims.put("username", user.username());
         claims.put("displayName", user.displayName());
         claims.put("role", user.role().name());
+        claims.put("businessScopeLevel", user.businessScopeLevel() == null ? null : user.businessScopeLevel().name());
         claims.put("regionCode", user.regionCode());
         claims.put("branchId", user.branchId());
         claims.put("managerId", user.managerId());
+        claims.put("availableRoles", user.availableRoles().stream().map(RoleCode::name).toList());
+        claims.put("employeeNo", user.employeeNo());
         claims.put("iat", Instant.now().getEpochSecond());
         claims.put("exp", Instant.now().plusSeconds(ttlSeconds).getEpochSecond());
         try {
@@ -79,14 +83,27 @@ public class JwtService {
             if (Instant.now().getEpochSecond() >= expiresAt) {
                 throw new BusinessException(401001, "登录状态已过期，请重新登录");
             }
+            Object rawAvailable = claims.get("availableRoles");
+            java.util.List<RoleCode> availableRoles = rawAvailable instanceof java.util.List<?> values
+                    ? values.stream().map(String::valueOf).map(RoleCode::valueOf).toList()
+                    : java.util.List.of(RoleCode.valueOf((String) claims.get("role")).normalized());
+            RoleCode tokenRole = RoleCode.valueOf((String) claims.get("role"));
+            String rawScope = (String) claims.get("businessScopeLevel");
+            // 兼容改造前仅在 role 中保存数据范围的 JWT，避免已登录的团队/机构负责人被错误降为客户经理范围。
+            BusinessDataScopeLevel scope = rawScope == null
+                    ? BusinessDataScopeLevel.fromLegacyRole(tokenRole)
+                    : BusinessDataScopeLevel.valueOf(rawScope);
             return new CurrentUser(
                     ((Number) claims.get("sub")).longValue(),
                     (String) claims.get("username"),
                     (String) claims.get("displayName"),
-                    RoleCode.valueOf((String) claims.get("role")),
+                    tokenRole,
+                    scope,
                     (String) claims.get("regionCode"),
                     (String) claims.get("branchId"),
-                    (String) claims.get("managerId"));
+                    (String) claims.get("managerId"),
+                    availableRoles,
+                    (String) claims.get("employeeNo"));
         } catch (BusinessException exception) {
             throw exception;
         } catch (Exception exception) {

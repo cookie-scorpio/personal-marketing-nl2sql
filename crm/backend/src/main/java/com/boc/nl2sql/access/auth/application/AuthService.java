@@ -6,6 +6,7 @@ import com.boc.nl2sql.access.auth.api.LoginResponse;
 import com.boc.nl2sql.authorization.domain.AccountStatus;
 import com.boc.nl2sql.authorization.domain.CurrentUser;
 import com.boc.nl2sql.authorization.domain.RoleCode;
+import com.boc.nl2sql.authorization.application.UserRoleGrantService;
 import com.boc.nl2sql.authorization.infrastructure.UserAccountEntity;
 import com.boc.nl2sql.authorization.infrastructure.UserAccountMapper;
 import com.boc.nl2sql.common.exception.BusinessException;
@@ -28,16 +29,18 @@ public class AuthService {
     private final JwtService jwtService;
     private final PasswordCipher passwordCipher;
     private final UsernamePolicy usernamePolicy;
+    private final UserRoleGrantService roleGrants;
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private QualityFacts qualityFacts;
 
     public AuthService(UserAccountMapper userAccountMapper, PasswordEncoder passwordEncoder, JwtService jwtService,
-                       PasswordCipher passwordCipher, UsernamePolicy usernamePolicy) {
+                       PasswordCipher passwordCipher, UsernamePolicy usernamePolicy, UserRoleGrantService roleGrants) {
         this.userAccountMapper = userAccountMapper;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.passwordCipher = passwordCipher;
         this.usernamePolicy = usernamePolicy;
+        this.roleGrants = roleGrants;
     }
 
     /** 解密一次性密码信封、校验账号状态，并在成功后签发访问令牌。 */
@@ -64,9 +67,22 @@ public class AuthService {
             access(QualityEventType.ACCESS_LOGIN_FAILED, account.getId(), username, "account disabled");
             throw new BusinessException(401001, "用户名或密码不正确");
         }
-        CurrentUser user = toCurrentUser(account);
+        CurrentUser user = roleGrants.currentUser(account, null);
         access(QualityEventType.ACCESS_LOGIN_SUCCEEDED, account.getId(), username, user.role().name());
         return new LoginResponse(jwtService.issue(user), "Bearer", jwtService.ttlSeconds(), user);
+    }
+
+    /** 根据已登录用户的服务端授权记录重新签发“当前身份”令牌。 */
+    public LoginResponse switchIdentity(CurrentUser current, RoleCode target) {
+        UserAccountEntity account = userAccountMapper.selectById(current.userId());
+        if (account == null || !Boolean.TRUE.equals(account.getEnabled())
+                || !AccountStatus.ACTIVE.name().equals(account.getAccountStatus())) {
+            throw new BusinessException(401001, "登录状态已失效，请重新登录");
+        }
+        CurrentUser switched = roleGrants.currentUser(account, target);
+        access(QualityEventType.ACCESS_LOGIN_SUCCEEDED, account.getId(), account.getUsername(),
+                "identity switched to " + switched.role().name());
+        return new LoginResponse(jwtService.issue(switched), "Bearer", jwtService.ttlSeconds(), switched);
     }
 
     private void access(QualityEventType type, Long userId, String username, String outcome) {

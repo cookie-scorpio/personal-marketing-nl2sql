@@ -90,14 +90,16 @@ svg { width: 1em; height: 1em; }
 .sidebar-note { flex-shrink: 0; margin: 12px 0; padding: 14px; border: 1px solid #45413f; border-radius: 10px; background: #302e2d; }
 .sidebar-note span { color: #9f9793; font-size: 10px; }
 .sidebar-note strong { display: block; margin-top: 5px; color: #f2edeb; font-size: 12px; }
-.sidebar-footer { flex-shrink: 0; margin-top: 0; padding-top: 10px; border-top: 1px solid #423e3c; }
-.user-card { display: flex; align-items: center; gap: 10px; margin-top: 7px; padding: 10px 8px 2px; }
+/* 身份信息与退出操作共用一条中心线；显式深色表面避免 button 的浏览器默认白底破坏侧栏层级。 */
+.sidebar-footer { flex-shrink: 0; display: grid; grid-template-columns: minmax(0, 1fr) 38px; align-items: center; gap: 8px; margin-top: 0; padding-top: 12px; border-top: 1px solid #423e3c; }
+.sidebar-footer > .el-dropdown { display: block; min-width: 0; width: 100%; }
+.user-card { width: 100%; min-width: 0; height: 52px; display: flex; align-items: center; gap: 10px; margin: 0; padding: 7px 9px; border: 1px solid #45413f; border-radius: 9px; background: #302e2d; }
 .user-card .el-avatar { background: #f0d6d7; color: #8d2028; font-weight: 700; }
 .user-card > div { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
-.user-card strong { color: #fff; font-size: 12px; }
-.user-card small { color: #9c9490; font-size: 10px; }
-.logout-button { width: 30px; height: 30px; display: grid; place-items: center; margin-left: auto; border: 0; border-radius: 7px; color: #aaa29e; background: transparent; cursor: pointer; }
-.logout-button:hover { color: #fff; background: #433e3c; }
+.user-card strong { overflow: hidden; color: #fff; font-size: 12px; white-space: nowrap; text-overflow: ellipsis; }
+.user-card small { overflow: hidden; color: #aaa19c; font-size: 10px; white-space: nowrap; text-overflow: ellipsis; }
+.logout-button { width: 38px; height: 38px; display: grid; place-items: center; margin: 0; border: 1px solid transparent; border-radius: 9px; color: #aaa29e; background: transparent; cursor: pointer; }
+.logout-button:hover { color: #fff; border-color: #4a4542; background: #3a3634; }
 
 .main-area { min-width: 0; margin-left: var(--sidebar-width); }
 .topbar { height: 72px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 0 30px; border-bottom: 1px solid var(--border); background: rgba(255,253,251,.96); }
@@ -389,4 +391,54 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 @media (max-width: 720px) {
   .resolved-customer-card { grid-template-columns: auto 1fr; }
   .resolved-customer-card > span:last-child { grid-column: 1 / -1; text-align: left; }
+}
+
+/* 多身份入口沿用原侧栏的信息密度：只在确有可切换身份时让头像成为可点击控件。 */
+.identity-switcher { width: 100%; color: inherit; cursor: pointer; text-align: left; }
+.identity-switcher > svg { width: 15px; height: 15px; margin-left: auto; color: #bcb4b0; }
+.identity-switcher:hover:not(:disabled) { border-color: #5a514d; background: #383432; }
+.identity-switcher:disabled { cursor: wait; opacity: .68; }
+.identity-switcher.is-switching > svg { animation: identity-pulse .9s ease-in-out infinite alternate; }
+@keyframes identity-pulse { to { opacity: .35; } }
+.sidebar-role-note { display: grid; gap: 7px; margin: 24px 10px; padding: 14px; border: 1px solid #4c4541; border-radius: 8px; color: #d9d3cf; }
+.sidebar-role-note strong { font-size: 13px; font-weight: 600; }
+.sidebar-role-note span { color: #aaa19c; font-size: 12px; line-height: 1.65; }
+.workspace-menu-button { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; margin: -5px -8px; border: 0; border-radius: 6px; color: inherit; background: transparent; cursor: pointer; }
+.workspace-menu-button h1 { margin: 0; }
+.workspace-menu-button svg { width: 15px; height: 15px; color: #817772; }
+.workspace-menu-button:hover { background: #f4f0ed; }
+
+/* 审计后台与权限管理均保持工作区的留白和细边框，不使用与问数页面竞争的强装饰。 */
+.role-workspace { display: block; padding: 28px; }
+.role-page { max-width: 1320px; min-height: calc(100vh - 136px); margin: 0 auto; padding: 30px; border: 1px solid var(--border); border-radius: 12px; background: #fff; }
+.role-page-head { padding-bottom: 24px; border-bottom: 1px solid var(--border); }
+.role-page-head .section-kicker { margin: 0 0 9px; }
+.role-page-head h2 { margin: 0; color: #302927; font-size: 24px; line-height: 1.35; }
+.role-page-head > p { margin: 8px 0 0; color: var(--muted); font-size: 13px; line-height: 1.7; }
+.empty-workspace { display: grid; place-items: center; align-content: center; min-height: 360px; margin-top: 26px; border: 1px dashed #d9d0cb; border-radius: 10px; color: #756d69; text-align: center; }
+.empty-workspace strong { color: #4c4340; font-size: 15px; font-weight: 600; }
+.empty-workspace span { margin-top: 8px; font-size: 13px; }
+.permission-page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+.permission-table-wrap { margin-top: 24px; overflow: hidden; border: 1px solid var(--border); border-radius: 9px; }
+.permission-table-wrap .el-table { --el-table-header-bg-color: #f7f5f2; --el-table-border-color: #eee8e4; font-size: 13px; }
+.role-summary { color: #5f5652; line-height: 1.55; }
+.account-status { display: inline-flex; padding: 3px 7px; border-radius: 10px; font-size: 12px; white-space: nowrap; }
+.account-status.active { color: #356047; background: #edf6ef; }
+.account-status.pending { color: #8b6425; background: #fff7e6; }
+.role-page-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 22px; padding: 12px 14px; border: 1px solid #e6b9bb; border-radius: 8px; color: #9b2831; background: #fdf4f4; font-size: 13px; }
+.permission-form { display: grid; gap: 20px; }
+.permission-form > label { display: grid; gap: 8px; color: #3e3734; font-size: 13px; font-weight: 600; }
+.permission-form .el-checkbox-group, .permission-form .el-radio-group { display: flex; flex-wrap: wrap; gap: 10px 16px; }
+.permission-form .el-checkbox, .permission-form .el-radio { margin-right: 0; color: #5f5652; font-weight: 400; }
+.permission-form .field-hint { margin: -8px 0 0; line-height: 1.6; }
+@media (max-width: 820px) {
+  .role-workspace { padding: 14px; }
+  .role-page { min-height: calc(100dvh - 100px); padding: 20px 16px; }
+  .permission-page-head { align-items: stretch; flex-direction: column; }
+  .permission-page-head > .el-button { align-self: flex-start; }
+}
+@media (max-width: 560px) {
+  .role-page-head h2 { font-size: 21px; }
+  .permission-form .el-checkbox-group, .permission-form .el-radio-group { display: grid; gap: 8px; }
+  .role-page-error { align-items: flex-start; flex-direction: column; }
 }

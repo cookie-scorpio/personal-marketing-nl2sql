@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { apiRequest, clearToken, getToken, setToken, TOKEN_KEY } from './api'
 import { encryptPassword } from './passwordCrypto'
-import type { CurrentUser, LoginResponse, RegistrationResponse } from './types'
+import type { CurrentUser, LoginResponse, RegistrationResponse, RoleCode } from './types'
 
 const user = ref<CurrentUser | null>(null)
 const restoring = ref(true)
@@ -17,11 +17,21 @@ async function login(username: string, password: string): Promise<void> {
   if (epoch !== revision) return
   setToken(result.access_token); user.value = result.user
 }
-async function register(displayName: string, username: string, password: string): Promise<RegistrationResponse> {
+async function register(employeeNo: string, username: string, password: string): Promise<RegistrationResponse> {
   const encryptedPassword = await encryptPassword(password)
   return apiRequest<RegistrationResponse>('/api/v1/auth/register', {
-    method: 'POST', body: JSON.stringify({ display_name: displayName, username, password: encryptedPassword }),
+    method: 'POST', body: JSON.stringify({ employee_no: employeeNo, username, password: encryptedPassword }),
   })
+}
+/** 服务端会复核目标身份是否真实获授，再返回携带该身份的新 JWT。 */
+async function switchIdentity(role: RoleCode): Promise<void> {
+  const epoch = ++revision
+  const result = await apiRequest<LoginResponse>('/api/v1/auth/switch-identity', {
+    method: 'POST', body: JSON.stringify({ role }),
+  })
+  if (epoch !== revision) return
+  setToken(result.access_token)
+  user.value = result.user
 }
 async function restore(): Promise<void> {
   const epoch = ++revision
@@ -43,5 +53,5 @@ window.addEventListener('nl2sql:unauthorized', () => {
   if (user.value) { user.value = null; restoring.value = true; void restore() }
 })
 export function useAuth() {
-  return { user, restoring, authenticated: computed(() => Boolean(user.value)), login, register, restore, logout }
+  return { user, restoring, authenticated: computed(() => Boolean(user.value)), login, register, switchIdentity, restore, logout }
 }

@@ -1,6 +1,6 @@
 # CRM 前端
 
-本目录是个金营销 NL2SQL 平台 v1.5 的 Vue 3 + TypeScript 工作台。界面以“智能问数”为主任务，用户登录后可以提交业务问题、补充缺失条件、定位客户、确认高范围查询并查看动态结果和历史记录。
+本目录是个金营销 NL2SQL 平台 v1.6 的 Vue 3 + TypeScript 工作台。界面以“智能问数”为主任务，客户经理和质量审计员登录后可以提交业务问题、补充缺失条件、定位客户、确认高范围查询并查看当前身份的动态结果和历史记录。
 
 ## 已实现功能
 
@@ -8,7 +8,9 @@
 - 用户消息时间、复制、编辑后重新发送；助手回复复制、互斥点赞/点踩和时间，刷新后评价保留。
 - 饼图按容器尺寸重绘，分类较多或窄屏时保留完整可换行图例。
 - SQL自动修复过程默认折叠显示，可展开核查触发原因、状态和修复前后SQL。
-- 三类数据库演示账号登录和JWT会话恢复。
+- 五位工号注册、待审批提示、三类可授权身份、后端复核的身份切换和JWT会话恢复。
+- 质量审计员可在顶栏切换“智能问数 / 后台管理”；客户经理与审计员会话按当前身份分别加载。
+- 身份切换销毁旧身份的SSE、草稿和组件状态，在当前页面重建工作区，不触发浏览器整页跳转。
 - 客户筛选、交易分析、产品持有和营销活动示例问题。
 - 连续对话、发送清空输入、SSE真实阶段、断线续传与状态恢复。
 - 默认开启的思考开关、客户候选选择、持久化会话历史和连续追问。
@@ -33,29 +35,33 @@
 ```text
 src/
 ├── main.ts                              Element Plus与Vue启动入口
-├── App.vue                              登录后布局、导航、用户和数据范围
+├── App.vue                              登录后布局、工作区导航、身份切换和组件刷新
 ├── app/
 │   ├── api.ts                           统一请求、JWT、幂等键和错误处理
-│   ├── auth.ts                          登录状态与会话恢复
+│   ├── auth.ts                          登录状态、身份切换与会话恢复
 │   ├── types.ts                         后端接口类型
 │   └── styles.css                       红色点缀的界面规则与响应式样式
 └── features/
-    ├── auth/LoginPage.vue               数据库账号登录页
+    ├── auth/LoginPage.vue               登录、工号注册和待审批提示
     ├── conversation/ConversationWorkspace.vue  NL2SQL完整交互主链路
     ├── conversation/ResultChart.vue            ECharts图表与尺寸适配
-    └── conversation/QueryResultView.vue        指标、多图、明细和SQL依据
+    ├── conversation/QueryResultView.vue        指标、多图、明细和SQL依据
+    ├── quality/QualityAdminPage.vue            质量审计后台扩展页
+    └── permission/PermissionManagementPage.vue 账号身份与业务范围授权页
 ```
 
 根目录文件中，`package.json`保存依赖和命令，`vite.config.ts`配置开发代理，`tsconfig.json`启用TypeScript严格模式，`.env.example`提供后端路径模板。
 
-v1.5需配套同版本后端。默认代理到8080；后端更换端口时，在`.env.development.local`中设置`API_PROXY_TARGET=http://127.0.0.1:18080`并重启Vite。配置仅影响开发代理，不改变生产环境。完整协议见[实施说明](../../docs/v1.5实施说明与接口数据字典.md)。
+v1.6需配套同版本后端。默认代理到8080；后端更换端口时，在`.env.development.local`中设置`API_PROXY_TARGET=http://127.0.0.1:18080`并重启Vite。配置仅影响开发代理，不改变生产环境。完整协议见[实施说明](../../docs/v1.6实施说明与接口数据字典.md)。
 
 ## 页面调用链路
 
 ```text
 LoginPage
   → POST /api/v1/auth/login
-  → App保存JWT并显示用户数据范围
+  → App保存JWT并显示当前身份和数据范围
+  → 可选：POST /api/v1/auth/switch-identity，由后端复核目标身份并重签JWT
+  → 组件按user_id + role重建；会话历史按当前身份重新读取
   → ConversationWorkspace提交问题
   → POST /api/v1/queries
   → 订阅GET /api/v1/queries/{taskId}/events，异常时读取status恢复
@@ -92,7 +98,7 @@ npm run preview
 
 构建结果输出到`dist/`。Vue、Element Plus、ECharts与业务代码独立分包；Element Plus仍采用完整组件注册，后续可改为按需导入优化体积。
 
-`npm test`使用Node内置测试框架，覆盖旧结果归一化、复制文本以及旧账号迟到200/401响应隔离；不调用模型。消息评价接口需配套已应用V8的后端。编辑会新增查询并保留原文，不直接修改历史记录。
+`npm test`使用Node内置测试框架，覆盖旧结果归一化、复制文本、旧账号迟到200/401响应隔离，以及审计身份工作区和无整页刷新的切换规则；不调用模型。消息评价接口需配套已应用V8的后端。编辑会新增查询并保留原文，不直接修改历史记录。
 
 ## 配置
 
@@ -104,10 +110,10 @@ npm run preview
 
 ## 注意事项
 
-- 侧栏展示当前用户范围；不展示静态伪造的经营指标，查询结果来自后端和MySQL。
+- 侧栏展示当前身份范围；质量审计员显示全部在册客户，客户经理显示经理、机构或区域范围。页面不展示静态伪造的经营指标，查询结果来自后端和MySQL。
 - 新建会话不继承旧上下文，也不会自动取消其他会话的后台任务；可从会话历史返回。
 - 尚未发送问题的新会话不写入历史。需要清理测试会话、重建一致的业务数据并恢复演示问题时，使用 `python scripts/mock-data/generate_data.py --reset --reset-runtime --seed-demo-sessions`。
 - JWT保存在浏览器本地存储，适用于当前模拟数据演示；生产环境需结合统一认证和更严格的令牌策略。
 - SQL仅可预览和复制，不可编辑或直接提交执行。规则SQL不展开绑定参数，模型生成SQL可能包含字面量条件。
 
-数据字典、完整API示例及未实现项见 [v1.5实施说明](../../docs/v1.5实施说明与接口数据字典.md)。
+数据字典、完整API示例及未实现项见 [v1.6实施说明](../../docs/v1.6实施说明与接口数据字典.md)。

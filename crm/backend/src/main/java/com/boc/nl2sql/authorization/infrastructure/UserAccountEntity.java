@@ -12,6 +12,7 @@ public class UserAccountEntity {
     @TableId(type = IdType.AUTO)
     private Long id;
     private String username;
+    private String employeeNo;
     private String passwordHash;
     private String displayName;
     private String roleCode;
@@ -26,6 +27,8 @@ public class UserAccountEntity {
     public void setId(Long id) { this.id = id; }
     public String getUsername() { return username; }
     public void setUsername(String username) { this.username = username; }
+    public String getEmployeeNo() { return employeeNo; }
+    public void setEmployeeNo(String employeeNo) { this.employeeNo = employeeNo; }
     public String getPasswordHash() { return passwordHash; }
     public void setPasswordHash(String passwordHash) { this.passwordHash = passwordHash; }
     public String getDisplayName() { return displayName; }

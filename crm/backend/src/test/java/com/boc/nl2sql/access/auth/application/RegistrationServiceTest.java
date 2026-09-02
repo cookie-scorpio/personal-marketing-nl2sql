@@ -26,14 +26,16 @@ class RegistrationServiceTest {
             @Override public PublicKeyInfo publicKey() { return new PublicKeyInfo("key", "RSA-OAEP-256", "public"); }
             @Override public String decrypt(String keyId, String encryptedPassword) { return "Valid@123"; }
         };
-        RegistrationService service = new RegistrationService(accounts, encoder, cipher, new PasswordPolicy(), new UsernamePolicy());
+        RegistrationService service = new RegistrationService(accounts, encoder, cipher, new PasswordPolicy(), new UsernamePolicy(), new EmployeeNoPolicy());
 
-        var result = service.register(new RegistrationRequest("张三", "newuser01", new EncryptedPasswordRequest("key", "ciphertext")));
+        var result = service.register(new RegistrationRequest("12345", "newuser01", new EncryptedPasswordRequest("key", "ciphertext")));
 
         ArgumentCaptor<UserAccountEntity> account = ArgumentCaptor.forClass(UserAccountEntity.class);
         verify(accounts).insert(account.capture());
         assertEquals("PENDING", result.accountStatus());
         assertEquals("newuser01", account.getValue().getUsername());
+        assertEquals("12345", account.getValue().getEmployeeNo());
+        assertEquals("工号12345", account.getValue().getDisplayName());
         assertEquals("PENDING", account.getValue().getAccountStatus());
         assertEquals(false, account.getValue().getEnabled());
         assertEquals(null, account.getValue().getRoleCode());

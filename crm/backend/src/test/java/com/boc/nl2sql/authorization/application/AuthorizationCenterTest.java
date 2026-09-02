@@ -21,8 +21,17 @@ class AuthorizationCenterTest {
     }
 
     @Test
-    void qualityAdministratorHasNoBusinessDataScope() {
+    void qualityAuditorUsesAnExplicitAllActiveCustomerScope() {
         var qualityAdmin = new CurrentUser(9L,"quality01","质量管理员",RoleCode.QUALITY_ADMIN,null,null,null);
-        assertThrows(BusinessException.class,()->authorization.customerScope(qualityAdmin));
+        var scope = authorization.customerScope(qualityAdmin);
+        org.junit.jupiter.api.Assertions.assertEquals("status_code", scope.column());
+        org.junit.jupiter.api.Assertions.assertEquals("ACTIVE", scope.value());
+        assertDoesNotThrow(() -> authorization.requireBusinessDataAccess(qualityAdmin));
+    }
+
+    @Test
+    void permissionAdministratorStillHasNoQueryScope() {
+        var permissionAdmin = new CurrentUser(10L,"admin01","权限管理员",RoleCode.PERMISSION_ADMIN,null,null,null);
+        assertThrows(BusinessException.class,()->authorization.customerScope(permissionAdmin));
     }
 }

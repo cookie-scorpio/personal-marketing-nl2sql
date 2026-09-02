@@ -49,6 +49,15 @@ const running = computed(() => sending.value || (active.value && !waiting.has(ta
 const canSend = computed(() => !!draft.value.trim() && !navigationBusy.value && (!active.value || task.value?.status === 'ASKING'))
 const examples = ['帮我查找一下李先生的资产信息', '统计近30天各机构客户交易金额', '按月展示今年客户交易金额趋势', '比较本季度不同渠道的营销转化率']
 const phaseLabels: Record<string, string> = { RECEIVED: '请求已接收', INTENT_ANALYZING: '理解问题与确认查询对象', SQL_GENERATING: '生成查询计划', VALIDATING: '校验 SQL 与数据权限', EXECUTING: '执行 MySQL 查询', RESULT_REVIEWING: '复核结果结构', REPAIRING: '修复查询 SQL', FALLING_BACK: '匹配受控模板', PACKAGING: '整理图表与分析', SUCCESS: '查询完成', ASKING: '等待补充', CONFIRMING: '等待执行确认', FAILED: '查询未完成', CANCELLED: '查询已取消', TIMED_OUT: 'SQL 执行超时', DEGRADED: '降级处理结束' }
+/**
+ * 审计员与客户经理共用问数组件，但问候语应表达当前身份，不能把缺少业务范围等级的
+ * 审计身份错误回退成“经理”。客户经理身份再依据后端签发的三级范围展示准确称谓。
+ */
+const identitySuffix = computed(() => user.value?.role === 'QUALITY_AUDITOR'
+  ? '质量审计员'
+  : ({ CUSTOMER_MANAGER: '经理', TEAM_LEAD: '团队负责人', ORG_MANAGER: '机构负责人' }[
+      user.value?.business_scope_level || 'CUSTOMER_MANAGER'
+    ]))
 
 function disconnect() { generation++; controller?.abort(); controller = null }
 async function scroll(force = false) { await nextTick(); const host = listHost.value; if (host && (force || host.scrollHeight - host.scrollTop - host.clientHeight < 240)) host.scrollTo({ top: host.scrollHeight, behavior: 'auto' }) }
@@ -251,7 +260,7 @@ onUnmounted(() => { destroyed = true; disconnect() })
 
 <template>
   <section class="conversation-card agent-workspace">
-    <header class="conversation-head"><div><p class="section-kicker"><ChatDotRound /> 智能查询助手</p><h2>把问题说清，让数据回答</h2><p>您好！{{ user?.display_name }}经理</p></div></header>
+    <header class="conversation-head"><div><p class="section-kicker"><ChatDotRound /> 智能查询助手</p><h2>把问题说清，让数据回答</h2><p>您好！{{ user?.display_name }}{{ identitySuffix }}</p></div></header>
     <div class="chat-reading-area">
     <MessageNavigator :messages="messages" :session-id="sessionId" :host="listHost" :has-more="hasMore" :load-older="() => openSession(sessionId, true)" />
     <div ref="listHost" class="chat-messages" :aria-busy="loading">

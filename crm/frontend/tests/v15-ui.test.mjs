@@ -45,3 +45,20 @@ test('唯一客户显示只读卡片且用户气泡不由前端脱敏', async ()
   assert.match(styles, /\.resolved-customer-card/)
   assert.match(workspace, /userMessage\(pending\.display \|\| pending\.text\)/)
 })
+
+test('审计身份保留智能问数并以组件重建代替整页刷新', async () => {
+  const app = await readFile(new URL('../src/App.vue', import.meta.url), 'utf8')
+  const workspace = await readFile(new URL('../src/features/conversation/ConversationWorkspace.vue', import.meta.url), 'utf8')
+  const styles = await readFile(new URL('../src/app/styles.css', import.meta.url), 'utf8')
+  // 审计员拥有问数和后台两个工作区；身份切换不能再调用浏览器整页刷新。
+  assert.match(app, /role === 'CUSTOMER_MANAGER' \|\| user\.value\?\.role === 'QUALITY_AUDITOR'/)
+  assert.match(app, /\{ value: 'query' as const, label: '智能问数' \}/)
+  assert.match(app, /\{ value: 'quality' as const, label: '后台管理' \}/)
+  assert.doesNotMatch(app, /window\.location\.reload/)
+  // 会话组件和历史侧栏的 key 都包含当前身份，防止切换后继续展示旧身份内存状态。
+  assert.match(app, /:key="`\$\{user\?\.user_id\}-\$\{user\?\.role\}`"/)
+  assert.match(workspace, /user\.value\?\.role === 'QUALITY_AUDITOR'/)
+  // 身份卡与退出按钮由同一网格行对齐，身份控件显式使用深色背景，避免浏览器默认白底。
+  assert.match(styles, /\.sidebar-footer \{[^}]*grid-template-columns:/)
+  assert.match(styles, /\.user-card \{[^}]*background: #302e2d;/)
+})

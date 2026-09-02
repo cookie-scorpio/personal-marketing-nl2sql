@@ -19,6 +19,15 @@ public class AuthorizationCenter {
     }
 
     public CurrentUser requireAuthenticated(CurrentUser user) {
+        if (user == null || user.userId() == null || user.role() == null) {
+            throw new BusinessException(401001, "请先登录后再访问");
+        }
+        return user;
+    }
+
+    /** 业务问数、客户检索等入口只接受客户经理或质量审计身份，不能只依赖前端隐藏按钮。 */
+    public CurrentUser requireBusinessDataAccess(CurrentUser user) {
+        requireAuthenticated(user);
         DataScopePolicy.scopeOf(user);
         return user;
     }

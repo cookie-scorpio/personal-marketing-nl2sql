@@ -22,21 +22,23 @@ public class RegistrationService {
     private final PasswordCipher passwordCipher;
     private final PasswordPolicy passwordPolicy;
     private final UsernamePolicy usernamePolicy;
+    private final EmployeeNoPolicy employeeNoPolicy;
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private QualityFacts qualityFacts;
 
     public RegistrationService(UserAccountMapper accounts, PasswordEncoder passwordEncoder, PasswordCipher passwordCipher,
-                               PasswordPolicy passwordPolicy, UsernamePolicy usernamePolicy) {
+                               PasswordPolicy passwordPolicy, UsernamePolicy usernamePolicy, EmployeeNoPolicy employeeNoPolicy) {
         this.accounts = accounts;
         this.passwordEncoder = passwordEncoder;
         this.passwordCipher = passwordCipher;
         this.passwordPolicy = passwordPolicy;
         this.usernamePolicy = usernamePolicy;
+        this.employeeNoPolicy = employeeNoPolicy;
     }
 
     public RegistrationResponse register(RegistrationRequest request) {
         String username = usernamePolicy.normalizeAndValidate(request.username());
-        String displayName = validateDisplayName(request.displayName());
+        String employeeNo = employeeNoPolicy.normalizeAndValidate(request.employeeNo());
         if (request.password() == null) {
             throw new BusinessException(400013, "请提供加密后的密码");
         }
@@ -48,10 +50,16 @@ public class RegistrationService {
                 .eq(UserAccountEntity::getUsername, username)) > 0) {
             throw usernameAlreadyUsed();
         }
+        if (accounts.selectCount(Wrappers.<UserAccountEntity>lambdaQuery()
+                .eq(UserAccountEntity::getEmployeeNo, employeeNo)) > 0) {
+            throw employeeNoAlreadyUsed();
+        }
 
         UserAccountEntity account = new UserAccountEntity();
         account.setUsername(username);
-        account.setDisplayName(displayName);
+        account.setEmployeeNo(employeeNo);
+        // 注册页不再采集姓名；待授权前用工号生成中性展示名，避免错误显示未经核验的个人信息。
+        account.setDisplayName("工号" + employeeNo);
         account.setPasswordHash(passwordEncoder.encode(password));
         account.setEnabled(false);
         account.setAccountStatus(AccountStatus.PENDING.name());
@@ -59,27 +67,23 @@ public class RegistrationService {
         try {
             accounts.insert(account);
         } catch (DuplicateKeyException exception) {
-            throw usernameAlreadyUsed();
+            // 唯一索引同时保护用户名与工号；为注册者提供可修复的统一提示。
+            throw new BusinessException(409010, "用户名或工号已被使用，请更换后重试");
         }
         if (qualityFacts != null) qualityFacts.publish(QualityFact.builder(
                         QualityEventType.ACCESS_REGISTRATION_SUBMITTED, "ACCESS")
                 .requestId(org.slf4j.MDC.get("requestId")).summary("registration pending")
-                .detail("username", username).detail("display_name", displayName)
+                .detail("username", username).detail("employee_no", employeeNo)
                 .detail("account_status", AccountStatus.PENDING.name()).build());
-        return new RegistrationResponse(username, displayName, AccountStatus.PENDING.name(),
+        return new RegistrationResponse(username, employeeNo, AccountStatus.PENDING.name(),
                 "注册申请已提交，账号待审批，暂不可登录");
-    }
-
-    private String validateDisplayName(String value) {
-        String displayName = value == null ? "" : value.trim();
-        if (displayName.length() < 2 || displayName.length() > 64
-                || displayName.codePoints().anyMatch(Character::isISOControl)) {
-            throw new BusinessException(400014, "姓名需为2至64个非控制字符");
-        }
-        return displayName;
     }
 
     private BusinessException usernameAlreadyUsed() {
         return new BusinessException(409010, "用户名已被使用，请更换后重试");
+    }
+
+    private BusinessException employeeNoAlreadyUsed() {
+        return new BusinessException(409011, "工号已被使用，请核对后重试");
     }
 }

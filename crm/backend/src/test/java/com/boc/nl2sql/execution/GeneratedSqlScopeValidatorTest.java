@@ -13,6 +13,8 @@ class GeneratedSqlScopeValidatorTest {
     private final GeneratedSqlScopeValidator validator = new GeneratedSqlScopeValidator();
     private final CurrentUser manager = new CurrentUser(1L, "manager01", "演示经理",
             RoleCode.CUSTOMER_MANAGER, "EAST", "B001", "M0001");
+    private final CurrentUser auditor = new CurrentUser(9L, "quality01", "质量审计员",
+            RoleCode.QUALITY_AUDITOR, null, null, null);
 
     @Test
     void checksServerAssignedScopeInModelSql() {
@@ -21,6 +23,16 @@ class GeneratedSqlScopeValidatorTest {
                 .doesNotThrowAnyException();
         assertThatThrownBy(() -> validator.validate(
                 "SELECT age_band_code FROM dim_customer c WHERE c.branch_id = 'B001' LIMIT 100", manager))
+                .isInstanceOf(BusinessException.class);
+    }
+
+    @Test
+    void qualityAuditorMustKeepTheAllActiveCustomerPredicate() {
+        assertThatCode(() -> validator.validate(
+                "SELECT c.customer_id FROM dim_customer c WHERE c.status_code = 'ACTIVE' LIMIT 100", auditor))
+                .doesNotThrowAnyException();
+        assertThatThrownBy(() -> validator.validate(
+                "SELECT c.customer_id FROM dim_customer c LIMIT 100", auditor))
                 .isInstanceOf(BusinessException.class);
     }
     @org.junit.jupiter.params.ParameterizedTest

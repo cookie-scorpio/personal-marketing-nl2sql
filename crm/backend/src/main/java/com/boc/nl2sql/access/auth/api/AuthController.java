@@ -49,4 +49,12 @@ public class AuthController {
     public ApiResponse<CurrentUser> me(@AuthenticationPrincipal CurrentUser user, HttpServletRequest request) {
         return ApiResponse.success(user, WebRequestSupport.requestId(request));
     }
+
+    /** 切换身份后返回新的短期令牌，前端刷新工作区以清除上一身份的暂存状态。 */
+    @PostMapping("/switch-identity")
+    public ApiResponse<LoginResponse> switchIdentity(@Valid @RequestBody SwitchIdentityRequest body,
+                                                      @AuthenticationPrincipal CurrentUser user,
+                                                      HttpServletRequest request) {
+        return ApiResponse.success(authService.switchIdentity(user, body.role()), WebRequestSupport.requestId(request));
+    }
 }

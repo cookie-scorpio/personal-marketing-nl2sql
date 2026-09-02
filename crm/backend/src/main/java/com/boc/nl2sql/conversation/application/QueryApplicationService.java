@@ -77,7 +77,7 @@ public class QueryApplicationService {
      * 在“用户 + Idempotency-Key”范围内创建一次查询；相同请求重放原任务，不同载荷复用同一键会被拒绝。
      */
     public SubmitQueryResponse submit(SubmitQueryRequest request, CurrentUser user, String requestId,String key) {
-        authorization.requireAuthenticated(user);
+        authorization.requireBusinessDataAccess(user);
         if(key==null||!key.matches("[A-Za-z0-9._:-]{8,128}"))throw new BusinessException(400004,"请提供8至128位有效 Idempotency-Key");
         QueryPage page=page(request);
         java.util.List<Object> fingerprintParts=new java.util.ArrayList<>(java.util.List.of(request.sessionId(),request.queryText().trim(),request.preferredDisplay()==null?"AUTO":request.preferredDisplay(),request.thinkingEnabled()==null||request.thinkingEnabled()));

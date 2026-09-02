@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
-  title: 个金营销 NL2SQL v1.5 API
-  version: 1.5.0
-  description: Vue工作台与Spring Boot模块化单体之间的接口契约。所有业务数据均为模拟数据。
+  title: 个金营销 NL2SQL v1.6 API
+  version: 1.6.0
+  description: Vue工作台与Spring Boot后端之间的接口契约。支持多身份授权、身份切换和按身份隔离的会话；所有业务数据均为模拟数据。
 servers:
   - url: http://127.0.0.1:8080
 paths:
@@ -55,7 +55,7 @@ paths:
   /api/v1/auth/register:
     post:
       summary: 提交待审批注册申请
-      description: 只接收姓名、用户名和 RSA 加密密码。不允许传入角色、区域、网点或客户经理范围。
+      description: 只接收唯一五位工号、用户名和 RSA 加密密码。注册账号保持待审批，角色和数据范围只能由权限管理员分配。
       security: []
       requestBody:
         required: true
@@ -68,8 +68,8 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ApiResponse" }
-        "400": { description: 用户名、姓名、密码或加密信封不符合规则 }
-        "409": { description: 用户名已存在 }
+        "400": { description: 用户名、工号、密码或加密信封不符合规则 }
+        "409": { description: 用户名或工号已存在 }
   /api/v1/auth/me:
     get:
       summary: 获取当前登录用户和数据范围
@@ -79,10 +79,59 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ApiResponse" }
+  /api/v1/auth/switch-identity:
+    post:
+      summary: 切换当前身份并签发新令牌
+      description: 目标身份必须已由权限管理员授予；服务端重新读取授权记录，不信任前端声称的数据范围。客户端替换JWT后应销毁上一身份的请求和暂存，并在当前页面重建工作区。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SwitchIdentityRequest" }
+      responses:
+        "200":
+          description: 已切换身份
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiResponse" }
+        "403": { description: 未获授目标身份 }
+  /api/v1/permission-admin/accounts:
+    get:
+      summary: 查看账号及当前授权
+      description: 仅当前身份为权限管理员的账号可访问；不返回密码哈希或令牌。
+      responses:
+        "200":
+          description: 账号授权清单
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiResponse" }
+        "403": { description: 当前身份无权管理权限 }
+  /api/v1/permission-admin/accounts/{accountId}/permissions:
+    put:
+      summary: 覆盖账号角色与客户经理数据范围
+      description: 至少授予一种身份；客户经理类还必须提供三级业务数据范围及对应组织字段。
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PermissionAssignmentRequest" }
+      responses:
+        "200":
+          description: 授权已保存并启用账号
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiResponse" }
+        "400": { description: 角色或数据范围配置不完整 }
+        "403": { description: 当前身份无权管理权限 }
   /api/v1/queries:
     post:
       summary: 提交自然语言查询任务
-      description: 同用户同键同内容复用任务；更换内容须用新键。每个会话同时只允许一个未结束任务。
+      description: 客户经理和质量审计员当前身份可访问。客户经理使用授权的三级范围；质量审计员强制限定全部在册客户。权限管理员不可访问。同用户、同当前身份、同键、同内容复用任务；更换内容须用新键。每个会话同时只允许一个未结束任务。
       parameters:
         - name: Idempotency-Key
           in: header
@@ -121,6 +170,7 @@ paths:
   /api/v1/conversations:
     get:
       summary: 本人持久化会话列表
+      description: 按当前用户和JWT中的当前身份共同筛选；同一账号的客户经理会话与质量审计员会话互不可见。
       parameters:
         - { name: page_no, in: query, schema: { type: integer, minimum: 1, default: 1 } }
         - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 30 } }
@@ -354,11 +404,29 @@ components:
         encrypted_password: { type: string, maxLength: 8192, description: RSA-OAEP-256 密文的 Base64 编码 }
     RegistrationRequest:
       type: object
-      required: [display_name, username, password]
+      required: [employee_no, username, password]
       properties:
-        display_name: { type: string, minLength: 2, maxLength: 64 }
+        employee_no: { type: string, pattern: '^[0-9]{5}$', description: 唯一五位阿拉伯数字工号 }
         username: { type: string, minLength: 4, maxLength: 64, pattern: '^[a-z]+[0-9]+$' }
         password: { $ref: "#/components/schemas/EncryptedPassword" }
+    SwitchIdentityRequest:
+      type: object
+      required: [role]
+      properties:
+        role: { type: string, enum: [CUSTOMER_MANAGER, QUALITY_AUDITOR, PERMISSION_ADMIN] }
+    PermissionAssignmentRequest:
+      type: object
+      required: [roles]
+      properties:
+        roles:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string, enum: [CUSTOMER_MANAGER, QUALITY_AUDITOR, PERMISSION_ADMIN] }
+        business_scope_level: { type: string, enum: [CUSTOMER_MANAGER, TEAM_LEAD, ORG_MANAGER], description: 仅客户经理类必填 }
+        region_code: { type: string, maxLength: 32, description: 客户经理类必填 }
+        branch_id: { type: string, maxLength: 32, description: 客户经理或团队负责人必填 }
+        manager_id: { type: string, maxLength: 32, description: 客户经理必填 }
     ApiResponse:
       type: object
       required: [code, message, request_id]

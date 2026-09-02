@@ -1,12 +1,17 @@
 /** 前端消费的后端 API 契约；字段名保持服务端 JSON 的 snake_case。 */
-export type RoleCode = 'CUSTOMER_MANAGER' | 'TEAM_LEAD' | 'ORG_MANAGER'
+/** 可被后端正式授予的三类身份。三级业务数据范围另由 business_scope_level 表达。 */
+export type RoleCode = 'CUSTOMER_MANAGER' | 'QUALITY_AUDITOR' | 'PERMISSION_ADMIN'
+export type BusinessScopeLevel = 'CUSTOMER_MANAGER' | 'TEAM_LEAD' | 'ORG_MANAGER'
 
 export interface CurrentUser {
   user_id: number
   username: string
   display_name: string
   role: RoleCode
-  region_code: string
+  business_scope_level?: BusinessScopeLevel
+  available_roles: RoleCode[]
+  employee_no?: string
+  region_code?: string
   branch_id?: string
   manager_id?: string
 }
@@ -31,9 +36,28 @@ export interface PasswordPublicKey {
 
 export interface RegistrationResponse {
   username: string
-  display_name: string
+  employee_no: string
   account_status: 'PENDING'
   message: string
+}
+
+export interface RoleGrant {
+  role: RoleCode
+  business_scope_level?: BusinessScopeLevel
+}
+
+/** 权限管理页的账号摘要；密码哈希和令牌绝不会被该接口返回。 */
+export interface PermissionAdminAccount {
+  user_id: number
+  employee_no?: string
+  username: string
+  display_name: string
+  account_status: 'PENDING' | 'ACTIVE' | string
+  enabled: boolean
+  roles: RoleGrant[]
+  region_code?: string
+  branch_id?: string
+  manager_id?: string
 }
 
 export interface ClarificationQuestion {

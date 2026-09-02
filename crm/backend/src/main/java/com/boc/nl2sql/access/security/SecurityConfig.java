@@ -58,13 +58,19 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/api/v1/auth/login", "/api/v1/auth/register", "/api/v1/auth/public-key",
                                 "/actuator/health").permitAll()
-                        .requestMatchers("/api/v1/auth/me").authenticated()
-                        .requestMatchers("/api/v1/quality/**", "/actuator/metrics/**").hasRole("QUALITY_ADMIN")
+                        .requestMatchers("/api/v1/auth/me", "/api/v1/auth/switch-identity").authenticated()
+                        .requestMatchers("/api/v1/quality/**", "/actuator/metrics/**").hasAnyRole("QUALITY_AUDITOR", "QUALITY_ADMIN")
+                        .requestMatchers("/api/v1/permission-admin/**").hasRole("PERMISSION_ADMIN")
                         .requestMatchers("/api/v1/**").access((authentication, context) -> {
                             var current = authentication.get();
-                            boolean qualityOnly = current.getAuthorities().stream()
-                                    .anyMatch(authority -> "ROLE_QUALITY_ADMIN".equals(authority.getAuthority()));
-                            return new AuthorizationDecision(current.isAuthenticated() && !qualityOnly);
+                            // 质量审计员与客户经理都可进入问数接口；后续业务层仍会强制追加各自的数据范围。
+                            boolean queryIdentity = current.getAuthorities().stream().anyMatch(authority ->
+                                    "ROLE_CUSTOMER_MANAGER".equals(authority.getAuthority())
+                                            || "ROLE_TEAM_LEAD".equals(authority.getAuthority())
+                                            || "ROLE_ORG_MANAGER".equals(authority.getAuthority())
+                                            || "ROLE_QUALITY_AUDITOR".equals(authority.getAuthority())
+                                            || "ROLE_QUALITY_ADMIN".equals(authority.getAuthority()));
+                            return new AuthorizationDecision(current.isAuthenticated() && queryIdentity);
                         })
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
@@ -80,7 +86,7 @@ public class SecurityConfig {
     CorsConfigurationSource corsConfigurationSource(@org.springframework.beans.factory.annotation.Value("${app.security.allowed-origins:http://localhost:5173,http://127.0.0.1:5173}") String origins) {
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOrigins(java.util.Arrays.stream(origins.split(",")).map(String::trim).toList());
-        configuration.setAllowedMethods(List.of("GET", "POST", "DELETE", "OPTIONS"));
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "Idempotency-Key", "X-Request-ID", "Last-Event-ID"));
         configuration.setExposedHeaders(List.of("X-Request-ID"));
         configuration.setAllowCredentials(true);

@@ -41,22 +41,26 @@ public class ConversationStore {
     }
     public Map<String,Object> lock(String sessionId,CurrentUser user,String title){
         // ON DUPLICATE KEY取得写锁，避免INSERT IGNORE的共享锁随后升级而产生并发死锁。
-        jdbc.update("INSERT INTO conversation_session(session_id,user_id,title,created_at,updated_at) VALUES(?,?,?,NOW(3),NOW(3)) ON DUPLICATE KEY UPDATE session_id=VALUES(session_id)",sessionId,user.userId(),title.substring(0,Math.min(160,title.length())));
+        jdbc.update("INSERT INTO conversation_session(session_id,user_id,identity_role_code,title,created_at,updated_at) VALUES(?,?,?,?,NOW(3),NOW(3)) ON DUPLICATE KEY UPDATE session_id=VALUES(session_id)",
+                sessionId,user.userId(),user.role().normalized().name(),title.substring(0,Math.min(160,title.length())));
         var rows=jdbc.queryForList("SELECT * FROM conversation_session WHERE session_id=? FOR UPDATE",sessionId);
         if(rows.isEmpty() || rows.get(0).get("deleted_at")!=null)throw new BusinessException(404001,"会话不存在");
         authorization.requireOwner(user, ((Number) rows.get(0).get("user_id")).longValue(), "会话不存在");
+        requireIdentity(user, rows.get(0));
         return rows.get(0);
     }
     public void own(String id,CurrentUser user){
-        var rows = jdbc.queryForList("SELECT user_id FROM conversation_session WHERE session_id=? AND deleted_at IS NULL", id);
+        var rows = jdbc.queryForList("SELECT user_id,identity_role_code FROM conversation_session WHERE session_id=? AND deleted_at IS NULL", id);
         if (rows.isEmpty()) throw new BusinessException(404001, "会话不存在");
         authorization.requireOwner(user, ((Number) rows.get(0).get("user_id")).longValue(), "会话不存在");
+        requireIdentity(user, rows.get(0));
     }
     public void lockTask(QueryTaskEntity task){jdbc.queryForList("SELECT session_id FROM conversation_session WHERE session_id=? AND user_id=? FOR UPDATE",task.getSessionId(),task.getUserId());}
     public List<Map<String,Object>> list(CurrentUser user,int page,int size){
         authorization.requireAuthenticated(user);
         if(page<1||size<1||size>100)throw new BusinessException(400001,"分页参数不正确");
-        return jdbc.queryForList("SELECT session_id,title,active_task_id,state_version,created_at,updated_at FROM conversation_session WHERE user_id=? AND deleted_at IS NULL ORDER BY created_at DESC,session_id DESC LIMIT ? OFFSET ?",user.userId(),size,(long)(page-1)*size);
+        return jdbc.queryForList("SELECT session_id,title,active_task_id,state_version,created_at,updated_at FROM conversation_session WHERE user_id=? AND identity_role_code=? AND deleted_at IS NULL ORDER BY created_at DESC,session_id DESC LIMIT ? OFFSET ?",
+                user.userId(),user.role().normalized().name(),size,(long)(page-1)*size);
     }
     /** 批量校验客户编号是否在用户数据范围内，并分别返回授权内与授权外集合。 */
     public record IdScope(java.util.Set<String> inScope, java.util.Set<String> outOfScope) {}
@@ -112,9 +116,10 @@ public class ConversationStore {
     }
     @org.springframework.transaction.annotation.Transactional
     public void delete(String id,CurrentUser user,String requestId){
-        var rows=jdbc.queryForList("SELECT user_id,active_task_id,deleted_at FROM conversation_session WHERE session_id=? FOR UPDATE",id);
+        var rows=jdbc.queryForList("SELECT user_id,identity_role_code,active_task_id,deleted_at FROM conversation_session WHERE session_id=? FOR UPDATE",id);
         if(rows.isEmpty())throw new BusinessException(404001,"会话不存在");
         authorization.requireOwner(user, ((Number) rows.get(0).get("user_id")).longValue(), "会话不存在");
+        requireIdentity(user, rows.get(0));
         var session=rows.get(0);
         if(session.get("deleted_at")!=null)return;
         // 会话有未结束任务时，在同一事务内先取消任务再执行软删除。
@@ -202,4 +207,12 @@ public class ConversationStore {
         }else jdbc.update("UPDATE conversation_session SET updated_at=NOW(3) WHERE session_id=?",task.getSessionId());
     }
     public List<Map<String,Object>> events(String task,long after){return jdbc.queryForList("SELECT event_id,payload_json FROM query_task_event WHERE task_id=? AND event_id>? ORDER BY event_id LIMIT 100",task,after);}
+
+    /** 同一账号不同身份的会话相互不可见，统一伪装为资源不存在，避免泄露标题与任务状态。 */
+    private void requireIdentity(CurrentUser user, Map<String, Object> session) {
+        Object stored = session.get("identity_role_code");
+        if (stored == null || !user.role().normalized().name().equals(String.valueOf(stored))) {
+            throw new BusinessException(404001, "会话不存在");
+        }
+    }
 }

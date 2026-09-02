@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /** 登录与公开注册入口；客户端校验用于即时提示，最终账号策略仍由服务端执行。 */
 import { computed, ref } from 'vue'
-import { Lock, User } from '@element-plus/icons-vue'
+import { Lock } from '@element-plus/icons-vue'
 import { ApiError } from '../../app/api'
 import { useAuth } from '../../app/auth'
 
@@ -9,20 +9,14 @@ const { login, register } = useAuth()
 const mode = ref<'login' | 'register'>('login')
 const username = ref('')
 const password = ref('')
-const displayName = ref('')
+const employeeNo = ref('')
 const confirmPassword = ref('')
 const loading = ref(false)
 const error = ref('')
 const registrationMessage = ref('')
 
-const accounts = [
-  { username: 'manager01', label: '客户经理', scope: '本人负责客户' },
-  { username: 'leader01', label: '团队负责人', scope: '所属网点客户' },
-  { username: 'director01', label: '机构负责人', scope: '所属区域客户' },
-]
-const selectedAccount = ref('manager01')
-
 const usernameValid = computed(() => /^[a-z]+[0-9]+$/.test(username.value) && username.value.length >= 4 && username.value.length <= 64)
+const employeeNoValid = computed(() => /^[0-9]{5}$/.test(employeeNo.value))
 const passwordChecks = computed(() => ({
   length: password.value.length >= 8 && new TextEncoder().encode(password.value).byteLength <= 72,
   digit: /\d/.test(password.value),
@@ -31,13 +25,7 @@ const passwordChecks = computed(() => ({
   special: /[^A-Za-z0-9\s]/.test(password.value),
 }))
 const passwordStrong = computed(() => Object.values(passwordChecks.value).every(Boolean))
-const registrationValid = computed(() => displayName.value.trim().length >= 2 && displayName.value.trim().length <= 64
-  && usernameValid.value && passwordStrong.value && password.value === confirmPassword.value)
-
-function chooseAccount(account: (typeof accounts)[number]) {
-  selectedAccount.value = account.username
-  error.value = ''
-}
+const registrationValid = computed(() => employeeNoValid.value && usernameValid.value && passwordStrong.value && password.value === confirmPassword.value)
 
 function normalizeUsername() {
   username.value = username.value.trim().toLowerCase()
@@ -49,12 +37,12 @@ function switchMode(next: 'login' | 'register') {
   registrationMessage.value = ''
   if (next === 'register') {
     username.value = ''
+    employeeNo.value = ''
     password.value = ''
     confirmPassword.value = ''
   } else {
     username.value = ''
     password.value = ''
-    selectedAccount.value = 'manager01'
   }
 }
 
@@ -75,13 +63,13 @@ async function submitLogin() {
 async function submitRegistration() {
   normalizeUsername()
   if (!registrationValid.value) {
-    error.value = '请按提示完善姓名、用户名和强密码，并确认两次密码一致。'
+    error.value = '请按提示完善工号、用户名和强密码，并确认两次密码一致。'
     return
   }
   loading.value = true
   error.value = ''
   try {
-    const result = await register(displayName.value.trim(), username.value, password.value)
+    const result = await register(employeeNo.value, username.value, password.value)
     registrationMessage.value = result.message
     password.value = ''
     confirmPassword.value = ''
@@ -118,17 +106,10 @@ async function submitRegistration() {
       <div class="login-card">
         <div class="login-card-head">
           <h2 id="login-title">{{ mode === 'login' ? '登录工作台' : '申请注册账号' }}</h2>
-          <p>{{ mode === 'login' ? '选择演示身份，查看不同的数据访问范围。' : '提交后需等待管理员分配角色和数据范围。' }}</p>
+          <p>{{ mode === 'login' ? '登录后由后端按已授予的身份和数据范围进入工作台。' : '提交后需等待权限管理员分配身份和数据范围。' }}</p>
         </div>
 
         <template v-if="mode === 'login'">
-          <div class="demo-accounts" aria-label="演示账号">
-            <button v-for="account in accounts" :key="account.username" type="button"
-                    :class="{ selected: selectedAccount === account.username }" @click="chooseAccount(account)">
-              <span class="account-icon"><User /></span>
-              <span><strong>{{ account.label }}</strong><small>{{ account.scope }}</small></span>
-            </button>
-          </div>
           <form @submit.prevent="submitLogin">
             <label>用户名<el-input v-model="username" size="large" autocomplete="username" autocapitalize="none" @blur="normalizeUsername" /></label>
             <label>密码<el-input v-model="password" type="password" size="large" show-password autocomplete="current-password" /></label>
@@ -145,7 +126,10 @@ async function submitRegistration() {
             <el-button type="primary" @click="switchMode('login')">返回登录</el-button>
           </div>
           <form v-else @submit.prevent="submitRegistration">
-            <label>姓名<el-input v-model="displayName" size="large" maxlength="64" autocomplete="name" /></label>
+            <label>工号
+              <el-input v-model="employeeNo" size="large" maxlength="5" inputmode="numeric" autocomplete="off" />
+              <small class="field-hint" :class="{ invalid: employeeNo && !employeeNoValid }">请输入唯一的5位阿拉伯数字工号</small>
+            </label>
             <label>用户名
               <el-input v-model="username" size="large" maxlength="64" autocapitalize="none" autocomplete="username" @blur="normalizeUsername" />
               <small class="field-hint" :class="{ invalid: username && !usernameValid }">小写英文字母开头、数字结尾，例如 manager01</small>

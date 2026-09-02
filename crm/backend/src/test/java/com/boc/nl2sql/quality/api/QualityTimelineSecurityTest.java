@@ -62,10 +62,11 @@ class QualityTimelineSecurityTest {
     }
 
     @Test
-    void qualityAdminCannotAccessBusinessApi() throws Exception {
+    void qualityAuditorPassesBusinessApiSecurityBoundary() throws Exception {
+        // 本 WebMvc 切片不加载会话控制器，因此通过安全过滤链后应落到 404，而不是被角色规则拦成 403。
         mvc.perform(get("/api/v1/conversations").with(authentication(qualityAdmin())))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value(403001));
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(404001));
     }
 
     private UsernamePasswordAuthenticationToken qualityAdmin() {

@@ -1,7 +1,7 @@
 package com.boc.nl2sql.model;
 
-import com.boc.nl2sql.authorization.domain.CurrentUser;
-import com.boc.nl2sql.authorization.application.DataScopePolicy;
+import com.boc.nl2sql.domain.authorization.CurrentUser;
+import com.boc.nl2sql.service.authorization.DataScopePolicy;
 import com.boc.nl2sql.knowledge.BusinessTermCatalog;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;

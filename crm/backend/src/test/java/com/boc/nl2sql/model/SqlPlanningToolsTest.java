@@ -1,6 +1,6 @@
 package com.boc.nl2sql.model;
 
-import com.boc.nl2sql.authorization.domain.*;
+import com.boc.nl2sql.domain.authorization.*;
 import com.boc.nl2sql.common.exception.BusinessException;
 import com.boc.nl2sql.knowledge.BusinessTermCatalog;
 import com.sun.net.httpserver.HttpServer;

@@ -51,9 +51,9 @@ app:
       max-tool-rounds: ${DEEPSEEK_MAX_TOOL_ROUNDS:3}
       # 成功执行后只发送列名、类型和行数等摘要复核结果结构，不发送业务数据值。
       result-review-enabled: ${DEEPSEEK_RESULT_REVIEW_ENABLED:true}
-      # DeepSeek支持OpenAI兼容的/chat/completions接口；演示时只需填写API密钥即可。
-      base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
-      api-key: ${DEEPSEEK_API_KEY:sk-55d4ef6257c244db9590d5e1e26ab9ea}
+      # DeepSeek支持OpenAI兼容的/chat/completions接口；地址与密钥通过环境变量或application-local.yml提供。
+      base-url: ${DEEPSEEK_BASE_URL:}
+      api-key: ${DEEPSEEK_API_KEY:}
       model: ${DEEPSEEK_MODEL:deepseek-v4-flash}
       # V4默认开启思考；短JSON规划显式关闭，防止思考耗尽输出额度而无最终content。
       thinking-enabled: ${DEEPSEEK_THINKING_ENABLED:true}
@@ -65,9 +65,9 @@ app:
       # 当前使用阿里云DashScope的OpenAI兼容模式。
       # 如换成自建服务：vLLM用http://127.0.0.1:8000/v1，Ollama用http://127.0.0.1:11434/v1，
       # 并把thinking-param改为chat_template_kwargs（vLLM）或think（Ollama），自建服务密钥可留空。
-      base-url: ${QWEN_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
-      # DashScope必须在阿里云百炼控制台申请API Key（sk-开头），填到这里或环境变量QWEN_API_KEY。
-      api-key: ${QWEN_API_KEY:sk-ws-H.EXXMYEY.DjdJ.MEUCIQDPTy26qnFkA3b-Mb1KlxOfkZgIKsDueLocGFDHFSMSjgIgSzS17YnN9ZQj8hVnAIbK-IwVNaHsOlBXK0d711w-FVc}
+      base-url: ${QWEN_BASE_URL:}
+      # DashScope必须在阿里云百炼控制台申请API Key（sk-开头）；地址与密钥填在application-local.yml或环境变量QWEN_API_KEY。
+      api-key: ${QWEN_API_KEY:}
       model: ${QWEN_MODEL:qwen3-32b}
       # Qwen3为混合思考模型；短JSON规划建议关闭思考，防止思考耗尽输出额度而无最终content。
       thinking-enabled: ${QWEN_THINKING_ENABLED:false}

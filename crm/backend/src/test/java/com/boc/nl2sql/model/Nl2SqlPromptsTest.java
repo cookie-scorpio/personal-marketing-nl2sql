@@ -1,7 +1,7 @@
 package com.boc.nl2sql.model;
 
-import com.boc.nl2sql.authorization.domain.CurrentUser;
-import com.boc.nl2sql.authorization.domain.RoleCode;
+import com.boc.nl2sql.domain.authorization.CurrentUser;
+import com.boc.nl2sql.domain.authorization.RoleCode;
 import com.boc.nl2sql.knowledge.BusinessTermCatalog;
 import org.junit.jupiter.api.Test;
 

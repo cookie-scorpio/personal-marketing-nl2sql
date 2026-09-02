@@ -1,10 +1,10 @@
 package com.boc.nl2sql.model;
 
-import com.boc.nl2sql.authorization.domain.CurrentUser;
+import com.boc.nl2sql.domain.authorization.CurrentUser;
 import com.boc.nl2sql.common.exception.BusinessException;
-import com.boc.nl2sql.nl2sql.domain.ClarificationQuestion;
-import com.boc.nl2sql.nl2sql.domain.IntentType;
-import com.boc.nl2sql.nl2sql.domain.SemanticQuery;
+import com.boc.nl2sql.domain.nl2sql.ClarificationQuestion;
+import com.boc.nl2sql.domain.nl2sql.IntentType;
+import com.boc.nl2sql.domain.nl2sql.SemanticQuery;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,8 +14,8 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.databind.ObjectMapper;
-import com.boc.nl2sql.quality.collection.ModelCallRecorder;
-import com.boc.nl2sql.quality.collection.SqlFactRecorder;
+import com.boc.nl2sql.service.quality.ModelCallRecorder;
+import com.boc.nl2sql.service.quality.SqlFactRecorder;
 
 import java.time.Duration;
 import java.util.List;
@@ -153,15 +153,15 @@ public abstract class OpenAiCompatibleModelAdapter implements ModelAdapter {
         request.put("max_tokens", 1024);
         request.put("stream", false);
         try {
-            if (!ModelCallContext.active()) throw new com.boc.nl2sql.execution.QueryTerminatedException(false);
+            if (!ModelCallContext.active()) throw new com.boc.nl2sql.dao.execution.QueryTerminatedException(false);
             if (requestBudget != null) requestBudget.acquire();
             long started = System.nanoTime();
             Map<String, Object> response = recordedCall("RESULT_REVIEW", user, 1, 1, request);
-            if (!ModelCallContext.active()) throw new com.boc.nl2sql.execution.QueryTerminatedException(false);
+            if (!ModelCallContext.active()) throw new com.boc.nl2sql.dao.execution.QueryTerminatedException(false);
             var review = objectMapper.readValue(stripMarkdownFence(finalContent(response, 1, 1024, started)), ModelResultReview.class);
             if (review == null || review.aligned() == null) throw new BusinessException(502103, displayName() + "结果结构复核不是有效JSON");
             return new SqlResultReview(review.aligned(), review.reason());
-        } catch (BusinessException | com.boc.nl2sql.execution.QueryTerminatedException exception) {
+        } catch (BusinessException | com.boc.nl2sql.dao.execution.QueryTerminatedException exception) {
             throw exception;
         } catch (RestClientResponseException exception) {
             throw new BusinessException(502102, displayName() + "结果结构复核失败，HTTP状态：" + exception.getStatusCode().value());
@@ -191,7 +191,7 @@ public abstract class OpenAiCompatibleModelAdapter implements ModelAdapter {
         int toolCalls = 0;
         try {
             for (int round = 0; round <= maxToolRounds; round++) {
-                if (!active.getAsBoolean() || !ModelCallContext.active()) throw new com.boc.nl2sql.execution.QueryTerminatedException(false);
+                if (!active.getAsBoolean() || !ModelCallContext.active()) throw new com.boc.nl2sql.dao.execution.QueryTerminatedException(false);
                 Map<String, Object> request = new java.util.LinkedHashMap<>();
                 request.put("model", model);
                 request.put("messages", messages);
@@ -208,7 +208,7 @@ public abstract class OpenAiCompatibleModelAdapter implements ModelAdapter {
                 long started = System.nanoTime();
                 Map<String, Object> response = recordedCall(purpose, user, attempt, round + 1, request);
                 // 取消后不再分发工具，也不再发起下一次模型请求。
-                if (!ModelCallContext.active()) throw new com.boc.nl2sql.execution.QueryTerminatedException(false);
+                if (!ModelCallContext.active()) throw new com.boc.nl2sql.dao.execution.QueryTerminatedException(false);
                 Map<?, ?> choice = response != null && response.get("choices") instanceof List<?> choices && !choices.isEmpty()
                         && choices.get(0) instanceof Map<?, ?> c ? c : Map.of();
                 Map<?, ?> message = choice.get("message") instanceof Map<?, ?> m ? m : Map.of();
@@ -224,7 +224,7 @@ public abstract class OpenAiCompatibleModelAdapter implements ModelAdapter {
                     messages.add(assistant);
                     var ids = new java.util.HashSet<String>();
                     for (Object raw : calls) {
-                        if (!active.getAsBoolean() || !ModelCallContext.active()) throw new com.boc.nl2sql.execution.QueryTerminatedException(false);
+                        if (!active.getAsBoolean() || !ModelCallContext.active()) throw new com.boc.nl2sql.dao.execution.QueryTerminatedException(false);
                         if (!(raw instanceof Map<?, ?> call) || !(call.get("id") instanceof String id) || id.isBlank() || !ids.add(id)
                                 || !(call.get("function") instanceof Map<?, ?> function) || !(function.get("name") instanceof String name))
                             throw new BusinessException(502106, "模型工具调用结构无效");
@@ -258,7 +258,7 @@ public abstract class OpenAiCompatibleModelAdapter implements ModelAdapter {
                 return toInterpretation(objectMapper.readValue(stripMarkdownFence(content), ModelPlan.class));
             }
             throw new BusinessException(502108, "SQL工具调用达到限制，未执行业务查询");
-        } catch (BusinessException | com.boc.nl2sql.execution.QueryTerminatedException exception) {
+        } catch (BusinessException | com.boc.nl2sql.dao.execution.QueryTerminatedException exception) {
             throw exception;
         } catch (RestClientResponseException exception) {
             throw new BusinessException(502102, displayName() + "调用失败，HTTP状态：" + exception.getStatusCode().value());
@@ -399,7 +399,7 @@ public abstract class OpenAiCompatibleModelAdapter implements ModelAdapter {
             String clarificationQuestion, List<Object> clarificationOptions,
             List<String> conflicts, Map<String, String> recognizedSlots,
             String sql, String title, String preferredDisplay,
-            List<com.boc.nl2sql.execution.domain.ResultColumnHint> columns
+            List<com.boc.nl2sql.domain.execution.ResultColumnHint> columns
     ) {
     }
 

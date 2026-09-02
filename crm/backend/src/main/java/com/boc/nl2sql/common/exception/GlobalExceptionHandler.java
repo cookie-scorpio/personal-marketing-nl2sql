@@ -11,10 +11,10 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
-import com.boc.nl2sql.authorization.domain.CurrentUser;
-import com.boc.nl2sql.quality.collection.QualityFacts;
-import com.boc.nl2sql.quality.event.QualityEventType;
-import com.boc.nl2sql.quality.event.QualityFact;
+import com.boc.nl2sql.domain.authorization.CurrentUser;
+import com.boc.nl2sql.service.quality.QualityFacts;
+import com.boc.nl2sql.domain.quality.QualityEventType;
+import com.boc.nl2sql.domain.quality.QualityFact;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 @RestControllerAdvice

@@ -1,8 +1,8 @@
 package com.boc.nl2sql.model;
 
-import com.boc.nl2sql.authorization.domain.CurrentUser;
+import com.boc.nl2sql.domain.authorization.CurrentUser;
 import com.boc.nl2sql.common.exception.BusinessException;
-import com.boc.nl2sql.nl2sql.application.RuleBasedSemanticParser;
+import com.boc.nl2sql.service.nl2sql.RuleBasedSemanticParser;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -35,9 +35,9 @@ public class ModelGateway {
     }
     public QueryInterpretation interpret(String text,CurrentUser user,java.util.function.BooleanSupplier active,boolean thinking){return interpretInternal(text,user,active,thinking);}
     private QueryInterpretation interpretInternal(String queryText,CurrentUser user,java.util.function.BooleanSupplier active,Boolean thinking){
-        if (active != null && !active.getAsBoolean()) throw new com.boc.nl2sql.execution.QueryTerminatedException(false);
+        if (active != null && !active.getAsBoolean()) throw new com.boc.nl2sql.dao.execution.QueryTerminatedException(false);
         var ruleSemantic = ruleParser.parse(queryText);
-        var timeQuestion = new com.boc.nl2sql.nl2sql.application.TimeScopeClarifier().clarify(queryText, ruleSemantic);
+        var timeQuestion = new com.boc.nl2sql.service.nl2sql.TimeScopeClarifier().clarify(queryText, ruleSemantic);
         if (timeQuestion.isPresent()) {
             return new QueryInterpretation(ruleSemantic, "RULE", 1.0, null, null, "AUTO", timeQuestion.get());
         }

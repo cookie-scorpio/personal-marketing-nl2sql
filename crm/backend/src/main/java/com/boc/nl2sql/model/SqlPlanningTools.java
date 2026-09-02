@@ -1,8 +1,8 @@
 package com.boc.nl2sql.model;
 
-import com.boc.nl2sql.authorization.domain.CurrentUser;
+import com.boc.nl2sql.domain.authorization.CurrentUser;
 import com.boc.nl2sql.common.exception.BusinessException;
-import com.boc.nl2sql.execution.application.SqlAstValidator;
+import com.boc.nl2sql.service.execution.SqlAstValidator;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import java.util.List;

@@ -1,7 +1,7 @@
 package com.boc.nl2sql.model;
 
-import com.boc.nl2sql.authorization.domain.CurrentUser;
-import com.boc.nl2sql.authorization.domain.RoleCode;
+import com.boc.nl2sql.domain.authorization.CurrentUser;
+import com.boc.nl2sql.domain.authorization.RoleCode;
 import com.boc.nl2sql.knowledge.BusinessTermCatalog;
 import com.boc.nl2sql.common.exception.BusinessException;
 import com.sun.net.httpserver.HttpServer;
@@ -38,7 +38,7 @@ class DeepSeekModelAdapterTest {
         try (var fixture = new Fixture(List.of(response("stop", "", "")))) {
             var checks = new AtomicInteger();
             assertThatThrownBy(() -> fixture.adapter().interpret("统计客户", user(), () -> checks.getAndIncrement() == 0))
-                    .isInstanceOf(com.boc.nl2sql.execution.QueryTerminatedException.class);
+                    .isInstanceOf(com.boc.nl2sql.dao.execution.QueryTerminatedException.class);
             assertThat(fixture.requests).hasSize(1);
         }
     }

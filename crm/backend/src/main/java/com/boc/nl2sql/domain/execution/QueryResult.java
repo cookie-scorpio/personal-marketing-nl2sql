@@ -1,0 +1,35 @@
+package com.boc.nl2sql.domain.execution;
+
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Map;
+
+/** 查询结果的传输模型，包含数据、展示建议、解释口径和分页元数据。 */
+public record QueryResult(
+        String resultType,
+        String title,
+        String summary,
+        List<ColumnMeta> columns,
+        List<Map<String, Object>> rows,
+        List<Map<String, Object>> metrics,
+        List<ChartSpec> charts,
+        AnalysisSummary analysis,
+        String sqlPreview,
+        LocalDate dataAsOf,
+        String interpretationSource,
+        double confidence,
+        Long total,
+        Integer pageNo,
+        Integer pageSize,
+        Long offset,
+        Boolean hasMore,
+        FallbackInfo fallback
+) {
+    /** 附加降级说明；无可用数据时明确清空分析结论，避免用其他口径替代用户原问题。 */
+    public QueryResult withFallback(FallbackInfo info) {
+        return new QueryResult(resultType, title, info.dataAvailable() ? "已使用固定模板返回降级结果。" : info.reason(),
+                columns, rows, metrics, charts, info.dataAvailable() ? analysis
+                        : new AnalysisSummary(info.reason(), java.util.List.of("没有返回业务数据，未使用其他统计口径替代原问题。"), info.suggestions()),
+                sqlPreview, dataAsOf, interpretationSource, confidence, total, pageNo, pageSize, offset, hasMore, info);
+    }
+}

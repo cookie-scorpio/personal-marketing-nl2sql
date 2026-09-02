@@ -41,10 +41,6 @@ app:
       max-tokens: 16384
       retry-max-tokens: 32768
       read-timeout-seconds: 120
-    qwen:
-      base-url: ""
-      api-key: ""
-      model: Qwen3-32B
   rag:
     enabled: false
     embedding-model: BCG-E3

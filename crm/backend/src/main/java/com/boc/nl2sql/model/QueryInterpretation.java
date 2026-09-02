@@ -1,7 +1,7 @@
 package com.boc.nl2sql.model;
 
-import com.boc.nl2sql.nl2sql.domain.ClarificationQuestion;
-import com.boc.nl2sql.nl2sql.domain.SemanticQuery;
+import com.boc.nl2sql.domain.nl2sql.ClarificationQuestion;
+import com.boc.nl2sql.domain.nl2sql.SemanticQuery;
 
 /**
  * 规则或大模型对一次自然语言问题的统一解释结果。
@@ -17,7 +17,7 @@ public record QueryInterpretation(
         String title,
         String preferredDisplay,
         ClarificationQuestion clarification,
-        java.util.List<com.boc.nl2sql.execution.domain.ResultColumnHint> columnHints
+        java.util.List<com.boc.nl2sql.domain.execution.ResultColumnHint> columnHints
 ) {
     public QueryInterpretation {
         columnHints = columnHints == null ? java.util.List.of() : java.util.List.copyOf(columnHints);

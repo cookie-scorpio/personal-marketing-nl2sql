@@ -1,13 +1,13 @@
 package com.boc.nl2sql.model;
 
-import com.boc.nl2sql.authorization.domain.CurrentUser;
+import com.boc.nl2sql.domain.authorization.CurrentUser;
 
 /** DeepSeek、Qwen 和本地 Mock 必须输出同一种结构化查询解释。 */
 public interface ModelAdapter {
     String provider();
     QueryInterpretation interpret(String queryText, CurrentUser user);
     default QueryInterpretation interpret(String queryText, CurrentUser user, java.util.function.BooleanSupplier active) {
-        if (!active.getAsBoolean()) throw new com.boc.nl2sql.execution.QueryTerminatedException(false);
+        if (!active.getAsBoolean()) throw new com.boc.nl2sql.dao.execution.QueryTerminatedException(false);
         return interpret(queryText, user);
     }
 

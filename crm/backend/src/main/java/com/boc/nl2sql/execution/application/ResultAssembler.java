@@ -130,16 +130,9 @@ public class ResultAssembler {
                 : "查询完成，共返回 " + normalized.size() + " 行模拟业务数据。";
         var charts=buildCharts(planned,columns,normalized);
         var analysis=analyze(columns,normalized,summary);
-        if(planned.resultType()!=null && Set.of("PIE","LINE","AREA","BAR","SCATTER","HEATMAP").contains(planned.resultType())
-                && charts.stream().noneMatch(chart->chart.type().equals(planned.resultType()))) {
-            var insights=new ArrayList<>(analysis.insights());
-            insights.add("本次要求的"+planned.resultType()+"未绘制：结果为空、维度不唯一或指标不适合该图形。饼图需要一个互斥分类和非负、可加总且合计大于零的数值；比例请同时返回对应人数。已保留实际数据与可用展示。");
-            analysis=new AnalysisSummary(analysis.overview(),insights,analysis.suggestions());
-        }
         return new QueryResult(planned.resultType(), planned.title(), summary, columns, normalized, metrics,
                 charts, analysis,
-                page.sqlPreview()!=null?page.sqlPreview().strip().replaceAll("\\s+", " "):
-                        planned.sql() == null ? "" : planned.sql().strip().replaceAll("\\s+", " "),
+                "",
                 LocalDate.now(), interpretationSource, confidence, page.total(), page.page().pageNo(),
                 page.page().pageSize(), page.page().offset(), page.hasMore(), null);
     }
@@ -323,7 +316,7 @@ public class ResultAssembler {
     }
 
     private AnalysisSummary analyze(List<ColumnMeta> columns, List<Map<String, Object>> rows, String overview) {
-        if (rows.isEmpty()) return new AnalysisSummary(overview, List.of("当前条件下没有可比较的数据项。"), List.of("可调整条件后重新查询。"));
+        if (rows.isEmpty()) return new AnalysisSummary(overview, List.of("当前条件下没有可比较的数据项。"), List.of());
         ColumnMeta dimension = columns.stream().filter(column -> !"MEASURE".equals(column.role())).findFirst().orElse(null);
         List<String> insights = new ArrayList<>();
         for (var measure : measures(columns)) {
@@ -351,8 +344,7 @@ public class ResultAssembler {
                     + "为" + compactNumber(total) + measure.unit() + "。");
         }
         if (insights.isEmpty()) insights.add("结果以明细为主，不对编号或缺失值进行数值汇总。");
-        return new AnalysisSummary(overview, insights,
-                List.of("以上计算仅基于当前返回结果；分组人数可能重叠，不能视为全库去重人数。均值与比率不直接相加。"));
+        return new AnalysisSummary(overview, insights, List.of());
     }
 
     /** 分析文本中的维度值统一走编码字典，保持与明细表一致。 */
@@ -379,7 +371,7 @@ public class ResultAssembler {
         return builder + unitSuffix;
     }
 
-    /** 空结果说明附加数据覆盖范围（N3）：让用户区分“没有数据”与“真的是0”。 */
+    /** 空结果说明附加数据覆盖范围，让用户区分“没有数据”与“真的是 0”。 */
     private String emptySummary() {
         var coverage = insights == null ? null : insights.transactionCoverage();
         return "没有找到符合当前条件的数据，可以调整范围后重试。"

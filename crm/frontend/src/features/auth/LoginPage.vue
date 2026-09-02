@@ -7,8 +7,8 @@ import { useAuth } from '../../app/auth'
 
 const { login, register } = useAuth()
 const mode = ref<'login' | 'register'>('login')
-const username = ref('manager01')
-const password = ref('Demo@123')
+const username = ref('')
+const password = ref('')
 const displayName = ref('')
 const confirmPassword = ref('')
 const loading = ref(false)
@@ -20,6 +20,7 @@ const accounts = [
   { username: 'leader01', label: '团队负责人', scope: '所属网点客户' },
   { username: 'director01', label: '机构负责人', scope: '所属区域客户' },
 ]
+const selectedAccount = ref('manager01')
 
 const usernameValid = computed(() => /^[a-z]+[0-9]+$/.test(username.value) && username.value.length >= 4 && username.value.length <= 64)
 const passwordChecks = computed(() => ({
@@ -34,8 +35,7 @@ const registrationValid = computed(() => displayName.value.trim().length >= 2 &&
   && usernameValid.value && passwordStrong.value && password.value === confirmPassword.value)
 
 function chooseAccount(account: (typeof accounts)[number]) {
-  username.value = account.username
-  password.value = 'Demo@123'
+  selectedAccount.value = account.username
   error.value = ''
 }
 
@@ -52,8 +52,9 @@ function switchMode(next: 'login' | 'register') {
     password.value = ''
     confirmPassword.value = ''
   } else {
-    username.value = 'manager01'
-    password.value = 'Demo@123'
+    username.value = ''
+    password.value = ''
+    selectedAccount.value = 'manager01'
   }
 }
 
@@ -109,7 +110,7 @@ async function submitRegistration() {
       <div class="intro-copy">
         <h1>个金营销智能平台</h1>
         <p class="intro-statement">{{ mode === 'login' ? '让营销问题，直接得到数据答案' : '提交身份申请，等待授权开通' }}</p>
-        <p>{{ mode === 'login' ? '面向个人金融营销人员的自然语言查询工作台。系统会补全条件、澄清矛盾，并用表格、图表和分析结论解释查询结果。' : '注册只提交基础身份信息。审批通过并分配数据范围后，账号才可以登录使用智能问数。' }}</p>
+        <p class="intro-description" :class="{ 'registration-description': mode === 'register' }">{{ mode === 'login' ? '面向个人金融营销人员的自然语言查询工作台。系统会补全条件、澄清矛盾，并用表格、图表和分析结论解释查询结果。' : '注册只提交基础身份信息。审批通过并分配数据范围后，账号才可以登录使用智能问数。' }}</p>
       </div>
     </section>
 
@@ -123,7 +124,7 @@ async function submitRegistration() {
         <template v-if="mode === 'login'">
           <div class="demo-accounts" aria-label="演示账号">
             <button v-for="account in accounts" :key="account.username" type="button"
-                    :class="{ selected: username === account.username }" @click="chooseAccount(account)">
+                    :class="{ selected: selectedAccount === account.username }" @click="chooseAccount(account)">
               <span class="account-icon"><User /></span>
               <span><strong>{{ account.label }}</strong><small>{{ account.scope }}</small></span>
             </button>
@@ -144,7 +145,7 @@ async function submitRegistration() {
             <el-button type="primary" @click="switchMode('login')">返回登录</el-button>
           </div>
           <form v-else @submit.prevent="submitRegistration">
-            <label>姓名<el-input v-model="displayName" size="large" maxlength="64" show-word-limit autocomplete="name" /></label>
+            <label>姓名<el-input v-model="displayName" size="large" maxlength="64" autocomplete="name" /></label>
             <label>用户名
               <el-input v-model="username" size="large" maxlength="64" autocapitalize="none" autocomplete="username" @blur="normalizeUsername" />
               <small class="field-hint" :class="{ invalid: username && !usernameValid }">小写英文字母开头、数字结尾，例如 manager01</small>

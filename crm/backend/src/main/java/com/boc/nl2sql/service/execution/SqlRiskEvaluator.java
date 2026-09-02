@@ -13,8 +13,8 @@ import java.util.regex.Pattern;
 /**
  * 用可解释的确定性规则识别大范围和潜在慢查询。
  *
- * <p>演示环境不依赖数据库统计信息，因此不承诺精确耗时预测；规则关注无过滤明细、过多关联、
- * 全量请求等高概率风险，并把触发原因交给用户确认。</p>
+ * 演示环境不依赖数据库统计信息，因此不承诺精确耗时预测；规则关注无过滤明细、过多关联、
+ * 全量请求等高概率风险，并把触发原因交给用户确认。
  */
 @Component
 public class SqlRiskEvaluator {
@@ -29,7 +29,8 @@ public class SqlRiskEvaluator {
             reasons.addAll(planned.risk().reasons());
         }
         long joins = Pattern.compile("\\bjoin\\b").matcher(normalized).results().count();
-        if (joins >= 3) reasons.add("查询涉及的数据范围较大，执行耗时可能较长");
+        if (joins >= 3)
+            reasons.add("查询涉及的数据范围较大，执行耗时可能较长");
         if (!normalized.contains(" where ") && referencesFactTable(normalized)) {
             reasons.add("查询未限定客户范围，可能扫描大量数据，请确认后再执行");
         }
@@ -38,10 +39,11 @@ public class SqlRiskEvaluator {
         }
         Matcher limit = LIMIT.matcher(normalized);
         if (limit.find() && Integer.parseInt(limit.group(1)) > maxSqlLimit) {
-            reasons.add("用户指定的Top N结果超过"+maxSqlLimit+"行");
+            reasons.add("用户指定的Top N结果超过" + maxSqlLimit + "行");
         }
         List<String> distinct = reasons.stream().distinct().toList();
-        if (distinct.isEmpty()) return QueryRisk.low();
+        if (distinct.isEmpty())
+            return QueryRisk.low();
         return new QueryRisk(distinct.size() >= 2 ? "HIGH" : "MEDIUM", true, distinct);
     }
 

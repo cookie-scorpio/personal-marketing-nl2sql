@@ -25,6 +25,34 @@ class SqlSafetyValidatorTest {
     }
 
     @Test
+    void reportsPreciseErrorCodesPerRejectionLayer() {
+        // 表白名单 403102
+        assertThatThrownBy(() -> validator.validate("SELECT customer_id FROM mysql.user LIMIT 10"))
+                .isInstanceOfSatisfying(BusinessException.class, e -> org.assertj.core.api.Assertions.assertThat(e.code()).isEqualTo(403102));
+        // 字段白名单 422104
+        assertThatThrownBy(() -> validator.validate("SELECT c.unknown_column FROM dim_customer c LIMIT 10"))
+                .isInstanceOfSatisfying(BusinessException.class, e -> org.assertj.core.api.Assertions.assertThat(e.code()).isEqualTo(422104));
+        // 分页上限 422102
+        assertThatThrownBy(() -> validator.validate("SELECT customer_id FROM dim_customer LIMIT 1000"))
+                .isInstanceOfSatisfying(BusinessException.class, e -> org.assertj.core.api.Assertions.assertThat(e.code()).isEqualTo(422102));
+        // 结构与白名单 422101
+        assertThatThrownBy(() -> validator.validate("SELECT * FROM dim_customer LIMIT 10"))
+                .isInstanceOfSatisfying(BusinessException.class, e -> org.assertj.core.api.Assertions.assertThat(e.code()).isEqualTo(422101));
+    }
+
+    @Test
+    void acceptsCastWhitelistAndOffsetPagination() {
+        assertThatCode(() -> validator.validate(
+                "SELECT CAST(c.total_asset_amount AS CHAR) AS asset_text FROM dim_customer c LIMIT 10"))
+                .doesNotThrowAnyException();
+        assertThatThrownBy(() -> validator.validate(
+                "SELECT CAST(c.total_asset_amount AS BINARY) AS asset_bytes FROM dim_customer c LIMIT 10"))
+                .isInstanceOf(BusinessException.class);
+        assertThatCode(() -> validator.validate("SELECT customer_id FROM dim_customer LIMIT 10 OFFSET 5"))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
     void acceptsSelectWithoutLimitBecauseExecutionAddsPagination() {
         assertThatCode(() -> validator.validate("SELECT customer_id FROM dim_customer"))
                 .doesNotThrowAnyException();

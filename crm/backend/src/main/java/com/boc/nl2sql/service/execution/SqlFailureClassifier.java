@@ -11,7 +11,9 @@ public final class SqlFailureClassifier {
             1055, "分组列与聚合表达式不一致", 1111, "聚合函数使用位置错误",
             1140, "聚合与非聚合字段缺少正确分组", 1241, "表达式返回了多列",
             1242, "标量表达式返回了多行", 1305, "函数不存在，请使用MySQL支持的函数");
-    private SqlFailureClassifier() { }
+
+    private SqlFailureClassifier() {}
+
     public static Optional<String> repairReason(Throwable error) {
         for (Throwable cause = error; cause != null; cause = cause.getCause()) {
             if (cause instanceof SQLException sql && REPAIRABLE.containsKey(sql.getErrorCode())) {

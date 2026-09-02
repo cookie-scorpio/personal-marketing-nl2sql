@@ -13,14 +13,14 @@ import java.util.Map;
 /**
  * 根据受控槽位选择固定 SQL 结构。
  *
- * <p>用户原文永远不会拼入 SQL；所有值均通过命名参数绑定，表名和字段名只来自代码白名单。</p>
+ * 用户原文永远不会拼入 SQL；所有值均通过命名参数绑定，表名和字段名只来自代码白名单。
  */
 @Component
 public class SqlPlanner {
     private final DataScopePolicy dataScopePolicy;
 
     public SqlPlanner(DataScopePolicy dataScopePolicy,
-                      @Value("${app.query.max-sql-limit:500}") int ignoredMaxSqlLimit) {
+            @Value("${app.query.max-sql-limit:500}") int ignoredMaxSqlLimit) {
         this.dataScopePolicy = dataScopePolicy;
     }
 
@@ -40,25 +40,25 @@ public class SqlPlanner {
         boolean detail = query.detailRequested();
         String sql = detail
                 ? """
-                  SELECT c.customer_id, c.customer_name_masked AS customer_name,
-                         c.customer_level_code AS customer_level,
-                         ROUND(c.total_asset_amount / 10000, 2) AS asset_wan,
-                         ROUND(c.asset_change_3m_rate * 100, 2) AS asset_change_rate,
-                         c.branch_id
-                    FROM dim_customer c
-                   WHERE %s
-                   ORDER BY c.total_asset_amount DESC, c.customer_id
-                  """.formatted(where)
+                        SELECT c.customer_id, c.customer_name_masked AS customer_name,
+                               c.customer_level_code AS customer_level,
+                               ROUND(c.total_asset_amount / 10000, 2) AS asset_wan,
+                               ROUND(c.asset_change_3m_rate * 100, 2) AS asset_change_rate,
+                               c.branch_id
+                          FROM dim_customer c
+                         WHERE %s
+                         ORDER BY c.total_asset_amount DESC, c.customer_id
+                        """.formatted(where)
                 : """
-                  SELECT c.branch_id,
-                         COUNT(*) AS customer_count,
-                         ROUND(SUM(c.total_asset_amount) / 100000000, 2) AS total_asset_yi,
-                         ROUND(AVG(c.asset_change_3m_rate) * 100, 2) AS avg_asset_change_rate
-                    FROM dim_customer c
-                   WHERE %s
-                   GROUP BY c.branch_id
-                   ORDER BY customer_count DESC, c.branch_id
-                  """.formatted(where);
+                        SELECT c.branch_id,
+                               COUNT(*) AS customer_count,
+                               ROUND(SUM(c.total_asset_amount) / 100000000, 2) AS total_asset_yi,
+                               ROUND(AVG(c.asset_change_3m_rate) * 100, 2) AS avg_asset_change_rate
+                          FROM dim_customer c
+                         WHERE %s
+                         GROUP BY c.branch_id
+                         ORDER BY customer_count DESC, c.branch_id
+                        """.formatted(where);
         return new PlannedQuery(sql, parameters, detail ? "TABLE" : "SUMMARY",
                 detail ? "符合条件的客户" : "客户筛选结果", query.broadRequested());
     }
@@ -93,27 +93,27 @@ public class SqlPlanner {
         }
         String sql = query.detailRequested()
                 ? """
-                  SELECT c.customer_id, c.customer_name_masked AS customer_name,
-                         h.product_name, h.product_category_code,
-                         ROUND(h.market_value_amount / 10000, 2) AS market_value_wan,
-                         h.maturity_date, c.branch_id
-                    FROM fct_product_holding h
-                    JOIN dim_customer c ON c.customer_id = h.customer_id
-                   WHERE %s
-                   ORDER BY h.market_value_amount DESC, h.holding_id
-                  """.formatted(where)
+                        SELECT c.customer_id, c.customer_name_masked AS customer_name,
+                               h.product_name, h.product_category_code,
+                               ROUND(h.market_value_amount / 10000, 2) AS market_value_wan,
+                               h.maturity_date, c.branch_id
+                          FROM fct_product_holding h
+                          JOIN dim_customer c ON c.customer_id = h.customer_id
+                         WHERE %s
+                         ORDER BY h.market_value_amount DESC, h.holding_id
+                        """.formatted(where)
                 : """
-                  SELECT h.product_category_code,
-                         COUNT(DISTINCT c.customer_id) AS customer_count,
-                         COUNT(*) AS holding_count,
-                         ROUND(SUM(h.market_value_amount) / 100000000, 2) AS market_value_yi,
-                         ROUND(SUM(h.profit_amount) / 10000, 2) AS profit_wan
-                    FROM fct_product_holding h
-                    JOIN dim_customer c ON c.customer_id = h.customer_id
-                   WHERE %s
-                   GROUP BY h.product_category_code
-                   ORDER BY market_value_yi DESC, h.product_category_code
-                  """.formatted(where);
+                        SELECT h.product_category_code,
+                               COUNT(DISTINCT c.customer_id) AS customer_count,
+                               COUNT(*) AS holding_count,
+                               ROUND(SUM(h.market_value_amount) / 100000000, 2) AS market_value_yi,
+                               ROUND(SUM(h.profit_amount) / 10000, 2) AS profit_wan
+                          FROM fct_product_holding h
+                          JOIN dim_customer c ON c.customer_id = h.customer_id
+                         WHERE %s
+                         GROUP BY h.product_category_code
+                         ORDER BY market_value_yi DESC, h.product_category_code
+                        """.formatted(where);
         return new PlannedQuery(sql, parameters, query.detailRequested() ? "TABLE" : "SUMMARY",
                 "产品持有分析结果", query.broadRequested());
     }
@@ -141,12 +141,13 @@ public class SqlPlanner {
                  WHERE %s
                  GROUP BY p.campaign_id, p.campaign_name
                  ORDER BY conversion_rate DESC, p.campaign_id
-                """.formatted(where);
+                """
+                .formatted(where);
         return new PlannedQuery(sql, parameters, "SUMMARY", "营销活动效果", query.broadRequested());
     }
 
     private StringBuilder baseCustomerWhere(SemanticQuery query, CurrentUser user,
-                                            Map<String, Object> parameters) {
+            Map<String, Object> parameters) {
         StringBuilder where = new StringBuilder("c.status_code = 'ACTIVE' AND ")
                 .append(dataScopePolicy.condition("c", user, parameters));
         if (query.customerLevel() != null) {

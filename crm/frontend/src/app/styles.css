@@ -425,7 +425,19 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .empty-workspace span { margin-top: 8px; font-size: 13px; }
 .permission-page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
 .permission-table-wrap { margin-top: 24px; overflow: hidden; border: 1px solid var(--border); border-radius: 9px; }
-.permission-table-wrap .el-table { --el-table-header-bg-color: #f7f5f2; --el-table-border-color: #eee8e4; font-size: 13px; }
+/*
+ * 权限清单是管理员页面的主要操作对象，因此沿用全局中行红作为连续表头，
+ * 以白色文字建立清晰层级；数据行继续使用安静的中性色，避免整张表视觉过重。
+ */
+.permission-table-wrap .el-table { --el-table-header-bg-color: var(--accent); --el-table-header-text-color: #fff; --el-table-border-color: #eee8e4; font-size: 13px; }
+.permission-table-wrap .el-table th.el-table__cell { color: #fff; background: var(--accent); font-weight: 650; }
+/*
+ * 固定操作列的按钮、表头共用同一条中轴线。收紧按钮横向内边距并关闭单元格省略号，
+ * 让常规配置与危险删除都保持完整、均衡；本人删除按钮由组件禁用态自然显示为灰色。
+ */
+.permission-table-wrap .permission-action-column .cell { display: flex; align-items: center; justify-content: center; overflow: visible; padding-right: 10px; padding-left: 10px; text-overflow: clip; }
+.permission-row-actions { display: inline-flex; align-items: center; justify-content: center; gap: 2px; white-space: nowrap; }
+.permission-action-button { margin: 0; padding-right: 8px; padding-left: 8px; font-weight: 600; }
 .role-summary { color: #5f5652; line-height: 1.55; }
 .account-status { display: inline-flex; padding: 3px 7px; border-radius: 10px; font-size: 12px; white-space: nowrap; }
 .account-status.active { color: #356047; background: #edf6ef; }

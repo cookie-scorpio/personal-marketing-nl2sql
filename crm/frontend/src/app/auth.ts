@@ -17,10 +17,11 @@ async function login(username: string, password: string): Promise<void> {
   if (epoch !== revision) return
   setToken(result.access_token); user.value = result.user
 }
-async function register(employeeNo: string, username: string, password: string): Promise<RegistrationResponse> {
+/** 注册姓名属于账号基础资料，与工号、用户名一并提交；身份和数据范围仍只能由管理员授予。 */
+async function register(employeeNo: string, displayName: string, username: string, password: string): Promise<RegistrationResponse> {
   const encryptedPassword = await encryptPassword(password)
   return apiRequest<RegistrationResponse>('/api/v1/auth/register', {
-    method: 'POST', body: JSON.stringify({ employee_no: employeeNo, username, password: encryptedPassword }),
+    method: 'POST', body: JSON.stringify({ employee_no: employeeNo, display_name: displayName, username, password: encryptedPassword }),
   })
 }
 /** 服务端会复核目标身份是否真实获授，再返回携带该身份的新 JWT。 */

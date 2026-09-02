@@ -1,13 +1,16 @@
 <script setup lang="ts">
 /** 权限管理员的最小授权工作台：查看注册账号，并一次性授予身份和业务数据范围。 */
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { apiRequest } from '../../app/api'
+import { useAuth } from '../../app/auth'
 import type { BusinessScopeLevel, PermissionAdminAccount, RoleCode } from '../../app/types'
 
+const { user } = useAuth()
 const accounts = ref<PermissionAdminAccount[]>([])
 const loading = ref(false)
 const saving = ref(false)
+const deletingId = ref<number | null>(null)
 const error = ref('')
 const editing = ref<PermissionAdminAccount | null>(null)
 
@@ -22,6 +25,17 @@ const form = reactive<{
 const businessGranted = computed(() => form.roles.includes('CUSTOMER_MANAGER'))
 const needsBranch = computed(() => form.businessScopeLevel === 'CUSTOMER_MANAGER' || form.businessScopeLevel === 'TEAM_LEAD')
 const needsManager = computed(() => form.businessScopeLevel === 'CUSTOMER_MANAGER')
+/**
+ * 当前管理员必须始终保留自己的权限管理员身份，否则保存后系统可能失去可继续维护授权的入口。
+ * 这里只负责界面状态；服务端 assign 仍会独立执行同一规则，防止绕过浏览器直接调用接口。
+ */
+const editingOwnAdministrator = computed(() => user.value?.role === 'PERMISSION_ADMIN'
+  && editing.value?.user_id === user.value.user_id)
+
+/** 账号级 user_id 是识别本人的唯一依据，不使用可能重复或可修改的姓名、用户名。 */
+function isOwnAccount(account: PermissionAdminAccount) {
+  return account.user_id === user.value?.user_id
+}
 
 const roleLabels: Record<RoleCode, string> = {
   CUSTOMER_MANAGER: '客户经理类',
@@ -100,6 +114,38 @@ async function save() {
   }
 }
 
+/**
+ * 删除是不可撤销的账号操作，因此先明确告知影响并要求二次确认。
+ * 历史会话和审计记录由后端保留；删除成功后仅移除目标行，避免整表闪烁。
+ */
+async function deleteAccount(account: PermissionAdminAccount) {
+  if (isOwnAccount(account)) {
+    ElMessage.warning('不能删除当前登录账号')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      `删除后，“${account.display_name}（${account.username}）”将无法再登录；历史会话和审计记录仍会保留。`,
+      '确认删除用户',
+      { type: 'warning', confirmButtonText: '删除用户', cancelButtonText: '取消' },
+    )
+  } catch {
+    // 用户取消确认属于正常交互，不显示错误提示，也不发送删除请求。
+    return
+  }
+
+  deletingId.value = account.user_id
+  try {
+    await apiRequest<number>(`/api/v1/permission-admin/accounts/${account.user_id}`, { method: 'DELETE' })
+    accounts.value = accounts.value.filter(row => row.user_id !== account.user_id)
+    ElMessage.success('用户已删除')
+  } catch (exception) {
+    ElMessage.error(exception instanceof Error ? exception.message : '用户删除失败，请重试')
+  } finally {
+    deletingId.value = null
+  }
+}
+
 onMounted(() => { void load() })
 </script>
 
@@ -121,10 +167,31 @@ onMounted(() => { void load() })
       <el-table :data="accounts" v-loading="loading" empty-text="暂无注册账号">
         <el-table-column label="工号" min-width="100"><template #default="{ row }">{{ row.employee_no || '—' }}</template></el-table-column>
         <el-table-column prop="username" label="用户名" min-width="130" />
-        <el-table-column prop="display_name" label="展示名称" min-width="130" />
+        <!-- 姓名直接展示注册接口保存的 display_name，不再用工号或角色生成替代文案。 -->
+        <el-table-column prop="display_name" label="姓名" min-width="130" />
         <el-table-column label="账号状态" min-width="100"><template #default="{ row }"><span class="account-status" :class="row.account_status === 'ACTIVE' ? 'active' : 'pending'">{{ row.account_status === 'ACTIVE' ? '已启用' : '待授权' }}</span></template></el-table-column>
         <el-table-column label="已授予身份" min-width="245"><template #default="{ row }"><span class="role-summary">{{ roleText(row) }}</span></template></el-table-column>
-        <el-table-column label="操作" width="108" fixed="right"><template #default="{ row }"><el-button text type="primary" @click="beginEdit(row)">配置权限</el-button></template></el-table-column>
+        <!--
+          两个操作共享同一中轴线：配置权限为常规操作，删除用户使用危险色语义。
+          固定列宽预留完整文字空间，避免 Element Plus 产生误导性的省略号。
+        -->
+        <el-table-column class-name="permission-action-column" label="操作" width="190" fixed="right" align="center" header-align="center">
+          <template #default="{ row }">
+            <div class="permission-row-actions">
+              <el-button class="permission-action-button" text type="primary" @click="beginEdit(row)">配置权限</el-button>
+              <!-- 本人账号始终灰显；后端仍独立拒绝自删，避免直接构造请求绕过页面限制。 -->
+              <el-button
+                class="permission-action-button"
+                text
+                type="danger"
+                :disabled="isOwnAccount(row)"
+                :loading="deletingId === row.user_id"
+                :title="isOwnAccount(row) ? '不能删除当前登录账号' : `删除用户 ${row.display_name}`"
+                @click="deleteAccount(row)"
+              >删除用户</el-button>
+            </div>
+          </template>
+        </el-table-column>
       </el-table>
     </div>
 
@@ -134,7 +201,8 @@ onMounted(() => { void load() })
           <el-checkbox-group v-model="form.roles">
             <el-checkbox label="CUSTOMER_MANAGER">客户经理类</el-checkbox>
             <el-checkbox label="QUALITY_AUDITOR">质量审计员</el-checkbox>
-            <el-checkbox label="PERMISSION_ADMIN">权限管理员</el-checkbox>
+            <!-- 编辑本人时保持该项选中且禁用；禁用态沿用 Element Plus 灰色语义，明确表示不可撤销。 -->
+            <el-checkbox label="PERMISSION_ADMIN" :disabled="editingOwnAdministrator" :title="editingOwnAdministrator ? '不能撤销当前登录账号自身的权限管理员身份' : undefined">权限管理员</el-checkbox>
           </el-checkbox-group>
         </label>
         <template v-if="businessGranted">

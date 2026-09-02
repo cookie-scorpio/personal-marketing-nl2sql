@@ -82,3 +82,50 @@ test('权限管理员账号与身份操作区域和其他身份一样固定在�
   assert.match(app, /<div class="sidebar-footer">/)
   assert.match(styles, /\.sidebar-note \{[^}]*margin: auto 0 12px;/)
 })
+
+test('权限管理表头使用主色，姓名直出并提供居中的配置和删除操作', async () => {
+  const page = await readFile(new URL('../src/features/permission/PermissionManagementPage.vue', import.meta.url), 'utf8')
+  const styles = await readFile(new URL('../src/app/styles.css', import.meta.url), 'utf8')
+  // 注册姓名必须原样进入姓名列；两个操作显式居中并给出足够宽度，不产生组件默认省略号。
+  assert.match(page, /prop="display_name" label="姓名"/)
+  assert.match(page, /class-name="permission-action-column"[^>]*width="190"[^>]*align="center"[^>]*header-align="center"/)
+  assert.equal((page.match(/>配置权限<\/el-button>/g) || []).length, 1)
+  assert.equal((page.match(/>删除用户<\/el-button>/g) || []).length, 1)
+  assert.match(styles, /--el-table-header-bg-color: var\(--accent\)/)
+  assert.match(styles, /--el-table-header-text-color: #fff/)
+  assert.match(styles, /\.permission-table-wrap \.permission-action-column \.cell \{[^}]*justify-content: center;[^}]*text-overflow: clip;/)
+  assert.match(styles, /\.permission-row-actions \{[^}]*justify-content: center;/)
+})
+
+test('权限管理员编辑本人时不能取消自己的管理员身份', async () => {
+  const page = await readFile(new URL('../src/features/permission/PermissionManagementPage.vue', import.meta.url), 'utf8')
+  // 前端以账号编号识别本人并禁用选项；服务端仍有独立校验，界面限制不是唯一安全边界。
+  assert.match(page, /const editingOwnAdministrator = computed/)
+  assert.match(page, /editing\.value\?\.user_id === user\.value\.user_id/)
+  assert.match(page, /label="PERMISSION_ADMIN" :disabled="editingOwnAdministrator"/)
+  assert.match(page, /不能撤销当前登录账号自身的权限管理员身份/)
+})
+
+test('权限管理员不能删除自己且删除其他用户前必须二次确认', async () => {
+  const page = await readFile(new URL('../src/features/permission/PermissionManagementPage.vue', import.meta.url), 'utf8')
+  // user_id 作为本人判断依据；禁用态与服务端保护配合，不能用姓名或用户名规避自删限制。
+  assert.match(page, /function isOwnAccount\(account: PermissionAdminAccount\)/)
+  assert.match(page, /account\.user_id === user\.value\?\.user_id/)
+  assert.match(page, /:disabled="isOwnAccount\(row\)"/)
+  assert.match(page, /不能删除当前登录账号/)
+  assert.match(page, /ElMessageBox\.confirm/)
+  assert.match(page, /method: 'DELETE'/)
+})
+
+test('注册必须提交姓名并明确处理重复用户名', async () => {
+  const page = await readFile(new URL('../src/features/auth/LoginPage.vue', import.meta.url), 'utf8')
+  const auth = await readFile(new URL('../src/app/auth.ts', import.meta.url), 'utf8')
+  // 姓名进入有效性判断和注册请求；密码规则文案不再暴露实现层的72字节上限。
+  assert.match(page, /const displayNameValid = computed/)
+  assert.match(page, /<label>姓名/)
+  assert.match(page, /register\(employeeNo\.value, displayName\.value\.trim\(\), username\.value, password\.value\)/)
+  assert.match(page, /用户名已存在，请修改用户名后重新提交/)
+  assert.doesNotMatch(page, />至少8位，最长72字节</)
+  assert.match(page, />至少8位</)
+  assert.match(auth, /JSON\.stringify\(\{ employee_no: employeeNo, display_name: displayName, username/)
+})

@@ -10,6 +10,7 @@ const mode = ref<'login' | 'register'>('login')
 const username = ref('')
 const password = ref('')
 const employeeNo = ref('')
+const displayName = ref('')
 const confirmPassword = ref('')
 const loading = ref(false)
 const error = ref('')
@@ -17,6 +18,7 @@ const registrationMessage = ref('')
 
 const usernameValid = computed(() => /^[a-z]+[0-9]+$/.test(username.value) && username.value.length >= 4 && username.value.length <= 64)
 const employeeNoValid = computed(() => /^[0-9]{5}$/.test(employeeNo.value))
+const displayNameValid = computed(() => displayName.value.trim().length >= 1 && displayName.value.trim().length <= 64)
 const passwordChecks = computed(() => ({
   length: password.value.length >= 8 && new TextEncoder().encode(password.value).byteLength <= 72,
   digit: /\d/.test(password.value),
@@ -25,10 +27,15 @@ const passwordChecks = computed(() => ({
   special: /[^A-Za-z0-9\s]/.test(password.value),
 }))
 const passwordStrong = computed(() => Object.values(passwordChecks.value).every(Boolean))
-const registrationValid = computed(() => employeeNoValid.value && usernameValid.value && passwordStrong.value && password.value === confirmPassword.value)
+const registrationValid = computed(() => employeeNoValid.value && displayNameValid.value && usernameValid.value && passwordStrong.value && password.value === confirmPassword.value)
 
 function normalizeUsername() {
   username.value = username.value.trim().toLowerCase()
+}
+
+/** 去除误输入的首尾空白，姓名内部空格仍按用户原始输入保留。 */
+function normalizeDisplayName() {
+  displayName.value = displayName.value.trim()
 }
 
 function switchMode(next: 'login' | 'register') {
@@ -38,6 +45,7 @@ function switchMode(next: 'login' | 'register') {
   if (next === 'register') {
     username.value = ''
     employeeNo.value = ''
+    displayName.value = ''
     password.value = ''
     confirmPassword.value = ''
   } else {
@@ -63,18 +71,21 @@ async function submitLogin() {
 async function submitRegistration() {
   normalizeUsername()
   if (!registrationValid.value) {
-    error.value = '请按提示完善工号、用户名和强密码，并确认两次密码一致。'
+    error.value = '请按提示完善工号、姓名、用户名和强密码，并确认两次密码一致。'
     return
   }
   loading.value = true
   error.value = ''
   try {
-    const result = await register(employeeNo.value, username.value, password.value)
+    const result = await register(employeeNo.value, displayName.value.trim(), username.value, password.value)
     registrationMessage.value = result.message
     password.value = ''
     confirmPassword.value = ''
   } catch (exception) {
-    error.value = exception instanceof ApiError || exception instanceof Error ? exception.message : '注册提交失败，请稍后重试。'
+    // 用户名重复是可直接修复的输入问题，保留表单内容并明确引导用户修改用户名后再次提交。
+    error.value = exception instanceof ApiError && exception.code === 409010
+      ? '用户名已存在，请修改用户名后重新提交。'
+      : exception instanceof ApiError || exception instanceof Error ? exception.message : '注册提交失败，请稍后重试。'
   } finally {
     loading.value = false
   }
@@ -130,13 +141,17 @@ async function submitRegistration() {
               <el-input v-model="employeeNo" size="large" maxlength="5" inputmode="numeric" autocomplete="off" />
               <small class="field-hint" :class="{ invalid: employeeNo && !employeeNoValid }">请输入唯一的5位阿拉伯数字工号</small>
             </label>
+            <label>姓名
+              <el-input v-model="displayName" size="large" maxlength="64" autocomplete="name" placeholder="请输入姓名" @blur="normalizeDisplayName" />
+              <small class="field-hint" :class="{ invalid: displayName && !displayNameValid }">必填，提交后用于账号识别和权限审批</small>
+            </label>
             <label>用户名
               <el-input v-model="username" size="large" maxlength="64" autocapitalize="none" autocomplete="username" @blur="normalizeUsername" />
               <small class="field-hint" :class="{ invalid: username && !usernameValid }">小写英文字母开头、数字结尾，例如 manager01</small>
             </label>
             <label>密码<el-input v-model="password" type="password" size="large" maxlength="72" show-password autocomplete="new-password" /></label>
             <div class="password-rules" aria-label="密码规则">
-              <span :class="{ met: passwordChecks.length }">至少8位，最长72字节</span>
+              <span :class="{ met: passwordChecks.length }">至少8位</span>
               <span :class="{ met: passwordChecks.digit }">数字</span>
               <span :class="{ met: passwordChecks.lower }">小写字母</span>
               <span :class="{ met: passwordChecks.upper }">大写字母</span>

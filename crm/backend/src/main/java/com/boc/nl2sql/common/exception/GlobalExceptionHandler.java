@@ -39,8 +39,9 @@ public class GlobalExceptionHandler {
     /** 业务码段与HTTP状态一一对应：前端与网关据此区分参数错误、权限拒绝、限流与上游故障。 */
     private HttpStatus statusOf(int code) {
         if (code == 401001) return HttpStatus.UNAUTHORIZED;
-        if (code == 404001) return HttpStatus.NOT_FOUND;
         int prefix = code / 1000;
+        // 同一 404 码段均代表资源不存在，包括账号不存在(404002)，不能误降级为 400 参数错误。
+        if (prefix == 404) return HttpStatus.NOT_FOUND;
         if (prefix == 403) return HttpStatus.FORBIDDEN;
         if (prefix == 409) return HttpStatus.CONFLICT;
         if (prefix == 429) return HttpStatus.TOO_MANY_REQUESTS;

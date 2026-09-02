@@ -55,7 +55,7 @@ paths:
   /api/v1/auth/register:
     post:
       summary: 提交待审批注册申请
-      description: 只接收唯一五位工号、用户名和 RSA 加密密码。注册账号保持待审批，角色和数据范围只能由权限管理员分配。
+      description: 只接收唯一五位工号、必填姓名、唯一用户名和 RSA 加密密码。注册账号保持待审批，角色和数据范围只能由权限管理员分配。
       security: []
       requestBody:
         required: true
@@ -98,7 +98,7 @@ paths:
   /api/v1/permission-admin/accounts:
     get:
       summary: 查看账号及当前授权
-      description: 仅当前身份为权限管理员的账号可访问；不返回密码哈希或令牌。
+      description: 仅当前身份为权限管理员的账号可访问；姓名直接来自注册时保存的 display_name，结果按工号升序排列，缺少工号的历史账号置后；不返回密码哈希或令牌。
       responses:
         "200":
           description: 账号授权清单
@@ -106,10 +106,26 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ApiResponse" }
         "403": { description: 当前身份无权管理权限 }
+    delete:
+      summary: 删除非当前登录用户
+      description: 删除目标账号及角色授权，保留其历史会话、任务和审计记录。不能删除当前登录账号；删除后该账号的旧 JWT 在下一次请求时失效。
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        "200":
+          description: 返回已删除的账号编号
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiResponse" }
+        "403": { description: 当前身份无权管理权限，或试图删除当前登录账号 }
+        "404": { description: 账号不存在 }
   /api/v1/permission-admin/accounts/{accountId}/permissions:
     put:
       summary: 覆盖账号角色与客户经理数据范围
-      description: 至少授予一种身份；客户经理类还必须提供三级业务数据范围及对应组织字段。
+      description: 至少授予一种身份；客户经理类还必须提供三级业务数据范围及对应组织字段。当前权限管理员修改本人授权时，角色集合必须保留 PERMISSION_ADMIN。
       parameters:
         - name: accountId
           in: path
@@ -127,7 +143,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ApiResponse" }
         "400": { description: 角色或数据范围配置不完整 }
-        "403": { description: 当前身份无权管理权限 }
+        "403": { description: 当前身份无权管理权限，或试图撤销当前登录账号自身的权限管理员身份 }
   /api/v1/queries:
     post:
       summary: 提交自然语言查询任务
@@ -404,10 +420,11 @@ components:
         encrypted_password: { type: string, maxLength: 8192, description: RSA-OAEP-256 密文的 Base64 编码 }
     RegistrationRequest:
       type: object
-      required: [employee_no, username, password]
+      required: [employee_no, display_name, username, password]
       properties:
         employee_no: { type: string, pattern: '^[0-9]{5}$', description: 唯一五位阿拉伯数字工号 }
-        username: { type: string, minLength: 4, maxLength: 64, pattern: '^[a-z]+[0-9]+$' }
+        display_name: { type: string, minLength: 1, maxLength: 64, description: 注册人姓名，权限审批和登录后身份展示使用 }
+        username: { type: string, minLength: 4, maxLength: 64, pattern: '^[a-z]+[0-9]+$', description: 全局唯一登录用户名；重复时注册失败并提示修改 }
         password: { $ref: "#/components/schemas/EncryptedPassword" }
     SwitchIdentityRequest:
       type: object

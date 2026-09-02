@@ -60,11 +60,23 @@ public class UserRoleGrantService {
                 account.getRegionCode(), account.getBranchId(), account.getManagerId(), roles, account.getEmployeeNo());
     }
 
-    /** 权限管理员读取账号清单时只得到授权所需的非敏感字段。 */
+    /**
+     * 权限管理员读取账号清单时只得到授权所需的非敏感字段。
+     *
+     * <p>displayName 直接取注册时保存的姓名，不再根据工号、用户名或角色拼接展示名称，
+     * 避免同一账号在注册页和权限清单出现两套称呼。</p>
+     */
     public List<AccountOverview> listAccounts(CurrentUser administrator) {
         requirePermissionAdministrator(administrator);
         List<UserAccountEntity> rows = accounts.selectList(Wrappers.<UserAccountEntity>lambdaQuery()
                 .orderByDesc(UserAccountEntity::getCreatedAt));
+        /*
+         * 权限清单按五位工号升序保持稳定，便于管理员快速定位账号。
+         * 升级前缺少工号的历史账号统一放到末尾，再以用户名排序，避免每次刷新顺序跳动。
+         */
+        rows.sort(Comparator.comparing(UserAccountEntity::getEmployeeNo,
+                        Comparator.nullsLast(String::compareTo))
+                .thenComparing(UserAccountEntity::getUsername, Comparator.nullsLast(String::compareTo)));
         List<UserRoleGrantEntity> grantRows = grants.selectList(Wrappers.<UserRoleGrantEntity>lambdaQuery()
                 .orderByAsc(UserRoleGrantEntity::getCreatedAt));
         Map<Long, List<UserRoleGrantEntity>> grouped = new LinkedHashMap<>();
@@ -82,6 +94,29 @@ public class UserRoleGrantService {
     }
 
     /**
+     * 删除指定账号及其全部角色授权，但保留使用 user_id 关联的历史会话、任务和审计记录。
+     *
+     * <p>当前登录账号不能删除自己。前端禁用按钮只负责给出清晰反馈，此处的服务端校验才是
+     * 不可绕过的安全边界；校验必须发生在任何数据库删除之前。</p>
+     */
+    @Transactional
+    public void deleteAccount(Long accountId, CurrentUser administrator) {
+        requirePermissionAdministrator(administrator);
+        if (Objects.equals(accountId, administrator.userId())) {
+            throw new BusinessException(403109, "不能删除当前登录账号");
+        }
+        UserAccountEntity account = accounts.selectById(accountId);
+        if (account == null) throw new BusinessException(404002, "账号不存在");
+
+        // 角色授权没有数据库级联关系，必须先显式清理，防止留下可被误识别为有效身份的孤立记录。
+        grants.delete(Wrappers.<UserRoleGrantEntity>lambdaQuery()
+                .eq(UserRoleGrantEntity::getUserId, accountId));
+        if (accounts.deleteById(accountId) != 1) {
+            throw new BusinessException(404002, "账号不存在");
+        }
+    }
+
+    /**
      * 覆盖一个账号的全部身份授权，同时激活已经具备完整业务范围的待审批账号。
      *
      * <p>覆盖写入可避免同一账号留下已经撤销但仍可切换的旧身份。权限管理员只能通过这个受控入口
@@ -93,6 +128,13 @@ public class UserRoleGrantService {
         UserAccountEntity account = accounts.selectById(accountId);
         if (account == null) throw new BusinessException(404002, "账号不存在");
         Set<RoleCode> roles = validateRoles(assignment.roles());
+        /*
+         * 授权保存会先删除目标账号的全部旧角色，因此必须在任何删除发生前保护当前管理员自身。
+         * 前端复选框禁用只用于交互提示；此处才是不可绕过的安全边界。
+         */
+        if (Objects.equals(accountId, administrator.userId()) && !roles.contains(RoleCode.PERMISSION_ADMIN)) {
+            throw new BusinessException(403108, "不能撤销当前登录账号自身的权限管理员身份");
+        }
         BusinessDataScopeLevel level = roles.contains(RoleCode.CUSTOMER_MANAGER)
                 ? requireScopeLevel(assignment.businessScopeLevel()) : null;
         String region = normalizeScope(assignment.regionCode(), "区域编码", roles.contains(RoleCode.CUSTOMER_MANAGER));

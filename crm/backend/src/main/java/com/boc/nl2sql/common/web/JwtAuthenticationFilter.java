@@ -1,6 +1,8 @@
 package com.boc.nl2sql.common.web;
 
 import com.boc.nl2sql.service.access.JwtService;
+import com.boc.nl2sql.dao.authorization.UserAccountMapper;
+import com.boc.nl2sql.domain.authorization.AccountStatus;
 import com.boc.nl2sql.domain.authorization.CurrentUser;
 import com.boc.nl2sql.common.api.ApiResponse;
 import com.boc.nl2sql.common.exception.BusinessException;
@@ -31,11 +33,14 @@ import tools.jackson.databind.ObjectMapper;
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtService jwtService;
+    private final UserAccountMapper accounts;
     private final ObjectMapper objectMapper;
     private final QualityFacts qualityFacts;
 
-    public JwtAuthenticationFilter(JwtService jwtService, ObjectMapper objectMapper, QualityFacts qualityFacts) {
+    public JwtAuthenticationFilter(JwtService jwtService, UserAccountMapper accounts,
+                                   ObjectMapper objectMapper, QualityFacts qualityFacts) {
         this.jwtService = jwtService;
+        this.accounts = accounts;
         this.objectMapper = objectMapper;
         this.qualityFacts = qualityFacts;
     }
@@ -47,6 +52,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (StringUtils.hasText(authorization) && authorization.startsWith("Bearer ")) {
             try {
                 CurrentUser user = jwtService.verify(authorization.substring(7));
+                /*
+                 * JWT 验签只能证明令牌由本系统签发，不能证明账号此刻仍然存在。
+                 * 每次请求复核账号状态，确保管理员删除账号后，其尚未过期的旧令牌也立即失效。
+                 */
+                var account = accounts.selectById(user.userId());
+                if (account == null || !Boolean.TRUE.equals(account.getEnabled())
+                        || !AccountStatus.ACTIVE.name().equals(account.getAccountStatus())) {
+                    throw new BusinessException(401001, "登录状态已失效，请重新登录");
+                }
                 var authentication = UsernamePasswordAuthenticationToken.authenticated(
                         user, "", List.of(new SimpleGrantedAuthority("ROLE_" + user.role().name())));
                 SecurityContextHolder.getContext().setAuthentication(authentication);

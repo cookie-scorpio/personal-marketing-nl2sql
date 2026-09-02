@@ -1,4 +1,5 @@
 #requires -Version 7.0
+# 使用演示账号验证查询、澄清和高风险确认的主要 HTTP 闭环。
 param(
     [string]$BaseUrl = 'http://127.0.0.1:8080',
     [string]$Username = 'director01',
@@ -82,7 +83,4 @@ $cancelled = Send-Json "/api/v1/queries/$($rejected.task_id)/confirmations" @{
 Assert-True ($cancelled.status -eq 'CANCELLED') '拒绝执行未取消任务'
 Write-Output 'PASS 拒绝风险查询'
 
-$history = (Invoke-RestMethod -Uri "$BaseUrl/api/v1/query-history?page_no=1&page_size=2" -Headers $headers).data
-Assert-True (@($history.items).Count -le 2 -and $history.page_size -eq 2) '历史分页参数未生效'
-Write-Output 'PASS 历史分页'
 Write-Output 'v1.0 核心闭环验收通过。'

@@ -58,7 +58,7 @@ public class ConversationController {
         return ApiResponse.success(store.detail(id,user,before,size),WebRequestSupport.requestId(request));
     }
 
-    /** v1.5 客户检索：固定条件取自活动澄清任务，keyword 只能作为附加筛选。 */
+    /** 客户检索的固定条件取自活动澄清任务，keyword 只能作为附加筛选。 */
     @GetMapping("/{id}/customer-search")
     public ApiResponse<Map<String,Object>> customerSearch(@PathVariable String id,@AuthenticationPrincipal CurrentUser user,
             @RequestParam(defaultValue="") String keyword,@RequestParam(defaultValue="1",name="page_no")int page,

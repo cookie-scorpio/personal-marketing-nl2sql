@@ -1,3 +1,5 @@
+"""生成数据库设计 Word 文档，并统一控制页面、表格、字体和页眉页脚格式。"""
+
 from __future__ import annotations
 
 import os

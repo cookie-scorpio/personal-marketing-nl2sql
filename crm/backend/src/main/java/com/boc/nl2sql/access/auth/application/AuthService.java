@@ -15,6 +15,12 @@ import com.boc.nl2sql.quality.event.QualityFact;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+/**
+ * 校验本地账号凭据并签发应用自己的 JWT。
+ *
+ * <p>用户名不存在、密码错误和账号禁用共享同一外部提示，避免认证接口泄露账号有效性；
+ * 待审批状态只在密码校验成功后暴露。</p>
+ */
 @Service
 public class AuthService {
     private final UserAccountMapper userAccountMapper;
@@ -34,6 +40,7 @@ public class AuthService {
         this.usernamePolicy = usernamePolicy;
     }
 
+    /** 解密一次性密码信封、校验账号状态，并在成功后签发访问令牌。 */
     public LoginResponse login(LoginRequest request) {
         String username = usernamePolicy.normalizeAndValidate(request.username());
         if (request.password() == null) {

@@ -334,7 +334,7 @@ public class ResultAssembler {
             if (valid.size() == 1) insights.add((dimText.isEmpty() ? "" : dimText)
                     + measure.label() + "为" + compactNumber(number(max.get(measure.key()))) + measure.unit() + "。");
             else if (dimension != null && valid.size() == 2) {
-                // v1.5 两人对比：两行结果直接生成高低比较句式；有姓名列时附脱敏姓名便于阅读。
+                // 两人对比的两行结果直接生成高低比较句；有姓名列时附脱敏姓名便于阅读。
                 var first = valid.get(0); var second = valid.get(1);
                 double a = number(first.get(measure.key())), b = number(second.get(measure.key()));
                 String cmp = a > b ? "高于" : a < b ? "低于" : "等于";

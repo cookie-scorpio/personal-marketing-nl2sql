@@ -58,7 +58,7 @@ public class ConversationStore {
         if(page<1||size<1||size>100)throw new BusinessException(400001,"分页参数不正确");
         return jdbc.queryForList("SELECT session_id,title,active_task_id,state_version,created_at,updated_at FROM conversation_session WHERE user_id=? AND deleted_at IS NULL ORDER BY created_at DESC,session_id DESC LIMIT ? OFFSET ?",user.userId(),size,(long)(page-1)*size);
     }
-    /** @客户名单：批量校验编号是否在用户数据范围内；返回 (在范围内, 不在范围内) 两个集合。 */
+    /** 批量校验客户编号是否在用户数据范围内，并分别返回授权内与授权外集合。 */
     public record IdScope(java.util.Set<String> inScope, java.util.Set<String> outOfScope) {}
     public IdScope checkIdsScope(java.util.Collection<String> ids, CurrentUser user) {
         if (ids.isEmpty()) return new IdScope(java.util.Set.of(), java.util.Set.of());
@@ -75,7 +75,7 @@ public class ConversationStore {
         return new IdScope(inScope, outOfScope);
     }
 
-    /** v1.5 客户检索前置校验：返回服务端保存的固定条件，前端无权覆盖。 */
+    /** 客户检索前置校验：返回服务端保存的固定条件，前端无权覆盖。 */
     public CustomerResolver.SearchScope requireActiveCustomerClarification(String id,CurrentUser user){
         own(id,user);
         var session=jdbc.queryForMap("SELECT active_task_id,deleted_at FROM conversation_session WHERE session_id=?",id);
@@ -117,11 +117,10 @@ public class ConversationStore {
         authorization.requireOwner(user, ((Number) rows.get(0).get("user_id")).longValue(), "会话不存在");
         var session=rows.get(0);
         if(session.get("deleted_at")!=null)return;
-        // v1.5 级联删除：会话有未结束任务时，同一事务内先取消任务再删除。
+        // 会话有未结束任务时，在同一事务内先取消任务再执行软删除。
         // 取消落库后执行器轮询即停，迟到的模型/SQL结果因任务已终态被丢弃，不会复活已删除会话。
         if(session.get("active_task_id")!=null)cascadeCancel(id,(String)session.get("active_task_id"),user,requestId);
         jdbc.update("UPDATE conversation_session SET deleted_at=NOW(3),active_task_id=NULL,state_version=state_version+1 WHERE session_id=?",id);
-        jdbc.update("UPDATE query_history h JOIN query_task q ON h.task_id=q.task_id SET h.deleted=TRUE WHERE q.session_id=?",id);
         qualityFacts.publish(QualityFact.builder(QualityEventType.CONVERSATION_DELETED,"CONVERSATION")
                 .requestId(requestId).sessionId(id).userId(user.userId()).summary("session deleted")
                 .detail("session_id",id).build());

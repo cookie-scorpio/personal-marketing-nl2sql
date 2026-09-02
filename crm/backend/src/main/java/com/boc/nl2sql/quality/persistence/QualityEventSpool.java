@@ -17,7 +17,12 @@ import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.concurrent.locks.ReentrantLock;
 
-/** 数据库暂时不可用时使用的本地持久化补偿缓冲。 */
+/**
+ * 数据库暂时不可用时使用的本地持久化补偿缓冲。
+ *
+ * <p>文件采用一行一个 {@link QualityEvent} 的 JSONL 格式。写入和重放共用文件锁，避免
+ * 同一进程内并发追加与替换文件互相覆盖；跨实例部署时每个实例应使用独立目录。</p>
+ */
 @Component
 public class QualityEventSpool {
     private static final Logger log = LoggerFactory.getLogger(QualityEventSpool.class);
@@ -27,6 +32,7 @@ public class QualityEventSpool {
     private final Path pendingFile;
     private final ReentrantLock fileLock = new ReentrantLock();
 
+    /** 解析配置目录，并将实际待处理文件固定为 pending-events.jsonl。 */
     public QualityEventSpool(ObjectMapper json, QualityEventRepository repository, MeterRegistry meters,
                              @Value("${app.quality.spool-dir:./logs/quality-spool}") String spoolDir) {
         this.json = json;
@@ -35,6 +41,9 @@ public class QualityEventSpool {
         this.pendingFile = Path.of(spoolDir).toAbsolutePath().normalize().resolve("pending-events.jsonl");
     }
 
+    /**
+     * 把未能入库的完整事件追加到补偿文件。文件故障只记指标和日志，不向业务调用方抛出。
+     */
     public void append(QualityEvent event) {
         fileLock.lock();
         try {
@@ -50,6 +59,10 @@ public class QualityEventSpool {
         }
     }
 
+    /**
+     * 定时重放补偿文件。成功事件通过 event_id 幂等入库后移除，失败行继续保留。
+     * 重写完成后优先原子替换文件，不支持原子移动的文件系统退回普通替换。
+     */
     @Scheduled(fixedDelayString = "${app.quality.spool-retry-interval-ms:30000}")
     public void replay() {
         fileLock.lock();

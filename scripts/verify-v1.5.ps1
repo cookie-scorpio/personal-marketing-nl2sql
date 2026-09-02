@@ -1,3 +1,4 @@
+# 按开关组合运行后端、前端、MySQL、HTTP 和真实模型检查，默认不触发外部模型。
 param(
     [string]$Python = 'python',
     [switch]$MysqlTests,

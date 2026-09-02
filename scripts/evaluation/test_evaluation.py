@@ -1,3 +1,5 @@
+"""验证评测比较器会接受正确口径，并拒绝越界、错误比例和非整数人数。"""
+
 import unittest
 from evaluate import compare
 

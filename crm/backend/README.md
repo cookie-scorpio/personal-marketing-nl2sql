@@ -34,7 +34,6 @@ src/main/java/com/boc/nl2sql/
 ├── model               Mock、DeepSeek和Qwen模型适配器
 ├── knowledge           业务术语读取、BCG-E3与Milvus外置接口位置
 ├── execution           SQL规划、安全校验、MySQL执行和结果封装
-├── history             用户可见的查询历史
 ├── audit               不随历史删除的操作审计
 └── common              统一响应、异常、请求标识和公共配置
 
@@ -61,7 +60,7 @@ POST /api/v1/queries
   → SqlSafetyValidator执行只读和白名单校验
   → QueryExecutionGateway查询MySQL
   → ResultAssembler整理指标、图表、表格和基础分析
-  → HistoryService与AuditService保存摘要
+  → 会话消息与质量事实保存任务摘要
   → 前端订阅SSE，断线续传，必要时读取状态恢复
 ```
 
@@ -164,8 +163,6 @@ mvn spring-boot:run
 - `GET /api/v1/queries/{taskId}/status`：查询任务状态和结果。
 - `POST /api/v1/conversations/{sessionId}/messages`：补充或澄清条件。
 - `POST /api/v1/queries/{taskId}/confirmations`：确认高范围查询。
-- `GET /api/v1/query-history`：查询本人历史记录。
-- `DELETE /api/v1/query-history/{historyId}`：删除本人可见历史，不删除审计日志。
 
 ## 注意事项
 

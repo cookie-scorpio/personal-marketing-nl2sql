@@ -1,9 +1,6 @@
-"""Generate reproducible, fully synthetic marketing data for the NL2SQL MVP.
+"""生成可重复的全量虚构营销数据，不使用看似真实的个人敏感信息。
 
-The script deliberately uses invalid/masked identifiers instead of plausible real PII.
-It writes data in batches so the default 200k transactions fit on an ordinary laptop.
-
-v1.5 数据质量约定（与 docs/v1.5实施说明 一致）：
+脚本分批写入数据，使默认二十万条交易也能在普通开发机上生成。数据质量约定：
 - 交易时间必须晚于客户开户日期；
 - 营销触达时间落在对应活动窗口内，触达渠道来自活动申报渠道；
 - 持仓市值由客户总资产拆分生成，不再与资产无关；
@@ -292,7 +289,7 @@ def reset_runtime_tables(cursor) -> None:
     cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
     for table in [
         "conversation_message", "conversation_session", "query_task_event", "query_sql_repair",
-        "query_task", "query_history", "audit_event",
+        "query_task", "audit_event",
     ]:
         cursor.execute(f"TRUNCATE TABLE {table}")
     cursor.execute("SET FOREIGN_KEY_CHECKS = 1")

@@ -25,16 +25,20 @@ import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * 编排查询任务的创建、澄清、确认和取消。
+ *
+ * <p>该服务同时维护数据库任务状态、会话活动任务和幂等映射；所有状态推进都在持有会话锁后完成，
+ * 异步执行只在事务提交后入队，避免工作线程读取到尚未提交的数据。</p>
+ */
 @Service
 public class QueryApplicationService {
     private final QueryTaskMapper taskMapper;
     private final QueryTaskProcessor processor;
-    private final SessionContextStore contextStore;
     private final QualityFacts qualityFacts;
     private final ObjectMapper objectMapper;
     private final TaskStateStore states;
     private final com.boc.nl2sql.execution.QueryExecutionGateway execution;
-    private final com.boc.nl2sql.history.application.HistoryService history;
     private final int timeoutSeconds;
     private final int defaultPageSize;
     private final int maxPageSize;
@@ -48,10 +52,8 @@ public class QueryApplicationService {
     @org.springframework.beans.factory.annotation.Autowired private org.springframework.transaction.PlatformTransactionManager transactions;
 
     public QueryApplicationService(QueryTaskMapper taskMapper, QueryTaskProcessor processor,
-                                    SessionContextStore contextStore, QualityFacts qualityFacts,
-                                   ObjectMapper objectMapper, TaskStateStore states,
-                                   com.boc.nl2sql.execution.QueryExecutionGateway execution,
-                                   com.boc.nl2sql.history.application.HistoryService history,
+                                    QualityFacts qualityFacts, ObjectMapper objectMapper, TaskStateStore states,
+                                    com.boc.nl2sql.execution.QueryExecutionGateway execution,
                                    @org.springframework.beans.factory.annotation.Value("${app.query.execution-timeout-seconds:60}") int timeoutSeconds,
                                    @org.springframework.beans.factory.annotation.Value("${app.query.default-page-size:100}") int defaultPageSize,
                                    @org.springframework.beans.factory.annotation.Value("${app.query.max-page-size:500}") int maxPageSize,
@@ -61,10 +63,9 @@ public class QueryApplicationService {
         }
         this.taskMapper = taskMapper;
         this.processor = processor;
-        this.contextStore = contextStore;
         this.qualityFacts = qualityFacts;
         this.objectMapper = objectMapper;
-        this.states = states; this.execution = execution; this.history = history; this.timeoutSeconds = timeoutSeconds;
+        this.states = states; this.execution = execution; this.timeoutSeconds = timeoutSeconds;
         this.defaultPageSize = defaultPageSize; this.maxPageSize = maxPageSize; this.maxOffset = maxOffset;
     }
 
@@ -72,6 +73,9 @@ public class QueryApplicationService {
         return submit(request,user,requestId,UUID.randomUUID().toString());
     }
 
+    /**
+     * 在“用户 + Idempotency-Key”范围内创建一次查询；相同请求重放原任务，不同载荷复用同一键会被拒绝。
+     */
     public SubmitQueryResponse submit(SubmitQueryRequest request, CurrentUser user, String requestId,String key) {
         authorization.requireAuthenticated(user);
         if(key==null||!key.matches("[A-Za-z0-9._:-]{8,128}"))throw new BusinessException(400004,"请提供8至128位有效 Idempotency-Key");
@@ -138,7 +142,7 @@ public class QueryApplicationService {
         if(!java.util.Set.of("AUTO","TABLE","BAR","LINE","AREA","PIE","SCATTER","HEATMAP","METRIC").contains(display))throw new BusinessException(400001,"preferred_display不是支持的展示类型");
         task.setPreferredDisplay(display);
         var previous=conversations.context(session);
-        // @客户名单（方案甲）：解析粘贴的编号集合并做账号范围预检。
+        // 客户名单先解析编号并做账号范围预检，避免未授权编号进入后续语义处理。
         java.util.LinkedHashSet<String> requestedIds=new java.util.LinkedHashSet<>();
         if(request.customerIds()!=null){
             for(String raw:request.customerIds()){
@@ -160,7 +164,7 @@ public class QueryApplicationService {
         // 用户气泡忠实保存本人输入；助手回显、任务文本和模型上下文仍使用脱敏版本。
         String visibleUserQuery=request.queryText().trim();
         if(!requestedIds.isEmpty()){
-            // @名单展示与用户消息一致：折叠编号为名单标签，不罗列长串编号。
+            // 名单展示与用户消息一致：折叠编号为名单标签，不在界面罗列长串客户号。
             displayBase=displayBase.replaceAll("(?i)C[0-9]{8}(\s*[，,、]?\s*)+"," ").trim()
                     +"（@客户名单 "+requestedIds.size()+" 人）";
             visibleUserQuery=visibleUserQuery.replaceAll("(?i)C[0-9]{8}(\s*[，,、]?\s*)+"," ").trim()
@@ -229,6 +233,7 @@ public class QueryApplicationService {
     }
 
     @org.springframework.transaction.annotation.Transactional
+    /** 校验澄清问题仍是当前问题，在同一任务上合并答案并恢复异步处理。 */
     public SubmitQueryResponse clarify(String sessionId, ClarificationRequest request,
                                        CurrentUser user, String requestId) {
         authorization.requireAuthenticated(user);
@@ -244,7 +249,7 @@ public class QueryApplicationService {
             throw new BusinessException(409002, "反问已失效，请刷新任务状态");
         }
         if("CUSTOMER_SCOPE".equals(question.type())){
-            // @名单权限澄清：剔除后继续（名单已在提交时收敛为权限内集合）或直接取消。
+            // 名单权限澄清只能剔除越权项后继续，或直接取消，不能重新引入未授权客户。
             if(answer.contains("取消")){
                 cancel(request.taskId(),user,requestId);
                 return new SubmitQueryResponse(request.taskId(),sessionId,"CANCELLED",100,"/api/v1/queries/"+request.taskId()+"/status");
@@ -281,6 +286,7 @@ public class QueryApplicationService {
     }
 
     @org.springframework.transaction.annotation.Transactional
+    /** 使用与已保存计划绑定的令牌确认风险，防止客户端确认过期或不同版本的 SQL。 */
     public TaskStatusResponse confirm(String taskId, ConfirmationRequest request,
                                       CurrentUser user, String requestId) {
         authorization.requireAuthenticated(user);
@@ -308,6 +314,7 @@ public class QueryApplicationService {
     }
 
     @org.springframework.transaction.annotation.Transactional
+    /** 幂等取消任务，并在事务提交后终止可能仍在运行的数据库语句。 */
     public TaskStatusResponse cancel(String taskId, CurrentUser user, String requestId) {
         authorization.requireAuthenticated(user);
         QueryTaskEntity task = ownedTask(taskId, user);
@@ -323,7 +330,6 @@ public class QueryApplicationService {
             conversations.record(taskMapper.selectById(taskId));
             afterCommit(()->execution.cancel(taskId));
             try {
-                history.save(taskId, user.userId(), task.getQueryText(), task.getIntentCode(), "CANCELLED", task.getSqlText(), "查询已取消");
                 fact(QualityEventType.QUERY_CANCELLED,requestId,task,user,"USER_REQUEST",Map.of("reason","USER_REQUEST"));
             } catch (RuntimeException recordFailure) {
                 org.slf4j.LoggerFactory.getLogger(QueryApplicationService.class)

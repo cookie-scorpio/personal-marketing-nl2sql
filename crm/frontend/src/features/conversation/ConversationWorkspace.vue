@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 查询工作区协调提交、SSE 状态、澄清确认、历史恢复和取消，是前端任务状态的唯一所有者。 */
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { ChatDotRound, Promotion, Loading, VideoPause, Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
@@ -21,7 +22,7 @@ const messages = ref<ConversationMessage[]>([]), task = ref<TaskStatus | null>(n
 const sending = ref(false), cancelling = ref(false), loading = ref(false)
 const hasMore = ref(false), connectionNote = ref('')
 const selected = ref(''), answer = ref(''), listHost = ref<HTMLElement>()
-// v1.5 @客户名单：粘贴含2个以上编号的文本自动折叠为名单标签，随提交送服务端校验。
+// 粘贴含两个以上客户编号时折叠为名单标签，并随提交交给服务端做最终授权校验。
 const listIds = ref<string[]>([])
 const detectedIds = computed(() => {
   const found = new Set<string>()

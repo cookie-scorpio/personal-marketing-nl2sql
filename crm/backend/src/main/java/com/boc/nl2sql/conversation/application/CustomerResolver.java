@@ -99,7 +99,7 @@ public class CustomerResolver {
                 (rs,n)->new Candidate(rs.getString(1),mask(rs.getString(2)==null?rs.getString(3):rs.getString(2)),rs.getString(4),com.boc.nl2sql.common.privacy.CustomerMasking.mobile(rs.getString(5))));
     }
 
-    /** v1.5 客户检索范围由服务端当前澄清任务生成，前端只能提交附加筛选。 */
+    /** 客户检索范围由服务端当前澄清任务生成，前端只能提交附加筛选。 */
     public record SearchResult(int total,int page,int size,List<Candidate> items){}
     public record SearchScope(String customerName,boolean surname,String customerId,String mobileSuffix,Set<String> allowedFilters){
         public SearchScope {
@@ -112,7 +112,7 @@ public class CustomerResolver {
     }
 
     /**
-     * v1.5 检索语义：scope.constraint 是已确定且不可修改的原问句条件；
+     * 检索语义：scope.constraint 是已确定且不可修改的原问句条件；
      * filter 是可空的附加筛选，只允许使用原条件之外的字段。
      */
     public SearchResult search(CurrentUser user,SearchScope searchScope,String filter,int page,int size){
@@ -311,7 +311,7 @@ public class CustomerResolver {
 
     private BusinessException notFound(){return new BusinessException(404001,"当前权限范围内未找到符合条件的客户");}
 
-    /** v1.5 两人对比：确认当前指代位的客户（固定条件内、非重复），推进队列。 */
+    /** 两人对比时确认当前指代位的客户；候选必须在固定条件内且不能重复。 */
     public void confirmMulti(QueryTaskEntity task,CurrentUser user,String answer){
         var id=ID.matcher(answer);
         if(!id.find())throw new BusinessException(400006,"请在浮窗中通过检索选择客户，或输入 C 加8位数字的客户编号");
@@ -355,7 +355,7 @@ public class CustomerResolver {
         }
     }
     public void answer(QueryTaskEntity task,CurrentUser user,ClarificationQuestion question,String answer,String identityType){
-        // v1.5：检索浮窗统一提交客户编号；旧客户端的类型化补充保留格式校验。
+        // 检索浮窗统一提交客户编号；旧客户端的类型化补充仍保留格式校验。
         if(!"CUSTOMER_SELECTION".equals(question.type()) && identityType!=null){
             boolean valid=switch(identityType){
                 case "CUSTOMER_ID" -> answer.matches("(?i)C[0-9]{8}");

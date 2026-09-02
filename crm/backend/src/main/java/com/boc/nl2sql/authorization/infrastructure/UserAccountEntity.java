@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 
 import java.time.LocalDateTime;
 
+/** 用户账号表的持久化映射；密码哈希仅用于认证，不应进入任何 API 响应。 */
 @TableName("sys_user_account")
 public class UserAccountEntity {
     @TableId(type = IdType.AUTO)

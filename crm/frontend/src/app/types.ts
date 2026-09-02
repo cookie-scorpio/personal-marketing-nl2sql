@@ -1,3 +1,4 @@
+/** 前端消费的后端 API 契约；字段名保持服务端 JSON 的 snake_case。 */
 export type RoleCode = 'CUSTOMER_MANAGER' | 'TEAM_LEAD' | 'ORG_MANAGER'
 
 export interface CurrentUser {
@@ -165,22 +166,4 @@ export interface SubmitQueryResponse {
   status: string
   progress: number
   status_url: string
-}
-
-export interface HistoryItem {
-  history_id: string
-  task_id: string
-  query_text: string
-  intent_code?: string
-  status_code: string
-  sql_summary?: string
-  result_summary?: string
-  created_at: string
-}
-
-export interface PageResult<T> {
-  items: T[]
-  total: number
-  page_no: number
-  page_size: number
 }

@@ -18,7 +18,12 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Executor;
 
-/** F 的统一事实入口，负责补齐事件信息、事务后派发、异步落库和失败补偿。 */
+/**
+ * 质量子系统的统一事实入口，负责补齐事件信息、事务后派发、异步落库和失败补偿。
+ *
+ * <p>该组件只观察业务结果。即使数据库、线程池和本地补偿文件同时不可用，也不得
+ * 抛出异常改变查询任务状态或正常结果。</p>
+ */
 @Component
 public class AsyncQualityFacts implements QualityFacts {
     private static final Logger log = LoggerFactory.getLogger(AsyncQualityFacts.class);
@@ -35,6 +40,9 @@ public class AsyncQualityFacts implements QualityFacts {
         this.meters = meters;
     }
 
+    /**
+     * 接收事实并安排持久化。如果调用方位于事务中，则注册提交后回调，避免保存已回滚业务的事实。
+     */
     @Override
     public void publish(QualityFact fact) {
         QualityEvent event = envelope(fact);
@@ -48,6 +56,7 @@ public class AsyncQualityFacts implements QualityFacts {
         }
     }
 
+    /** 将事实提交到 F 专用队列；队列拒绝或派发异常时立即转入本地补偿。 */
     private void dispatch(QualityEvent event) {
         try {
             executor.execute(() -> persist(event));
@@ -61,6 +70,7 @@ public class AsyncQualityFacts implements QualityFacts {
         }
     }
 
+    /** 异步写入正式事实表并记录结果指标；数据库失败时保留到 JSONL。 */
     private void persist(QualityEvent event) {
         try {
             repository.save(event);
@@ -71,15 +81,21 @@ public class AsyncQualityFacts implements QualityFacts {
         }
     }
 
+    /**
+     * 执行最终降级写入。再次捕获异常，保证存储与补偿同时故障时也不会污染业务调用栈。
+     */
     private void appendToSpool(QualityEvent event) {
         try {
             spool.append(event);
         } catch (RuntimeException error) {
-            // F 的存储和补偿都不可用时只记录诊断日志，不能反向打断业务请求。
+            // 质量存储和补偿都不可用时只记录诊断日志，不能反向打断业务请求。
             log.error("F事实补偿失败：eventId={}, type={}", event.eventId(), event.eventType(), error);
         }
     }
 
+    /**
+     * 将事实草稿转换成完整事件：生成幂等编号、固定结构版本、限制摘要长度并记录发生时间。
+     */
     private QualityEvent envelope(QualityFact fact) {
         String summary = fact.summary() == null || fact.summary().isBlank() ? fact.type().name() : fact.summary().strip();
         if (summary.length() > 500) summary = summary.substring(0, 500);

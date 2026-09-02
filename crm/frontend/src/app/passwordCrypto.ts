@@ -1,3 +1,4 @@
+/** 使用服务端短期公钥加密密码；缓存的是公钥请求，不缓存任何密码或密文。 */
 import { apiRequest } from './api'
 import type { EncryptedPassword, PasswordPublicKey } from './types'
 

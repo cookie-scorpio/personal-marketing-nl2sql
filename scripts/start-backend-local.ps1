@@ -1,3 +1,4 @@
+# 从 deploy/local/.env 启动 MySQL、Redis 和后端；缺失的本地 JWT 密钥只在当前进程生成。
 $ErrorActionPreference = 'Stop'
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot

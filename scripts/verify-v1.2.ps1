@@ -1,4 +1,5 @@
 #requires -Version 7.0
+# 通过公开 HTTP 接口验证幂等、SSE、会话隔离和客户澄清等核心契约。
 param(
     [string]$BaseUrl = 'http://127.0.0.1:8080',
     [string]$Username = 'director01',

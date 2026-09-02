@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 登录与公开注册入口；客户端校验用于即时提示，最终账号策略仍由服务端执行。 */
 import { computed, ref } from 'vue'
 import { Lock, User } from '@element-plus/icons-vue'
 import { ApiError } from '../../app/api'

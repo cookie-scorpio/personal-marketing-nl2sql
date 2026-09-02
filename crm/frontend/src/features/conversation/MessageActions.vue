@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 消息级复制、重发和反馈操作；对临时 SSE 消息评分前先解析其持久化消息编号。 */
 import { computed, onUnmounted, ref } from 'vue'
 import { CopyDocument, EditPen } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'

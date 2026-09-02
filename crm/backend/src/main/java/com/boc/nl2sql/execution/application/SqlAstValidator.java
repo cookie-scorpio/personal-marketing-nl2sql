@@ -147,7 +147,7 @@ public final class SqlAstValidator {
         if(expression instanceof InExpression i){
             expr(i.getLeftExpression(),scope,ctes,depth,aliases);
             // 名单约束证明：customer_id IN (字面量集合) 且集合成员全部在服务端核验名单内时，
-            // 该等值集合与单客等值具有同等约束力（G工作包：@客户名单批量查询）。
+            // 客户编号等值集合与单客等值具有同等约束力，可安全表达已授权名单。
             if(customerSet!=null && !customerSet.isEmpty() && i.getLeftExpression() instanceof Column c){
                 String col=id(c.getColumnName());
                 if("customer_id".equals(col) && c.getTable()!=null && c.getTable().getName()!=null){

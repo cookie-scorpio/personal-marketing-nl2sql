@@ -1,3 +1,4 @@
+/** 全局认证状态；revision 防止较早完成的异步请求覆盖用户最新的登录或退出操作。 */
 import { computed, ref } from 'vue'
 import { apiRequest, clearToken, getToken, setToken, TOKEN_KEY } from './api'
 import { encryptPassword } from './passwordCrypto'

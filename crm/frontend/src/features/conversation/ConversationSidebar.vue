@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 分页加载当前用户的会话，并在刷新时保留已展开页数；新请求会取消旧请求。 */
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { ChatDotRound, Loading, Refresh, Delete } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'

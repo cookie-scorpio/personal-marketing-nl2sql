@@ -23,6 +23,10 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 
+/**
+ * 在只读 MySQL 连接上执行经过校验的分页查询。
+ * 计数和数据页共享同一截止时间；运行句柄允许取消线程中断 JDBC 语句，但必须在连接归还池前关闭。
+ */
 @Repository
 public class MySqlQueryExecutionGateway implements QueryExecutionGateway {
     private final NamedParameterJdbcTemplate jdbc;
@@ -47,6 +51,7 @@ public class MySqlQueryExecutionGateway implements QueryExecutionGateway {
     }
 
     @Override
+    /** 校验 SQL 后依次执行计数和数据页，并在两步之间持续检查任务是否仍有效。 */
     public PagedQueryRows execute(String taskId, PlannedQuery query, QueryPage page, BooleanSupplier active) {
         safety.validate(query.sql());
         if (page.pageSize() > maxPageSize) throw new IllegalArgumentException("单页条数超过执行层上限");
@@ -109,6 +114,7 @@ public class MySqlQueryExecutionGateway implements QueryExecutionGateway {
     private interface SqlWork<T> { T execute(PreparedStatement statement) throws SQLException; }
 
     @Override
+    /** 异步停止指定任务当前正在执行的 JDBC 语句；任务未运行时保持幂等。 */
     public void cancel(String taskId) {
         RunningQuery handle = running.get(taskId);
         if (handle != null) watcher.execute(() -> handle.stop(false));

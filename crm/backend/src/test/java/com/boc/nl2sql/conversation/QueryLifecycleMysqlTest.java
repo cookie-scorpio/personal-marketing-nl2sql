@@ -92,7 +92,6 @@ class QueryLifecycleMysqlTest {
         var other = new CurrentUser(1L, "manager01", "经理", RoleCode.CUSTOMER_MANAGER, "EAST", "B001", "M0001");
         assertThatThrownBy(() -> service.cancel(id, other, "wrong-owner"))
                 .isInstanceOfSatisfying(BusinessException.class, error -> assertThat(error.code()).isEqualTo(404001));
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM query_history WHERE task_id=?", Integer.class, id)).isEqualTo(1);
         verify(model, never()).repair(anyString(), any(), anyString(), anyString(), anyBoolean());
     }
 
@@ -140,9 +139,6 @@ class QueryLifecycleMysqlTest {
             var ids=new java.util.HashSet<String>();for(var result:pool.invokeAll(calls))ids.add(result.get());
             assertThat(ids).hasSize(1);String id=ids.iterator().next();awaitState(id,"SUCCESS");
             assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM query_task WHERE user_id=? AND idempotency_key=?",Integer.class,director.userId(),key)).isEqualTo(1);
-            // 终态提交先于兼容历史的写入；等待该副作用完成后验证仍只有一条，避免时序偶发失败。
-            for(int i=0;i<100 && jdbc.queryForObject("SELECT COUNT(*) FROM query_history WHERE task_id=?",Integer.class,id)==0;i++)Thread.sleep(20);
-            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM query_history WHERE task_id=?",Integer.class,id)).isEqualTo(1);
             assertThatThrownBy(()->service.submit(new SubmitQueryRequest(session,"不同问题","AUTO",false, null),director,"changed",key)).isInstanceOfSatisfying(BusinessException.class,e->assertThat(e.code()).isEqualTo(409005));
             verify(model,times(1)).interpret(anyString(),eq(director),any(),eq(false));
         }finally{pool.shutdownNow();}

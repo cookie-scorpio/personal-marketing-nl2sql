@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 应用外壳负责恢复登录态、响应式侧栏和工作区生命周期，不承载查询业务状态。 */
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import {
   Close, Fold, Plus, SwitchButton,

@@ -330,7 +330,7 @@ public abstract class OpenAiCompatibleModelAdapter implements ModelAdapter {
         boolean asking = Boolean.TRUE.equals(plan.needsClarification()) || confidence < 0.65;
         ClarificationQuestion question = null;
         if (asking) {
-            // v1.5 选项协议：兼容字符串与 {label,value,recommended} 对象两种形态；
+            // 选项协议同时兼容字符串与 {label,value,recommended} 对象两种形态；
             // recommended 项排到首位并在问题对象上标记，前端据此展示“推荐”。
             var labels = new java.util.ArrayList<String>();
             String recommended = null;

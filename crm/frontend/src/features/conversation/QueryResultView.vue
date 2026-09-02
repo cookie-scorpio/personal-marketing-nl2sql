@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 以服务端列语义展示结果；复制和导出只接触已经过脱敏的响应数据。 */
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { QueryResult } from '../../app/types'
@@ -13,7 +14,7 @@ const sourceLabels: Record<string, string> = { RULE: '规则查询', DEEPSEEK: '
 const labels: Record<string, string> = { BAR: '柱状图', LINE: '折线图', AREA: '面积图', PIE: '构成图', SCATTER: '散点图', HEATMAP: '热力图' }
 const format = (value: unknown) => typeof value === 'number' ? new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 }).format(value) : value ?? '—'
 async function copy(sql: string) { try { await navigator.clipboard.writeText(sql); ElMessage.success('SQL 已复制') } catch { ElMessage.error('复制失败，可以手动选择 SQL 文本') } }
-// v1.5 结果导出：直接使用界面已脱敏的行生成 CSV（UTF-8 BOM 防 Excel 乱码），不经过任何未脱敏数据。
+// 直接使用界面已脱敏的行生成 CSV；UTF-8 BOM 用于避免 Excel 打开中文时乱码。
 const CSV_NEWLINE = String.fromCharCode(13) + String.fromCharCode(10)
 const CSV_BOM = String.fromCharCode(0xFEFF)
 const CSV_DQ = String.fromCharCode(34)

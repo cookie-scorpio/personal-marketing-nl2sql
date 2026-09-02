@@ -333,25 +333,6 @@ paths:
                     properties:
                       data: { $ref: "#/components/schemas/TaskStatus" }
         "404": { description: 任务不存在或不属于当前用户 }
-  /api/v1/query-history:
-    get:
-      summary: 分页读取当前用户查询历史
-      parameters:
-        - { name: page_no, in: query, schema: { type: integer, minimum: 1, default: 1 } }
-        - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
-        - { name: keyword, in: query, schema: { type: string } }
-      responses:
-        "200": { description: 历史记录分页 }
-  /api/v1/query-history/{historyId}:
-    delete:
-      summary: 删除当前用户可见历史，不删除审计日志
-      parameters:
-        - name: historyId
-          in: path
-          required: true
-          schema: { type: string, format: uuid }
-      responses:
-        "200": { description: 删除成功 }
 components:
   securitySchemes:
     bearerAuth:

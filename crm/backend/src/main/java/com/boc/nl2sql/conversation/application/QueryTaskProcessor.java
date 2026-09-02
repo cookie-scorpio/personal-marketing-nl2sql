@@ -9,7 +9,6 @@ import com.boc.nl2sql.execution.QueryExecutionGateway;
 import com.boc.nl2sql.execution.QueryTerminatedException;
 import com.boc.nl2sql.execution.application.*;
 import com.boc.nl2sql.execution.domain.*;
-import com.boc.nl2sql.history.application.HistoryService;
 import com.boc.nl2sql.model.ModelGateway;
 import com.boc.nl2sql.model.QueryInterpretation;
 import com.boc.nl2sql.nl2sql.application.CompletenessValidator;
@@ -43,7 +42,6 @@ public class QueryTaskProcessor {
     private final QueryExecutionGateway execution;
     private final ResultAssembler assembler;
     private final FallbackPlanner fallbackPlanner;
-    private final HistoryService history;
     private final QualityFacts qualityFacts;
     private final ObjectMapper json;
     private final int maxClarifications;
@@ -56,14 +54,13 @@ public class QueryTaskProcessor {
     public QueryTaskProcessor(QueryTaskMapper taskMapper, TaskStateStore states, ModelGateway modelGateway,
             CompletenessValidator completeness, SqlPlanner planner, SqlRiskEvaluator risks,
             SqlSafetyValidator safety, GeneratedSqlScopeValidator scope, QueryExecutionGateway execution,
-            ResultAssembler assembler, FallbackPlanner fallbackPlanner, HistoryService history,
-            QualityFacts qualityFacts, ObjectMapper json,
+            ResultAssembler assembler, FallbackPlanner fallbackPlanner, QualityFacts qualityFacts, ObjectMapper json,
             com.boc.nl2sql.nl2sql.application.DisplayConflictGuard conflictGuard,
             @Value("${app.query.max-clarification-rounds:5}") int maxClarifications) {
         this.taskMapper = taskMapper; this.states = states; this.modelGateway = modelGateway;
         this.completeness = completeness; this.planner = planner; this.risks = risks; this.safety = safety;
         this.scope = scope; this.execution = execution; this.assembler = assembler;
-        this.fallbackPlanner = fallbackPlanner; this.history = history; this.qualityFacts = qualityFacts;
+        this.fallbackPlanner = fallbackPlanner; this.qualityFacts = qualityFacts;
         this.json = json; this.maxClarifications = maxClarifications; this.conflictGuard = conflictGuard;
     }
     private final com.boc.nl2sql.nl2sql.application.DisplayConflictGuard conflictGuard;
@@ -87,7 +84,7 @@ public class QueryTaskProcessor {
             java.util.List<String> customerList=task.getCustomerIdsJson()==null?null:
                     java.util.Arrays.asList(json.readValue(task.getCustomerIdsJson(),String[].class));
             if(customerList!=null){
-                // @名单任务：名单已由服务端核验，模型必须用 IN 名单表达，不做单客定位。
+                // 名单已由服务端核验，模型必须使用 IN 条件表达，不再执行单客定位。
                 task.setDisplayQuery(task.getQueryText().replaceAll("(?i)C[0-9]{8}(\s*[，,、]?\s*)+"," ").trim()
                         +"（@客户名单 "+customerList.size()+" 人）");
             }else if(customers!=null){
@@ -126,7 +123,7 @@ public class QueryTaskProcessor {
                 ask(task,question.get(),requestId);
                 return;
             }
-            // v1.5 确定性守卫：显式要求饼图但问题为时间趋势时，固定澄清口径，不再依赖模型裁量。
+            // 显式要求饼图但问题表达时间趋势时，用确定性规则澄清口径，不依赖模型裁量。
             if (interpretation.hasGeneratedSql() && modelGenerated(task.getInterpretationSource())) {
                 var conflict=conflictGuard.check(task.getQueryText(),task.getPreferredDisplay());
                 if(conflict.isPresent()){ask(task,conflict.get(),requestId);return;}
@@ -391,8 +388,6 @@ public class QueryTaskProcessor {
 
     private void recordTerminal(QueryTaskEntity task, String summary, String requestId) {
         try {
-            history.save(task.getTaskId(), task.getUserId(), task.getQueryText(), task.getIntentCode(),
-                    task.getStatusCode(), task.getSqlText(), summary);
             fact(QualityEventType.valueOf("QUERY_" + task.getStatusCode()),task,null,requestId,summary,
                     terminalDetails(task),Set.of("FAILED","TIMED_OUT","DEGRADED").contains(task.getStatusCode()));
         } catch (RuntimeException error) {

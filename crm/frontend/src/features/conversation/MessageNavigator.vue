@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 构建用户问题锚点，并在跳转到旧消息前按需加载更早的会话页。 */
 import { computed, ref, watch, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { apiRequest } from '../../app/api'

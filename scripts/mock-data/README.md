@@ -114,7 +114,6 @@ $env:MYSQL_PASSWORD = "与后端配置相同的应用数据库密码"
 - `query_task_event`
 - `query_sql_repair`
 - `query_task`
-- `query_history`
 - `audit_event`
 
 它不会删除 `sys_user_account`、`business_term`、Flyway 历史或数据库结构。

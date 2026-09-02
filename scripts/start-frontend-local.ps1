@@ -1,3 +1,4 @@
+# 确保前端依赖已按锁文件安装，然后启动 Vite 开发服务器。
 $ErrorActionPreference = 'Stop'
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot

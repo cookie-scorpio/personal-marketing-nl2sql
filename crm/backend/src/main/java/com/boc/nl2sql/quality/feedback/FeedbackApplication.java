@@ -11,7 +11,12 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.Map;
 
-/** F 对反馈历史和当前反馈投影的唯一写入 Interface。 */
+/**
+ * F 对反馈历史和当前反馈投影的唯一写入服务。
+ *
+ * <p>会话服务负责校验所有者、助手消息和可评价状态，验证通过后把反馈命令提交给本服务。
+ * 本服务负责反馈枚举、当前状态版本和不可变变化事实。</p>
+ */
 @Service
 public class FeedbackApplication {
     private final JdbcTemplate jdbc;
@@ -22,6 +27,14 @@ public class FeedbackApplication {
         this.facts = facts;
     }
 
+    /**
+     * 原子更新一条消息的当前反馈，并追加 FEEDBACK_CHANGED 事实。
+     *
+     * <p>先锁定旧状态，再使用 upsert 更新反馈和值版本。事实由 {@link QualityFacts} 在本事务
+     * 成功提交后异步派发，因此投影回滚时不会留下错误的变化历史。</p>
+     *
+     * @throws BusinessException feedback 不是 LIKE、DISLIKE 或 NONE 时抛出
+     */
     @Transactional
     public FeedbackState record(FeedbackCommand command) {
         if (command.feedback() == null || !List.of("LIKE", "DISLIKE", "NONE").contains(command.feedback())) {
@@ -48,9 +61,12 @@ public class FeedbackApplication {
         return new FeedbackState(command.messageId(), command.feedback(), command.reasonCode(), command.comment());
     }
 
+    /** 会话服务提交的反馈命令；reasonCode 和 comment 为可选补充信息。 */
     public record FeedbackCommand(String requestId, String sessionId, String taskId, long messageId, Long userId,
                                   String feedback, String reasonCode, String comment) { }
+    /** F 更新后的反馈状态。 */
     public record FeedbackState(long messageId, String feedback, String reasonCode, String comment) {
+        /** 转换成当前普通用户接口兼容的最小响应，原因和备注暂不回显。 */
         public Map<String, Object> response() { return Map.of("message_id", messageId, "feedback", feedback); }
     }
 }

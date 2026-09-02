@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 根据服务端给出的字段角色绘制图表，并同步处理容器尺寸、无障碍和减少动效偏好。 */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { BarChart, LineChart, PieChart, ScatterChart, HeatmapChart } from 'echarts/charts'
 import { GridComponent, LegendComponent, TooltipComponent, VisualMapComponent, DataZoomComponent, AriaComponent } from 'echarts/components'

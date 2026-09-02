@@ -12,7 +12,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
 
-/** 首次启动时写入业务演示账号和仅访问 F 的质量管理员；密码进入数据库前统一使用 BCrypt。 */
+/** 首次启动时写入业务演示账号和只访问质量功能的管理员；密码入库前统一使用 BCrypt。 */
 @Component
 public class DemoAccountBootstrap implements ApplicationRunner {
     public static final String DEMO_PASSWORD = "Demo@123";

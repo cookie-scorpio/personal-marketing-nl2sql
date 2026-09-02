@@ -8,7 +8,6 @@ import com.boc.nl2sql.conversation.infrastructure.*;
 import com.boc.nl2sql.execution.*;
 import com.boc.nl2sql.execution.application.*;
 import com.boc.nl2sql.execution.domain.*;
-import com.boc.nl2sql.history.application.HistoryService;
 import com.boc.nl2sql.model.*;
 import com.boc.nl2sql.nl2sql.application.*;
 import com.boc.nl2sql.quality.collection.QualityFacts;
@@ -32,7 +31,6 @@ class QueryTaskProcessorTest {
     private final TaskStateStore states = mock(TaskStateStore.class);
     private final ModelGateway model = mock(ModelGateway.class);
     private final QueryExecutionGateway execution = mock(QueryExecutionGateway.class);
-    private final HistoryService history = mock(HistoryService.class);
     private final QualityFacts qualityFacts = mock(QualityFacts.class);
     private final SqlFactRecorder sqlFacts = mock(SqlFactRecorder.class);
     private final RepairFactStore repairFacts = mock(RepairFactStore.class);
@@ -49,7 +47,7 @@ class QueryTaskProcessorTest {
         var planner = new SqlPlanner(scope, 100);
         processor = new QueryTaskProcessor(mapper, states, model, new CompletenessValidator(), planner,
                 new SqlRiskEvaluator(), new SqlSafetyValidator(), new GeneratedSqlScopeValidator(), execution,
-                new ResultAssembler(null), new FallbackPlanner(parser, planner, scope, 100), history, qualityFacts, json,
+                new ResultAssembler(null), new FallbackPlanner(parser, planner, scope, 100), qualityFacts, json,
                 new com.boc.nl2sql.nl2sql.application.DisplayConflictGuard(), 2);
         ReflectionTestUtils.setField(processor,"sqlFacts",sqlFacts);
         ReflectionTestUtils.setField(processor,"repairFacts",repairFacts);
@@ -182,7 +180,7 @@ class QueryTaskProcessorTest {
         doThrow(new TaskStateStore.TaskChangedException()).when(states).ensureActive("task");
         processor.processAsync("task", user, "request");
         verifyNoInteractions(execution);
-        verify(history, never()).save(anyString(), any(), any(), any(), any(), any(), any());
+        verify(qualityFacts, never()).publish(any());
     }
 
     @Test

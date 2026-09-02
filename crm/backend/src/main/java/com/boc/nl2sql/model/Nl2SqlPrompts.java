@@ -38,7 +38,7 @@ public class Nl2SqlPrompts {
                 .append("\n数据库业务术语（优先采用）：\n").append(terms.promptContext())
                 .append("\n当前日期：").append(LocalDate.now())
                 .append("\n分页由服务端统一处理；不要添加LIMIT/OFFSET。用户要求Top N时改用ROW_NUMBER排名条件，N不得超过：").append(maxRows);
-        // v1.5 注入数据概览：模型可据此选择合理的时间粒度与空结果说明，减少对快照日期的猜测。
+        // 注入数据概览，让模型选择合理的时间粒度与空结果说明，减少对快照日期的猜测。
         if (insights != null) {
         var snapshot = insights.latestSnapshot();
         if (snapshot != null) sb.append("\n最新持有快照日期：").append(snapshot).append("（查询当前持有直接用该日期）");

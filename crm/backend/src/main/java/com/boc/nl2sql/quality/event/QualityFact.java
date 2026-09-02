@@ -4,7 +4,11 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * 业务 Module 提交给 F 的类型化事实草稿。事件编号、时间、版本、持久化和补偿均由 F 补齐。
+ * 业务模块提交给质量子系统的类型化事实草稿。
+ *
+ * <p>调用方负责给出事实类型、来源、关联编号和详细内容；事件编号、发生时间、版本、
+ * 持久化方式及失败补偿均由 F 补齐。构建后顶层载荷映射不可增删，避免调用方在异步入库前
+ * 改变事实字段。</p>
  */
 public final class QualityFact {
     private final QualityEventType type;
@@ -39,6 +43,12 @@ public final class QualityFact {
         this.payload = Map.copyOf(builder.payload);
     }
 
+    /**
+     * 创建事实构建器。
+     *
+     * @param type 已经发生的事实类型
+     * @param sourceModule 产生事实的模块，例如 ACCESS、CONVERSATION、MODEL、EXECUTION 或 QUALITY
+     */
     public static Builder builder(QualityEventType type, String sourceModule) {
         return new Builder(type, sourceModule);
     }
@@ -58,6 +68,10 @@ public final class QualityFact {
     public boolean evaluationCandidate() { return evaluationCandidate; }
     public Map<String, Object> payload() { return payload; }
 
+    /**
+     * 链式构建事实草稿。关联字段均可选，但类型和来源模块必填。
+     * {@link #detail(String, Object)} 与 {@link #details(Map)} 会忽略空键和空值。
+     */
     public static final class Builder {
         private final QualityEventType type;
         private final String sourceModule;
@@ -74,6 +88,7 @@ public final class QualityFact {
         private boolean evaluationCandidate;
         private final Map<String, Object> payload = new LinkedHashMap<>();
 
+        /** 校验并保存事实最小必填信息。 */
         private Builder(QualityEventType type, String sourceModule) {
             if (type == null) throw new IllegalArgumentException("事实类型不能为空");
             if (sourceModule == null || sourceModule.isBlank()) throw new IllegalArgumentException("事实来源模块不能为空");

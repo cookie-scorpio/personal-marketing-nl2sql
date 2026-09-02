@@ -7,6 +7,10 @@ import com.baomidou.mybatisplus.annotation.FieldStrategy;
 
 import java.time.LocalDateTime;
 
+/**
+ * 查询任务状态机的持久化聚合。
+ * JSON 字段保存阶段性快照，stateVersion 用于检测并发状态推进。
+ */
 @TableName("query_task")
 public class QueryTaskEntity {
     @TableId

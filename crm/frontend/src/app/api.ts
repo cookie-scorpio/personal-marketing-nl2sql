@@ -1,3 +1,4 @@
+/** 统一处理 API 地址、认证头、错误信封和幂等操作键。 */
 const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
 export const apiUrl = (path: string) => `${API_BASE}${path}`
 export const TOKEN_KEY = 'nl2sql_access_token'

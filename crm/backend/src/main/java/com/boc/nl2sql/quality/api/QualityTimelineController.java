@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 import java.util.Map;
 
+/** 质量时间线的只读管理员接口；访问权限由 SecurityConfig 限制为 QUALITY_ADMIN。 */
 @RestController
 @RequestMapping("/api/v1/quality")
 public class QualityTimelineController {
@@ -29,6 +30,10 @@ public class QualityTimelineController {
         this.facts = facts;
     }
 
+    /**
+     * 增量返回指定任务的事实，并追加一条 QUALITY_TIMELINE_VIEWED 管理访问事实。
+     * 当前接口用于验证采集内容，也作为后续监控页面的数据入口。
+     */
     @GetMapping("/tasks/{taskId}/events")
     public ApiResponse<List<Map<String, Object>>> taskEvents(
             @PathVariable String taskId,

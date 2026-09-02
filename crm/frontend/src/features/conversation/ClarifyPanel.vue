@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 澄清输入面板；客户检索只追加关键词，原问题中已锁定的条件不能在前端改写。 */
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { Loading, Search } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
@@ -97,7 +98,7 @@ function pickOption(option: string) { emit('select', option) }
 </script>
 
 <template>
-  <!-- v1.5：原问句条件由服务端锁定；输入框始终为空，只提交附加筛选。 -->
+  <!-- 原问句条件由服务端锁定；输入框始终为空，只提交附加筛选。 -->
   <div class="clarify-panel" role="region" aria-label="补充选择" tabindex="0" @keydown="onKeydown">
     <p v-if="question.prompt && isCustomerSearch" class="clarify-referent">{{ question.prompt }}</p>
     <template v-if="isCustomerSearch">

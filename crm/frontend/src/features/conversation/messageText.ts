@@ -1,6 +1,6 @@
 import type { ConversationMessage, QueryResult } from '../../app/types'
 
-/** v1.0结果没有analysis等新字段；只补展示容器，不重新生成或计算历史数据。 */
+/** 历史结果可能没有 analysis 等字段；只补展示容器，不重新生成或计算历史数据。 */
 export function normalizeResult(result: QueryResult): QueryResult {
   return { ...result, columns: result.columns || [], rows: result.rows || [], metrics: result.metrics || [], charts: result.charts || [],
     analysis: { overview: result.analysis?.overview || result.summary || '', insights: result.analysis?.insights || [], suggestions: result.analysis?.suggestions || [] } }

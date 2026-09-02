@@ -15,7 +15,7 @@ public record ClarificationQuestion(
 ) {
     public ClarificationQuestion {
         candidates=candidates==null?List.of():List.copyOf(candidates);
-        // v1.5：客户定位改为统一检索浮窗，前端不再渲染身份类型单选，inputTypes 仅为兼容保留空值。
+        // 客户定位统一使用检索浮窗；inputTypes 只为兼容旧响应结构而保留空值。
         inputTypes=List.of();
     }
     public ClarificationQuestion(String id,String type,String prompt,List<String> options,Map<String,String> slots,List<com.boc.nl2sql.conversation.application.CustomerResolver.Candidate> candidates){this(id,type,prompt,options,slots,candidates,List.of(),null);}

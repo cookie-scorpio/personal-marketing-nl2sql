@@ -11,6 +11,7 @@ import tools.jackson.databind.ObjectMapper;
 import java.util.Map;
 import java.util.List;
 
+/** 将任务表中的 JSON 状态和修复事实组装为稳定的客户端状态快照。 */
 @Component
 public class TaskSnapshots {
     private final ObjectMapper json;
@@ -22,6 +23,7 @@ public class TaskSnapshots {
                          CustomerResolver customers) {
         this.json=json; this.timeout=timeout; this.customers=customers;
     }
+    /** 仅在对应状态暴露确认信息，并为缺失的可选集合提供空列表。 */
     @SuppressWarnings("unchecked")
     public TaskStatusResponse of(QueryTaskEntity task) {
         Map<String,Object> confirmation=null;

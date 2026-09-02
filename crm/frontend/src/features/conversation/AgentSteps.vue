@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 把后端任务状态压缩为可展开的阶段轨迹，并从事件时间计算展示耗时。 */
 import { computed } from 'vue'
 import { Check, Close, Loading } from '@element-plus/icons-vue'
 

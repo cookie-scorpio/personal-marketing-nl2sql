@@ -24,6 +24,10 @@ import java.io.IOException;
 import java.util.List;
 import tools.jackson.databind.ObjectMapper;
 
+/**
+ * 将 Bearer JWT 转换为 Spring Security 身份。
+ * 无效令牌在进入控制器前被转换为统一 API 错误，同时留下认证失败事实。
+ */
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtService jwtService;

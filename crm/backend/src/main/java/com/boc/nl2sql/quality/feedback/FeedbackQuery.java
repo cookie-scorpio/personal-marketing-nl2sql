@@ -8,13 +8,21 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 
-/** C 只通过此 F Interface 回显当前用户自己的反馈状态。 */
+/**
+ * 当前反馈投影的只读入口。
+ * 会话查询通过该组件批量回填消息的当前反馈，不直接读取质量子系统的表。
+ */
 @Component
 public class FeedbackQuery {
     private final NamedParameterJdbcTemplate jdbc;
 
     public FeedbackQuery(NamedParameterJdbcTemplate jdbc) { this.jdbc = jdbc; }
 
+    /**
+     * 查询指定用户对一批消息的当前反馈。
+     *
+     * @return messageId 到 LIKE、DISLIKE 或 NONE 的映射；输入为空时返回空 Map
+     */
     public Map<Long, String> currentForMessages(Long userId, Collection<Long> messageIds) {
         if (userId == null || messageIds == null || messageIds.isEmpty()) return Map.of();
         var parameters = new MapSqlParameterSource().addValue("userId", userId).addValue("messageIds", messageIds);

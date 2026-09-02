@@ -4,6 +4,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
+/** 查询结果的传输模型，包含数据、展示建议、解释口径和分页元数据。 */
 public record QueryResult(
         String resultType,
         String title,
@@ -24,6 +25,7 @@ public record QueryResult(
         Boolean hasMore,
         FallbackInfo fallback
 ) {
+    /** 附加降级说明；无可用数据时明确清空分析结论，避免用其他口径替代用户原问题。 */
     public QueryResult withFallback(FallbackInfo info) {
         return new QueryResult(resultType, title, info.dataAvailable() ? "已使用固定模板返回降级结果。" : info.reason(),
                 columns, rows, metrics, charts, info.dataAvailable() ? analysis

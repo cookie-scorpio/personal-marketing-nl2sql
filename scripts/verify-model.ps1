@@ -1,4 +1,5 @@
 #requires -Version 7.0
+# 对已运行的后端执行少量真实模型验收；调用会消耗已配置的模型额度。
 param(
     [string]$BaseUrl = 'http://127.0.0.1:8080',
     [string]$Username = 'director01',

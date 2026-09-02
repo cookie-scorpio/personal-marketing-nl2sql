@@ -6,6 +6,10 @@ import com.boc.nl2sql.nl2sql.domain.ClarificationQuestion;
 import java.util.Map;
 import java.util.List;
 
+/**
+ * 可持久化查询任务的完整客户端快照。
+ * 澄清、确认、结果和错误按任务状态互斥出现，stateVersion 用于识别状态推进。
+ */
 public record TaskStatusResponse(
         String taskId,
         String sessionId,

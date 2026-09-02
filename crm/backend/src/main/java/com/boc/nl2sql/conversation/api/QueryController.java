@@ -14,6 +14,10 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+/**
+ * 查询任务的 HTTP 边界。
+ * 用户身份始终取自认证上下文，客户端请求体不能替换任务所属用户。
+ */
 @RestController
 @RequestMapping("/api/v1")
 public class QueryController {

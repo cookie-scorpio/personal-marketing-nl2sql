@@ -44,13 +44,13 @@ const roleLabel = computed(() => {
   return ({ CUSTOMER_MANAGER: '客户经理', TEAM_LEAD: '团队负责人', ORG_MANAGER: '机构负责人' }[
     user.value?.business_scope_level || 'CUSTOMER_MANAGER'])
 })
-const scopeLabel = computed(() => {
-  if (!user.value) return ''
-  if (user.value.role === 'QUALITY_AUDITOR') return '全部在册客户 · 审计'
-  if (user.value.role === 'PERMISSION_ADMIN') return '权限管理员身份'
-  if (user.value.business_scope_level === 'TEAM_LEAD') return `网点 ${user.value.branch_id || '未配置'}`
-  if (user.value.business_scope_level === 'ORG_MANAGER') return `区域 ${user.value.region_code || '未配置'}`
-  return `经理 ${user.value.manager_id || '未配置'}`
+/**
+ * 工号属于登录账号而不是当前激活身份，因此客户经理、审计员和权限管理员必须显示同一个值。
+ * 只展示后端返回的合法五位工号；历史异常账号缺少工号时明确提示未配置，不能拿区域或角色兜底。
+ */
+const employeeNoLabel = computed(() => {
+  const employeeNo = user.value?.employee_no?.trim() || ''
+  return /^[0-9]{5}$/.test(employeeNo) ? `工号 ${employeeNo}` : '工号 未配置'
 })
 const navigationOptions = computed(() => {
   // 审计身份在同一工作台内切换业务问数与审计后台，不触发浏览器页面跳转。
@@ -163,7 +163,7 @@ onUnmounted(() => sidebarMedia.removeEventListener('change', resizeSidebar))
         <ConversationSidebar :key="`${user?.user_id}-${user?.role}`" :active-session-id="workspace?.sessionId" :disabled="!!workspace?.navigationBusy" :refresh-version="sessionRevision" @select="selectSession" @deleted="deletedSession" />
       </template>
       <div v-else class="sidebar-role-note"><strong>{{ roleLabel }}</strong><span>请从页面顶部进入权限管理。</span></div>
-      <div class="sidebar-note"><span>当前登录用户</span><strong>{{ scopeLabel }}</strong></div>
+      <div class="sidebar-note"><span>当前登录用户</span><strong>{{ employeeNoLabel }}</strong></div>
       <div class="sidebar-footer">
         <el-dropdown v-if="canSwitchIdentity" popper-class="identity-menu" trigger="click" placement="top-start" @command="changeIdentity">
           <button class="user-card identity-switcher" :class="{ 'is-switching': identitySwitching }" type="button" :disabled="identitySwitching" aria-label="切换当前身份">

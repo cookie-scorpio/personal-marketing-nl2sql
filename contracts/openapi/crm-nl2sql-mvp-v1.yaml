@@ -72,7 +72,7 @@ paths:
         "409": { description: 用户名或工号已存在 }
   /api/v1/auth/me:
     get:
-      summary: 获取当前登录用户和数据范围
+      summary: 获取当前登录用户、五位工号、当前身份和数据范围
       responses:
         "200":
           description: 当前用户

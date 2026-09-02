@@ -62,3 +62,23 @@ test('审计身份保留智能问数并以组件重建代替整页刷新', async
   assert.match(styles, /\.sidebar-footer \{[^}]*grid-template-columns:/)
   assert.match(styles, /\.user-card \{[^}]*background: #302e2d;/)
 })
+
+test('左下账号信息始终显示五位工号且不随身份改变', async () => {
+  const app = await readFile(new URL('../src/App.vue', import.meta.url), 'utf8')
+  // 工号读取账号级 employee_no，不再根据当前身份拼接区域、网点、经理或审计范围。
+  assert.match(app, /const employeeNoLabel = computed/)
+  assert.match(app, /\^\[0-9\]\{5\}\$/)
+  assert.match(app, /`工号 \$\{employeeNo\}`/)
+  assert.match(app, /<strong>\{\{ employeeNoLabel \}\}<\/strong>/)
+  assert.doesNotMatch(app, /const scopeLabel = computed/)
+})
+
+test('权限管理员账号与身份操作区域和其他身份一样固定在侧栏底部', async () => {
+  const app = await readFile(new URL('../src/App.vue', import.meta.url), 'utf8')
+  const styles = await readFile(new URL('../src/app/styles.css', import.meta.url), 'utf8')
+  // 权限管理员没有会话列表，账号框必须用弹性上边距吸收中间空白，才能带动身份卡和退出按钮下沉。
+  assert.match(app, /v-else class="sidebar-role-note"/)
+  assert.match(app, /<div class="sidebar-note">/)
+  assert.match(app, /<div class="sidebar-footer">/)
+  assert.match(styles, /\.sidebar-note \{[^}]*margin: auto 0 12px;/)
+})

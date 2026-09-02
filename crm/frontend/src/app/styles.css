@@ -87,7 +87,12 @@ svg { width: 1em; height: 1em; }
 .brand small { color: #928b87; font-size: 10px; }
 .new-query-button { flex-shrink: 0; height: 42px; display: flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid #cf6a70; border-radius: 9px; color: #fff; background: #9e2029; cursor: pointer; font-weight: 650; }
 .new-query-button:hover:not(:disabled) { background: #b4232d; }
-.sidebar-note { flex-shrink: 0; margin: 12px 0; padding: 14px; border: 1px solid #45413f; border-radius: 10px; background: #302e2d; }
+/*
+ * 账号信息与身份操作共同组成侧栏的固定底部区域。
+ * 查询身份的会话列表会自然撑满中间空间；权限管理员没有会话列表，因此这里用自动上边距
+ * 吸收剩余高度，保证三类身份的“当前登录用户”、身份卡和退出按钮始终落在相同的左下位置。
+ */
+.sidebar-note { flex-shrink: 0; margin: auto 0 12px; padding: 14px; border: 1px solid #45413f; border-radius: 10px; background: #302e2d; }
 .sidebar-note span { color: #9f9793; font-size: 10px; }
 .sidebar-note strong { display: block; margin-top: 5px; color: #f2edeb; font-size: 12px; }
 /* 身份信息与退出操作共用一条中心线；显式深色表面避免 button 的浏览器默认白底破坏侧栏层级。 */

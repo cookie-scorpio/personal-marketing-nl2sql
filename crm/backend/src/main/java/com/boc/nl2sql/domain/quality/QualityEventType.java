@@ -56,6 +56,13 @@ public enum QualityEventType {
     // F：质量管理员读取任务事实的访问轨迹。
     QUALITY_TIMELINE_VIEWED,
 
+    // 数据回流与评测：候选审核、评测集发布和评测运行过程。
+    EVAL_CANDIDATE_REVIEWED,
+    EVAL_DATASET_PUBLISHED,
+    EVAL_RUN_STARTED,
+    EVAL_RUN_ITEM_COMPLETED,
+    EVAL_RUN_FINISHED,
+
     // 共享基础设施：未被业务异常处理覆盖的运行错误。
     RUNTIME_FAILURE
 }

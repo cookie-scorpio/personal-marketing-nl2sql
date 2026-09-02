@@ -70,7 +70,7 @@ app:
       api-key: ${QWEN_API_KEY:}
       model: ${QWEN_MODEL:qwen3-32b}
       # Qwen3为混合思考模型；短JSON规划建议关闭思考，防止思考耗尽输出额度而无最终content。
-      thinking-enabled: ${QWEN_THINKING_ENABLED:false}
+      thinking-enabled: ${QWEN_THINKING_ENABLED:true}
       # 思考开关的协议参数随部署方式不同：vLLM/SGLang用chat_template_kwargs，
       # DashScope兼容模式用enable_thinking，Ollama用think，none表示不发送任何思考参数。
       thinking-param: ${QWEN_THINKING_PARAM:enable_thinking}

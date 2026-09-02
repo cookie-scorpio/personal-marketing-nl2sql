@@ -8,9 +8,11 @@ import { ArrowDown, Close, Fold, Plus, SwitchButton } from '@element-plus/icons-
 import { ElMessage } from 'element-plus'
 import { useAuth } from './app/auth'
 import type { RoleCode } from './app/types'
+import type { QualityModule } from './features/quality/types'
 import LoginPage from './features/auth/LoginPage.vue'
 import ConversationWorkspace from './features/conversation/ConversationWorkspace.vue'
 import ConversationSidebar from './features/conversation/ConversationSidebar.vue'
+import QualityAdminNav from './features/quality/QualityAdminNav.vue'
 import QualityAdminPage from './features/quality/QualityAdminPage.vue'
 import PermissionManagementPage from './features/permission/PermissionManagementPage.vue'
 
@@ -27,6 +29,7 @@ const sessionRevision = ref(0)
 const serviceHealthy = ref<boolean | null>(null)
 const currentView = ref<WorkspaceView>('query')
 const identitySwitching = ref(false)
+const qualityModule = ref<QualityModule>('overview')
 
 function resizeSidebar(event: MediaQueryListEvent) { narrowScreen.value = event.matches; if (!event.matches) sidebarOpen.value = false }
 function openSidebar() { sidebarOpen.value = true; void nextTick(() => newSessionButton.value?.focus()) }
@@ -66,6 +69,8 @@ const pageTitle = computed(() => currentView.value === 'quality' ? '后台管理
 
 function defaultView(): WorkspaceView {
   if (user.value?.role === 'PERMISSION_ADMIN') return 'permissions'
+  // 审计管理员以后台管理为主工作区，问数入口仍可通过顶栏下拉进入。
+  if (user.value?.role === 'QUALITY_AUDITOR') return 'quality'
   return 'query'
 }
 function syncIdentityView() {
@@ -158,7 +163,10 @@ onUnmounted(() => sidebarMedia.removeEventListener('change', resizeSidebar))
         <div><strong>中银智析</strong><small>个金营销智能平台</small></div>
         <button class="sidebar-close mobile-only" type="button" aria-label="关闭会话侧栏" @click="closeSidebar"><Close /></button>
       </div>
-      <template v-if="isQueryIdentity">
+      <template v-if="currentView === 'quality' && user?.role === 'QUALITY_AUDITOR'">
+        <QualityAdminNav :module="qualityModule" @navigate="key => (qualityModule = key)" />
+      </template>
+      <template v-else-if="isQueryIdentity">
         <button ref="newSessionButton" class="new-query-button" type="button" :disabled="workspace?.navigationBusy" @click="newQuery"><Plus /> 新建会话</button>
         <ConversationSidebar :key="`${user?.user_id}-${user?.role}`" :active-session-id="workspace?.sessionId" :disabled="!!workspace?.navigationBusy" :refresh-version="sessionRevision" @select="selectSession" @deleted="deletedSession" />
       </template>
@@ -191,7 +199,7 @@ onUnmounted(() => sidebarMedia.removeEventListener('change', resizeSidebar))
       </header>
 
       <div v-if="currentView === 'query' && isQueryIdentity" class="workspace-grid conversation-layout"><ConversationWorkspace ref="workspace" :key="`${user?.user_id}-${user?.role}`" @sessions-changed="sessionRevision++" /></div>
-      <div v-else class="workspace-grid role-workspace"><QualityAdminPage v-if="currentView === 'quality'" /><PermissionManagementPage v-else-if="currentView === 'permissions'" /></div>
+      <div v-else class="workspace-grid role-workspace"><QualityAdminPage v-if="currentView === 'quality'" :module="qualityModule" @navigate="key => (qualityModule = key)" /><PermissionManagementPage v-else-if="currentView === 'permissions'" /></div>
     </main>
   </div>
 </template>

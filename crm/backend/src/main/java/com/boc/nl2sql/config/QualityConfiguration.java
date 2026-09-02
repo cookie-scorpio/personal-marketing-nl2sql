@@ -29,4 +29,20 @@ public class QualityConfiguration {
         executor.initialize();
         return executor;
     }
+
+    /**
+     * 评测运行专用执行器。评测逐条重放问题并真实调用模型与数据库，串行执行
+     * 避免多个运行同时压垮模型配额；队列容量有限，提交过多时直接拒绝并提示稍后重试。
+     */
+    @Bean(name = "evaluationExecutor")
+    Executor evaluationExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(1);
+        executor.setQueueCapacity(20);
+        executor.setThreadNamePrefix("eval-run-");
+        executor.setWaitForTasksToCompleteOnShutdown(false);
+        executor.initialize();
+        return executor;
+    }
 }

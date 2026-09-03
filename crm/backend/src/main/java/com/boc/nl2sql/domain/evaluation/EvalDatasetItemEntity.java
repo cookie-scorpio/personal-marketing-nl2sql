@@ -5,7 +5,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 
 import java.time.LocalDateTime;
 
-/** 评测集条目：问题原文加人工审核确认的金标 SQL。 */
+/** 评测集条目：问题原文加人工审核确认的金标 SQL，金标意图可选，用于意图识别准确率评测。 */
 @TableName("eval_dataset_item")
 public class EvalDatasetItemEntity {
     @TableId

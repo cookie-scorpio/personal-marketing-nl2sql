@@ -205,7 +205,7 @@ public class EvaluationService {
         facts.publish(QualityFact.builder(QualityEventType.EVAL_CANDIDATE_REVIEWED, "QUALITY")
                 .userId(reviewer.userId()).summary("候选已采纳")
                 .detail("event_id", eventId).detail("dataset_item_id", item.getId()).build());
-        return Map.of("dataset_item_id", item.getId(), "dataset_id", draft.getId());
+        return Map.of("dataset_item_id", String.valueOf(item.getId()), "dataset_id", String.valueOf(draft.getId()));
     }
 
     /** 忽略候选：仅记录结论，不进入评测集。已采纳的候选不允许改为忽略，避免误操作丢数据。 */
@@ -334,7 +334,7 @@ public class EvaluationService {
                 .detail("dataset_id", draft.getId()).detail("version", nextVersion)
                 .detail("item_count", draftItems.size()).build());
         runner.startAsync(run.getId(), publisher);
-        return Map.of("dataset", datasetView(draft), "run_id", run.getId());
+        return Map.of("dataset", datasetView(draft), "run_id", String.valueOf(run.getId()));
     }
 
     /** 对已发布版本手动重跑一次评测。 */
@@ -346,7 +346,7 @@ public class EvaluationService {
         if (total == 0) throw new BusinessException(400204, "评测集为空，无法评测");
         EvalRunEntity run = createRun(dataset, (int) total, EvalRunTrigger.MANUAL, user);
         runner.startAsync(run.getId(), user);
-        return Map.of("run_id", run.getId());
+        return Map.of("run_id", String.valueOf(run.getId()));
     }
 
     /** 评测运行分页列表，附带维度汇总，供评测后台的历史记录表使用。 */
@@ -383,7 +383,10 @@ public class EvaluationService {
         return result;
     }
 
-    /** 维度汇总：总体、意图与澄清、SQL 生成质量、结果质量与耗时分位，均为实时聚合。 */
+    /**
+     * 维度汇总：分总体、意图与澄清、SQL 生成质量、结果质量、耗时五组实时聚合。
+     * 意图准确率只统计已标注金标意图的样本，未标注时为 null，避免用推测值冒充结论。
+     */
     private Map<String, Object> summarize(List<EvalRunItemEntity> details, Map<Long, String> goldIntents) {
         long total = details.size();
         long executionSuccess = details.stream().filter(item -> Boolean.TRUE.equals(item.getExecutionSuccess())).count();
@@ -532,7 +535,8 @@ public class EvaluationService {
 
     private Map<String, Object> datasetView(EvalDatasetEntity dataset) {
         Map<String, Object> view = new LinkedHashMap<>();
-        view.put("id", dataset.getId());
+        // 雪花 ID 超出 JS Number 安全整数范围，所有评测视图的编号一律输出为字符串，避免前端精度丢失导致 404。
+        view.put("id", String.valueOf(dataset.getId()));
         view.put("name", dataset.getName());
         view.put("description", dataset.getDescription());
         view.put("status", dataset.getStatus());
@@ -547,8 +551,8 @@ public class EvaluationService {
 
     private Map<String, Object> itemView(EvalDatasetItemEntity item) {
         Map<String, Object> view = new LinkedHashMap<>();
-        view.put("id", item.getId());
-        view.put("dataset_id", item.getDatasetId());
+        view.put("id", String.valueOf(item.getId()));
+        view.put("dataset_id", String.valueOf(item.getDatasetId()));
         view.put("source_event_id", item.getSourceEventId());
         view.put("source_task_id", item.getSourceTaskId());
         view.put("question_text", item.getQuestionText());
@@ -562,8 +566,8 @@ public class EvaluationService {
 
     private Map<String, Object> runView(EvalRunEntity run) {
         Map<String, Object> view = new LinkedHashMap<>();
-        view.put("id", run.getId());
-        view.put("dataset_id", run.getDatasetId());
+        view.put("id", String.valueOf(run.getId()));
+        view.put("dataset_id", String.valueOf(run.getDatasetId()));
         view.put("dataset_version", run.getDatasetVersion());
         view.put("trigger_type", run.getTriggerType());
         view.put("status", run.getStatus());
@@ -579,8 +583,8 @@ public class EvaluationService {
 
     private Map<String, Object> runItemView(EvalRunItemEntity item) {
         Map<String, Object> view = new LinkedHashMap<>();
-        view.put("id", item.getId());
-        view.put("item_id", item.getItemId());
+        view.put("id", String.valueOf(item.getId()));
+        view.put("item_id", String.valueOf(item.getItemId()));
         view.put("question_text", item.getQuestionText());
         view.put("expected_sql", item.getExpectedSql());
         view.put("generated_sql", item.getGeneratedSql());

@@ -1,6 +1,6 @@
 /**
- * 质量事实事件类型与历史摘要的统一中文释义。
- * 总览页"质量事实分类"与数据回流页"类型/摘要"列共用，避免多处映射漂移。
+ * 质量事实事件类型、任务状态、意图与历史摘要的统一中文释义。
+ * 总览页"质量事实分类"、数据回流页"类型/摘要"列、优化洞察页错误聚类共用，避免多处映射漂移。
  */
 
 /** 与后端 QualityEventType 枚举一一对应的中文释义。 */
@@ -66,6 +66,8 @@ const ROLE_LABELS: Record<string, string> = { USER: '用户', ASSISTANT: '助手
 const INTENT_LABELS: Record<string, string> = {
   CUSTOMER_FILTER: '客户筛选', TRANSACTION_ANALYSIS: '交易分析', GENERIC_ANALYSIS: '通用分析',
   MARKETING_ANALYSIS: '营销分析', ASSET_ANALYSIS: '资产分析', FOLLOWUP: '追问衔接', GREETING: '问候',
+  // 意图只会在模型解释完成后写入任务；在解释阶段之前失败/取消/超时的任务没有意图，聚合时归入 UNKNOWN。
+  UNKNOWN: '未识别意图',
 }
 
 /** 任务状态英文键 → 中文释义；样本回流页"任务终态"列与筛选共用。 */

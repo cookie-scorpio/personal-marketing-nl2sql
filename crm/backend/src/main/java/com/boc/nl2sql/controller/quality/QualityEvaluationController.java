@@ -18,7 +18,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
 
-/** 数据回流与评测后台接口；访问权限由 SecurityConfig 限制为质量审计角色。 */
+/**
+ * 数据回流与评测后台接口；访问权限由 SecurityConfig 限制为质量审计角色。
+ * 事实类查询分两种粒度：/facts 逐条审计事实，/facts/tasks 每个任务一行。
+ */
 @RestController
 @RequestMapping("/api/v1/quality/evaluation")
 public class QualityEvaluationController {

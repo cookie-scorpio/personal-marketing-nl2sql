@@ -5,7 +5,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 
 import java.time.LocalDateTime;
 
-/** 评测运行明细：每条样本的生成 SQL、逐维度布尔结论与耗时。 */
+/** 评测运行明细：每条样本的生成 SQL、逐维度布尔结论、判定意图、计划来源与耗时。 */
 @TableName("eval_run_item")
 public class EvalRunItemEntity {
     @TableId

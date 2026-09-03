@@ -124,7 +124,7 @@ export function fetchDatasets(): Promise<DatasetView[]> {
   return apiRequest('/api/v1/quality/evaluation/datasets')
 }
 
-export function fetchDataset(id: number): Promise<DatasetDetail> {
+export function fetchDataset(id: string): Promise<DatasetDetail> {
   return apiRequest(`/api/v1/quality/evaluation/datasets/${id}`)
 }
 
@@ -135,22 +135,22 @@ export function addDatasetItem(body: { question_text: string; expected_sql: stri
   })
 }
 
-export function updateDatasetItem(id: number, body: { question_text?: string; expected_sql?: string; note?: string; intent_code?: string }) {
+export function updateDatasetItem(id: string, body: { question_text?: string; expected_sql?: string; note?: string; intent_code?: string }) {
   return apiRequest(`/api/v1/quality/evaluation/items/${id}`, {
     method: 'PUT',
     body: JSON.stringify(body),
   })
 }
 
-export function deleteDatasetItem(id: number) {
+export function deleteDatasetItem(id: string) {
   return apiRequest(`/api/v1/quality/evaluation/items/${id}`, { method: 'DELETE' })
 }
 
-export function publishDataset(id: number): Promise<{ dataset: DatasetView; run_id: number }> {
+export function publishDataset(id: string): Promise<{ dataset: DatasetView; run_id: string }> {
   return apiRequest(`/api/v1/quality/evaluation/datasets/${id}/publish`, { method: 'POST' })
 }
 
-export function startRun(id: number): Promise<{ run_id: number }> {
+export function startRun(id: string): Promise<{ run_id: string }> {
   return apiRequest(`/api/v1/quality/evaluation/datasets/${id}/runs`, { method: 'POST' })
 }
 
@@ -159,7 +159,7 @@ export function fetchRuns(pageNo: number, pageSize: number): Promise<{ page_no: 
   return apiRequest(`/api/v1/quality/evaluation/runs?${query.toString()}`)
 }
 
-export function fetchRun(id: number): Promise<RunDetail> {
+export function fetchRun(id: string): Promise<RunDetail> {
   return apiRequest(`/api/v1/quality/evaluation/runs/${id}`)
 }
 

@@ -7,7 +7,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-/** 数据回流候选池的联合查询：audit_event 候选事实与人工审核结论的只读视图。 */
+/**
+ * 数据回流页的只读查询，提供三种取数方式：
+ * 候选分页（沿用历史 evaluation_candidate 标记）、全量任务事实分页（按筛选条件实时取数）、
+ * 任务视角分页（每个终态任务一行）。三者的审核状态都来自 eval_candidate_review 关联。
+ */
 @Repository
 public class EvalCandidateRepository {
     private final JdbcTemplate jdbc;

@@ -1,6 +1,6 @@
 /** 质量审计后台消费的后端契约；字段名保持服务端 JSON 的 snake_case。 */
 
-/** 后台管理的模块入口，侧栏导航与主区域内容共用同一组键；insight 为优化洞察新模块。 */
+/** 后台管理的模块入口，侧栏导航与主区域内容共用同一组键。 */
 export type QualityModule =
   | 'overview'
   | 'health'
@@ -246,7 +246,8 @@ export interface TaskFact {
 }
 
 export interface DatasetView {
-  id: number
+  /** 雪花 ID 超出 JS Number 安全整数范围，服务端以字符串下发。 */
+  id: string
   name: string
   description: string | null
   status: 'DRAFT' | 'PUBLISHED'
@@ -259,8 +260,8 @@ export interface DatasetView {
 }
 
 export interface DatasetItemView {
-  id: number
-  dataset_id: number
+  id: string
+  dataset_id: string
   source_event_id: string | null
   source_task_id: string | null
   question_text: string
@@ -277,8 +278,8 @@ export interface DatasetDetail extends DatasetView {
 }
 
 export interface RunView {
-  id: number
-  dataset_id: number
+  id: string
+  dataset_id: string
   dataset_version: number
   trigger_type: 'AUTO_PUBLISH' | 'MANUAL'
   status: 'PENDING' | 'RUNNING' | 'SUCCESS' | 'FAILED'
@@ -317,8 +318,8 @@ export interface RunSummary {
 }
 
 export interface RunItemView {
-  id: number
-  item_id: number
+  id: string
+  item_id: string
   question_text: string
   expected_sql: string | null
   generated_sql: string | null

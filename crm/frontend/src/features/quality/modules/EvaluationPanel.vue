@@ -20,8 +20,8 @@ const selectedDataset = ref<DatasetDetail>()
 const runDetail = ref<RunDetail>()
 const detailVisible = ref(false)
 const itemDialogVisible = ref(false)
-/** 草稿条目表单；id 有值表示编辑既有条目，为空表示新增。 */
-const itemForm = ref({ id: undefined as number | undefined, question: '', sql: '', note: '', intent: '' })
+/** 草稿条目表单；id 有值表示编辑既有条目，为空表示新增；雪花 ID 以字符串传递避免精度丢失。 */
+const itemForm = ref({ id: undefined as string | undefined, question: '', sql: '', note: '', intent: '' })
 const busy = ref(false)
 const datasetsError = ref('')
 let runsTimer: number | undefined
@@ -92,7 +92,7 @@ function openItemDialog(): void {
   itemForm.value = { id: undefined, question: '', sql: '', note: '', intent: '' }
   itemDialogVisible.value = true
 }
-function openEditDialog(itemId: number): void {
+function openEditDialog(itemId: string): void {
   const item = draftItems.value.find(candidate => candidate.id === itemId)
   if (!item) return
   itemForm.value = { id: item.id, question: item.question_text, sql: item.expected_sql, note: item.note ?? '',
@@ -124,7 +124,7 @@ async function submitItem(): Promise<void> {
   }
 }
 
-async function removeItem(itemId: number): Promise<void> {
+async function removeItem(itemId: string): Promise<void> {
   try {
     await ElMessageBox.confirm('确认从草稿中删除该条目？', '删除条目', { type: 'warning' })
   } catch {
@@ -162,7 +162,7 @@ async function publishDraft(): Promise<void> {
   }
 }
 
-async function rerun(datasetId: number): Promise<void> {
+async function rerun(datasetId: string): Promise<void> {
   try {
     const result = await startRun(datasetId)
     ElMessage.success(`评测运行 #${result.run_id} 已启动`)
@@ -172,7 +172,7 @@ async function rerun(datasetId: number): Promise<void> {
   }
 }
 
-async function openRun(runId: number): Promise<void> {
+async function openRun(runId: string): Promise<void> {
   try {
     runDetail.value = await fetchRun(runId)
     detailVisible.value = true
@@ -196,8 +196,8 @@ const visibleRunItems = computed(() => {
 const percentText = (value: number | null | undefined) => (value === null || value === undefined ? '—' : `${value}%`)
 
 // ---- 版本对比：任选两次已完成运行，并排对照各维度指标（变化 = B − A） ----
-const compareA = ref<number | undefined>()
-const compareB = ref<number | undefined>()
+const compareA = ref<string | undefined>()
+const compareB = ref<string | undefined>()
 const compareBusy = ref(false)
 const compareResult = ref<{ a: RunDetail; b: RunDetail }>()
 const finishedRuns = computed(() => runs.value.filter(run => run.status === 'SUCCESS'))

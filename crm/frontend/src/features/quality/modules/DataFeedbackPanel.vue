@@ -282,14 +282,16 @@ async function openTask(row: FeedbackRow) {
         </el-table-column>
         <el-table-column label="操作" width="190" fixed="right">
           <template #default="{ row }">
-            <template v-if="reviewable(row)">
-              <el-button size="small" :type="isGoldCandidate(row) ? 'success' : 'primary'" link
-                @click="openAccept(row)">{{ isGoldCandidate(row) ? '转金标' : '采纳' }}</el-button>
-              <el-button size="small" link @click="submitIgnore(row)">忽略</el-button>
-            </template>
-            <small v-else-if="row.decision" class="review-note">{{ row.review_note || decisionTag(row) }}</small>
-            <small v-else class="review-note" title="该任务没有终态事件，无法沉淀为评测样本">无审核锚点</small>
-            <el-button v-if="row.task_id" size="small" link type="info" @click="openTask(row)">任务详情</el-button>
+            <div class="row-actions">
+              <template v-if="reviewable(row)">
+                <el-button size="small" class="row-actions-first" :type="isGoldCandidate(row) ? 'success' : 'primary'" link
+                  @click="openAccept(row)">{{ isGoldCandidate(row) ? '转金标' : '采纳' }}</el-button>
+                <el-button size="small" link @click="submitIgnore(row)">忽略</el-button>
+              </template>
+              <small v-else-if="row.decision" class="review-note row-actions-label" :title="row.review_note ?? ''">{{ decisionTag(row) }}</small>
+              <small v-else class="review-note row-actions-label" title="该任务没有终态事件，无法沉淀为评测样本">无审核锚点</small>
+              <el-button v-if="row.task_id" class="row-actions-end" size="small" link type="info" @click="openTask(row)">任务详情</el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -332,14 +334,16 @@ async function openTask(row: FeedbackRow) {
         </el-table-column>
         <el-table-column label="操作" width="190" fixed="right">
           <template #default="{ row }">
-            <template v-if="reviewable(row)">
-              <el-button size="small" :type="isGoldCandidate(row) ? 'success' : 'primary'" link
-                @click="openAccept(row)">{{ isGoldCandidate(row) ? '转金标' : '采纳' }}</el-button>
-              <el-button size="small" link @click="submitIgnore(row)">忽略</el-button>
-            </template>
-            <small v-else-if="row.decision" class="review-note">{{ row.review_note || decisionTag(row) }}</small>
-            <small v-else class="review-note" title="系统与审计事实没有任务维度，不属于评测样本">系统事实</small>
-            <el-button v-if="row.task_id" size="small" link type="info" @click="openTask(row)">任务详情</el-button>
+            <div class="row-actions">
+              <template v-if="reviewable(row)">
+                <el-button size="small" class="row-actions-first" :type="isGoldCandidate(row) ? 'success' : 'primary'" link
+                  @click="openAccept(row)">{{ isGoldCandidate(row) ? '转金标' : '采纳' }}</el-button>
+                <el-button size="small" link @click="submitIgnore(row)">忽略</el-button>
+              </template>
+              <small v-else-if="row.decision" class="review-note row-actions-label" :title="row.review_note ?? ''">{{ decisionTag(row) }}</small>
+              <small v-else class="review-note row-actions-label" title="系统与审计事实没有任务维度，不属于评测样本">系统事实</small>
+              <el-button v-if="row.task_id" class="row-actions-end" size="small" link type="info" @click="openTask(row)">任务详情</el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>

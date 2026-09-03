@@ -3,7 +3,7 @@
 import { computed, ref, watch } from 'vue'
 import { fetchInsight } from '../api'
 import { usePolling } from '../usePolling'
-import { intentLabel, statusLabel } from '../eventLabels'
+import { intentLabel, statusLabel, translateSummary } from '../eventLabels'
 
 const REFRESH_MS = 30000
 const windowHours = ref(168)
@@ -88,7 +88,9 @@ const formatTokens = (value: number | undefined) => (value ?? 0).toLocaleString(
           <h3>错误类型 Top N</h3>
           <el-table v-if="errorTop.length" :data="errorTop" size="small" height="240">
             <el-table-column label="错误摘要" min-width="220">
-              <template #default="{ row }"><span class="cell-ellipsis" :title="row.group_key">{{ row.group_key }}</span></template>
+              <template #default="{ row }">
+                <span class="cell-ellipsis" :title="translateSummary(row.group_key)">{{ translateSummary(row.group_key) }}</span>
+              </template>
             </el-table-column>
             <el-table-column label="次数" prop="group_count" width="80" align="right" />
           </el-table>

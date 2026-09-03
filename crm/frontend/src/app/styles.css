@@ -510,6 +510,16 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .quality-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .quality-toolbar-hint { color: var(--muted); font-size: 12px; }
 .quality-pagination { margin-top: 12px; justify-content: flex-end; }
+/* 数据回流操作列：三段式布局，忽略与任务详情逐行对齐，不受左侧文案长短影响。 */
+.row-actions { display: flex; align-items: center; gap: 8px; width: 100%; }
+/* 清除 Element Plus 相邻按钮的默认间距，列内间距统一由 gap 控制。 */
+.row-actions .el-button + .el-button { margin-left: 0; }
+/* 首个操作按钮固定宽度且文字居中："采纳"与"转金标"在槽内视觉一致，"忽略"左缘逐行对齐。 */
+.row-actions .el-button.row-actions-first { min-width: 68px; padding-left: 0; padding-right: 0; justify-content: center; }
+/* 已审核行的状态文案占用与首按钮相同的槽宽并居中，与"转金标/采纳"左缘对齐。 */
+.row-actions .row-actions-label { min-width: 68px; text-align: center; }
+/* 末端按钮固定宽度并去除内边距，右缘与全部行精确对齐。 */
+.row-actions .el-button.row-actions-end { margin-left: auto; min-width: 64px; padding-left: 0; padding-right: 0; justify-content: center; }
 /* 数据回流页筛选栏：固定宽度避免多选/下拉被内容撑开跳动。 */
 .filter-hours { width: 130px; }
 .filter-status { width: 220px; }

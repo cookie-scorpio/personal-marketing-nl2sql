@@ -12,6 +12,7 @@ const windowHours = ref(24)
 const { data, error, refresh } = usePolling(() => fetchSqlHealth(windowHours.value), REFRESH_MS)
 watch(windowHours, () => void refresh())
 
+/** SQL 尝试阶段中文释义；键必须与后端 SqlFactRecorder 写入的阶段一致，缺键会在界面原样显示英文。 */
 const PHASE_LABELS: Record<string, string> = {
   GENERATED: 'SQL 生成', REJECTED: '校验拒绝', EXECUTING: '开始执行', EXECUTED: '执行成功',
   SQL_ERROR: '执行报错', RESULT_ALIGNED: '结果复核通过', RESULT_MISMATCH: '结果不一致',

@@ -12,6 +12,7 @@ import BusinessMonitorPanel from './modules/BusinessMonitorPanel.vue'
 import LogCenterPanel from './modules/LogCenterPanel.vue'
 import DataFeedbackPanel from './modules/DataFeedbackPanel.vue'
 import EvaluationPanel from './modules/EvaluationPanel.vue'
+import InsightPanel from './modules/InsightPanel.vue'
 
 const props = defineProps<{ module: QualityModule }>()
 defineEmits<{ navigate: [module: QualityModule] }>()
@@ -22,9 +23,10 @@ const titles: Record<QualityModule, { title: string; description: string }> = {
   resources: { title: '资源监控', description: '进程与系统资源占用趋势，含 GPU 探测。' },
   sql: { title: 'SQL 健康度', description: 'SQL 生成、校验、执行各阶段事实与修复轨迹的窗口统计。' },
   business: { title: '业务监控', description: '在册客户规模、问数执行量、成功率与耗时分布。' },
-  logs: { title: '日志中心', description: '运行日志、SQL 复核日志与会话日志的尾部检索。' },
+  logs: { title: '日志中心', description: '运行日志、SQL 复核日志、会话日志与大模型调用日志的尾部检索。' },
   feedback: { title: '数据回流', description: '审核落库的候选审计数据，补充金标后采纳入评测集草稿。' },
   evaluation: { title: '评测管理', description: '维护评测集草稿、发布版本并查看历次评测的多维度报告。' },
+  insight: { title: '优化洞察', description: '失败热点、错误聚类、澄清与修复案例，为提示词与系统持续优化提供线索。' },
 }
 </script>
 
@@ -42,6 +44,7 @@ const titles: Record<QualityModule, { title: string; description: string }> = {
     <BusinessMonitorPanel v-else-if="props.module === 'business'" />
     <LogCenterPanel v-else-if="props.module === 'logs'" />
     <DataFeedbackPanel v-else-if="props.module === 'feedback'" />
-    <EvaluationPanel v-else />
+    <EvaluationPanel v-else-if="props.module === 'evaluation'" />
+    <InsightPanel v-else />
   </section>
 </template>

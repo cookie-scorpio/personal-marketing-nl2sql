@@ -37,7 +37,7 @@ public class RepairFactStore {
                 INSERT INTO query_sql_repair(task_id,attempt_no,trigger_phase,status_code,original_sql,failure_reason,repair_reason)
                 VALUES(?,?,?,'STARTED',?,?,?)
                 """, taskId, attempt, trigger, originalSql, shorten(failureReason), shorten(repairReason)));
-        publish(QualityEventType.REPAIR_STARTED, taskId, userId, attempt, "STARTED", true,
+        publish(QualityEventType.REPAIR_STARTED, taskId, userId, attempt, "修复启动", true,
                 Map.of("trigger", value(trigger), "original_sql", value(originalSql),
                         "failure_reason", value(failureReason), "repair_reason", value(repairReason)));
     }
@@ -46,7 +46,7 @@ public class RepairFactStore {
     public void generated(String taskId, Long userId, int attempt, String repairedSql) {
         bestEffort(() -> jdbc.update("UPDATE query_sql_repair SET status_code='GENERATED',repaired_sql=? WHERE task_id=? AND attempt_no=?",
                 repairedSql, taskId, attempt));
-        publish(QualityEventType.REPAIR_CANDIDATE_GENERATED, taskId, userId, attempt, "GENERATED", true,
+        publish(QualityEventType.REPAIR_CANDIDATE_GENERATED, taskId, userId, attempt, "产出修复候选", true,
                 Map.of("candidate_sql", value(repairedSql)));
     }
 
@@ -60,7 +60,7 @@ public class RepairFactStore {
     public void rejected(String taskId, Long userId, int attempt, String reason) {
         bestEffort(() -> jdbc.update("UPDATE query_sql_repair SET status_code='REJECTED',failure_reason=? WHERE task_id=? AND attempt_no=?",
                 shorten(reason), taskId, attempt));
-        publish(QualityEventType.REPAIR_REJECTED, taskId, userId, attempt, "REJECTED", true,
+        publish(QualityEventType.REPAIR_REJECTED, taskId, userId, attempt, "修复候选被拒", true,
                 Map.of("reason", value(reason)));
     }
 

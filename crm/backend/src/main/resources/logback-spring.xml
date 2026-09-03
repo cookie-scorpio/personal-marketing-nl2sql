@@ -29,5 +29,15 @@
     </rollingPolicy>
   </appender>
   <logger name="CONVERSATION" level="INFO" additivity="false"><appender-ref ref="CONVERSATION_FILE"/></logger>
+  <appender name="MODEL_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+    <file>${SQL_LOG_DIR}/model.log</file>
+    <encoder><charset>UTF-8</charset><pattern>%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %msg%n</pattern></encoder>
+    <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+      <fileNamePattern>${SQL_LOG_DIR}/model.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+      <maxFileSize>20MB</maxFileSize><maxHistory>14</maxHistory><totalSizeCap>1GB</totalSizeCap>
+    </rollingPolicy>
+  </appender>
+  <!-- 大模型调用日志：一行 JSON 记录输入提示词与模型输出，供审计后台日志中心检索。 -->
+  <logger name="MODEL_CALL" level="INFO" additivity="false"><appender-ref ref="MODEL_FILE"/></logger>
   <root level="INFO"><appender-ref ref="CONSOLE"/><appender-ref ref="RUNTIME_FILE"/></root>
 </configuration>

@@ -31,6 +31,15 @@ public class SqlFactRecorder {
         this.meters = meters;
     }
 
+    /** SQL 处理阶段的中文释义，写入事实摘要，供数据回流页直接展示。 */
+    private static final Map<String, String> PHASE_LABELS = Map.ofEntries(
+            Map.entry("GENERATED", "生成候选SQL"), Map.entry("REJECTED", "校验拒绝"),
+            Map.entry("EXECUTING", "开始执行"), Map.entry("EXECUTED", "执行成功"),
+            Map.entry("SQL_ERROR", "执行报错"), Map.entry("RESULT_ALIGNED", "结果复核通过"),
+            Map.entry("RESULT_MISMATCH", "结果不一致"), Map.entry("TIMED_OUT", "执行超时"),
+            Map.entry("CANCELLED", "已取消"), Map.entry("RESULT_REVIEW_UNAVAILABLE", "结果复核暂不可用"),
+            Map.entry("TOOL_RESULT", "工具预检"));
+
     /**
      * 同时记录 SQL_REVIEW 日志、SQL_ATTEMPT_RECORDED 正式事实和阶段计数指标。
      *
@@ -52,9 +61,11 @@ public class SqlFactRecorder {
         entry.put("outcome", outcome);
         LoggerFactory.getLogger("SQL_REVIEW").info(json.writeValueAsString(entry));
 
+        String phaseLabel = PHASE_LABELS.getOrDefault(phase, phase == null ? "未知阶段" : phase);
+        String summary = outcome == null || outcome.isBlank() ? phaseLabel : phaseLabel + "：" + outcome;
         facts.publish(QualityFact.builder(QualityEventType.SQL_ATTEMPT_RECORDED, "EXECUTION")
                 .requestId(requestId).taskId(taskId).userId(userId).sqlAttemptId(attemptId(taskId, sql))
-                .summary(phase + (outcome == null ? "" : " " + outcome))
+                .summary(summary)
                 .details(entry).evaluationCandidate(isCandidate(phase)).build());
         meters.counter("nl2sql.sql.attempts", "phase", phase == null ? "UNKNOWN" : phase).increment();
     }

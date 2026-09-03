@@ -6,7 +6,9 @@ import type {
   DatasetDetail,
   DatasetItemView,
   DatasetView,
+  FactPage,
   HealthSnapshot,
+  InsightSnapshot,
   LogFileMeta,
   LogTail,
   MonitorOverview,
@@ -14,6 +16,8 @@ import type {
   RunDetail,
   RunView,
   SqlHealthSnapshot,
+  TaskFact,
+  TaskPage,
 } from './types'
 
 export function fetchOverview(): Promise<MonitorOverview> {
@@ -51,7 +55,58 @@ export function fetchCandidates(status: string, pageNo: number, pageSize: number
   return apiRequest(`/api/v1/quality/evaluation/candidates?${query.toString()}`)
 }
 
-export function acceptCandidate(eventId: string, body: { question_text: string; expected_sql: string; note?: string }) {
+/** 全量任务事实分页：多维筛选参数留空即不过滤，hours=0 表示不限时间窗口。 */
+export function fetchFacts(params: {
+  status: string
+  pageNo: number
+  pageSize: number
+  hours: number
+  eventType?: string
+  taskStatus?: string
+  intent?: string
+  keyword?: string
+}): Promise<FactPage> {
+  const query = new URLSearchParams({
+    status: params.status,
+    page_no: String(params.pageNo),
+    page_size: String(params.pageSize),
+    hours: String(params.hours),
+  })
+  if (params.eventType) query.set('event_type', params.eventType)
+  if (params.taskStatus) query.set('task_status', params.taskStatus)
+  if (params.intent) query.set('intent', params.intent)
+  if (params.keyword && params.keyword.trim()) query.set('keyword', params.keyword.trim())
+  return apiRequest(`/api/v1/quality/evaluation/facts?${query.toString()}`)
+}
+
+/** 单个任务的全链路事实时间线。 */
+export function fetchTaskFacts(taskId: string): Promise<TaskFact[]> {
+  return apiRequest(`/api/v1/quality/evaluation/facts/task/${taskId}`)
+}
+
+/** 任务视角分页：每个终态任务一行，默认视图；筛选参数语义与 fetchFacts 一致。 */
+export function fetchTaskView(params: {
+  status: string
+  pageNo: number
+  pageSize: number
+  hours: number
+  taskStatus?: string
+  intent?: string
+  keyword?: string
+}): Promise<TaskPage> {
+  const query = new URLSearchParams({
+    status: params.status,
+    page_no: String(params.pageNo),
+    page_size: String(params.pageSize),
+    hours: String(params.hours),
+  })
+  if (params.taskStatus) query.set('task_status', params.taskStatus)
+  if (params.intent) query.set('intent', params.intent)
+  if (params.keyword && params.keyword.trim()) query.set('keyword', params.keyword.trim())
+  return apiRequest(`/api/v1/quality/evaluation/facts/tasks?${query.toString()}`)
+}
+
+export function acceptCandidate(eventId: string, body: { question_text: string; expected_sql: string; note?: string; intent_code?: string }) {
   return apiRequest(`/api/v1/quality/evaluation/candidates/${eventId}/accept`, {
     method: 'POST',
     body: JSON.stringify(body),
@@ -73,14 +128,14 @@ export function fetchDataset(id: number): Promise<DatasetDetail> {
   return apiRequest(`/api/v1/quality/evaluation/datasets/${id}`)
 }
 
-export function addDatasetItem(body: { question_text: string; expected_sql: string; note?: string }): Promise<DatasetItemView> {
+export function addDatasetItem(body: { question_text: string; expected_sql: string; note?: string; intent_code?: string }): Promise<DatasetItemView> {
   return apiRequest('/api/v1/quality/evaluation/datasets/current/items', {
     method: 'POST',
     body: JSON.stringify(body),
   })
 }
 
-export function updateDatasetItem(id: number, body: { question_text?: string; expected_sql?: string; note?: string }) {
+export function updateDatasetItem(id: number, body: { question_text?: string; expected_sql?: string; note?: string; intent_code?: string }) {
   return apiRequest(`/api/v1/quality/evaluation/items/${id}`, {
     method: 'PUT',
     body: JSON.stringify(body),
@@ -106,4 +161,9 @@ export function fetchRuns(pageNo: number, pageSize: number): Promise<{ page_no: 
 
 export function fetchRun(id: number): Promise<RunDetail> {
   return apiRequest(`/api/v1/quality/evaluation/runs/${id}`)
+}
+
+/** 优化洞察总览：失败热点、错误聚类、澄清/修复案例与模型调用成本的窗口聚合。 */
+export function fetchInsight(hours: number): Promise<InsightSnapshot> {
+  return apiRequest(`/api/v1/quality/insight/overview?hours=${hours}`)
 }

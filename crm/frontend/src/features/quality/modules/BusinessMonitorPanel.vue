@@ -12,10 +12,17 @@ watch(windowHours, () => void refresh())
 
 const trend = computed(() => data.value?.hourly_trend ?? [])
 const statusRows = computed(() => data.value?.status_counts ?? [])
-const LEVEL_LABELS: Record<string, string> = { A: 'A级客户', B: 'B级客户', C: 'C级客户', D: 'D级客户', UNKNOWN: '未分级' }
+const LEVEL_LABELS: Record<string, string> = {
+  NORMAL: '普通客户', GOLD: '金卡客户', PLATINUM: '铂金客户', DIAMOND: '钻石客户',
+  A: 'A级客户', B: 'B级客户', C: 'C级客户', D: 'D级客户', UNKNOWN: '未分级',
+}
 const levelRows = computed(() => (data.value?.customers.by_level ?? [])
   .map(row => ({ ...row, label: LEVEL_LABELS[row.group_key] ?? row.group_key })))
-const regionRows = computed(() => data.value?.customers.top_regions ?? [])
+const REGION_LABELS: Record<string, string> = {
+  EAST: '东部', SOUTH: '南部', WEST: '西部', NORTH: '北部', CENTER: '中部',
+}
+const regionRows = computed(() => (data.value?.customers.top_regions ?? [])
+  .map(row => ({ ...row, label: REGION_LABELS[row.group_key] ?? row.group_key })))
 const totalExecutions = computed(() => statusRows.value.reduce((sum, row) => sum + row.group_count, 0))
 const successRate = computed(() => {
   if (!totalExecutions.value) return null
@@ -64,7 +71,7 @@ const statusName = (key: string) => STATUS_LABELS[key] ?? key
         </div>
         <div class="metric-card">
           <span>窗口执行量</span><strong>{{ totalExecutions.toLocaleString() }}</strong>
-          <small>成功率 {{ successRate ?? '暂无数据' }}</small>
+          <small>窗口内提交的问数任务条数（含成功、失败、超时与取消） · 成功率 {{ successRate ?? '暂无数据' }}</small>
         </div>
         <div class="metric-card">
           <span>平均耗时</span><strong>{{ data.duration.avg_seconds }}s</strong>
@@ -94,7 +101,7 @@ const statusName = (key: string) => STATUS_LABELS[key] ?? key
         <section class="panel-card">
           <h3>区域客户 TOP 10</h3>
           <el-table v-if="regionRows.length" :data="regionRows" size="small" height="260">
-            <el-table-column label="区域" prop="group_key" />
+            <el-table-column label="区域" prop="label" />
             <el-table-column label="客户数" prop="group_count" width="110" align="right" />
           </el-table>
           <el-empty v-else description="暂无区域数据" :image-size="72" />

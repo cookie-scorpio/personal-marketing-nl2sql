@@ -55,7 +55,7 @@ const EXECUTOR_LABELS: Record<string, string> = {
             <p>{{ component.detail }}</p>
             <ul v-if="component.adapters" class="health-extra">
               <li v-for="adapter in component.adapters" :key="adapter.provider">
-                适配器 {{ adapter.provider }}：
+                大模型 {{ adapter.provider }}：
                 <el-tag :type="adapter.available ? 'success' : 'info'" size="small">{{ adapter.available ? '可用' : '不可用' }}</el-tag>
               </li>
             </ul>

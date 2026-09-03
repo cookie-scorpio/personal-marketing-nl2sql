@@ -233,7 +233,7 @@ public class QueryTaskProcessor {
                     task.getPageSize()==null?100:task.getPageSize(),task.getPageOffset()==null?0:task.getPageOffset());
             page = execution.execute(task.getTaskId(), plan, requested, () -> states.active(task.getTaskId()));
             rows = page.rows();
-            review(task,requestId,"EXECUTED",plan,"rows="+rows.size()+",total="+page.total());
+            review(task,requestId,"EXECUTED",plan,"返回 "+rows.size()+" 行 / 总计 "+page.total()+" 条");
         } catch(QueryTerminatedException stopped){
             review(task,requestId,stopped.timedOut()?"TIMED_OUT":"CANCELLED",plan,null);throw stopped;
         } catch (DataAccessException error) {
@@ -267,7 +267,8 @@ public class QueryTaskProcessor {
             }catch(BusinessException unavailable){
                 // 复核服务不可用不丢弃已经通过权限校验并成功执行的结果；记录后继续组装。
                 review(task,requestId,"RESULT_REVIEW_UNAVAILABLE",plan,unavailable.code()+" "+unavailable.getMessage());
-                fact(QualityEventType.QUERY_RESULT_REVIEW_UNAVAILABLE,task,user,requestId,String.valueOf(unavailable.code()),
+                fact(QualityEventType.QUERY_RESULT_REVIEW_UNAVAILABLE,task,user,requestId,
+                        "结果复核暂不可用（"+unavailable.code()+"）",
                         details("code",unavailable.code(),"message",unavailable.getMessage()));
             }
         }
@@ -336,9 +337,10 @@ public class QueryTaskProcessor {
                 false, List.of("可简化为按年龄段或性别统计客户数量与当前平均资产，并明确开户时间范围。"));
         task.setFallbackJson(json.writeValueAsString(info));
         states.save(task);
+        var templateId = template.map(FallbackPlanner.Template::id).orElse("NO_MATCH");
         fact(QualityEventType.QUERY_FALLBACK,task,user,requestId,
-                template.map(FallbackPlanner.Template::id).orElse("NO_MATCH"),
-                details("reason",reason,"template_id",template.map(FallbackPlanner.Template::id).orElse("NO_MATCH")),true);
+                "NO_MATCH".equals(templateId) ? "模板兜底：未匹配到固定模板" : "模板兜底：命中固定模板 " + templateId,
+                details("reason",reason,"template_id",templateId),true);
         if (template.isEmpty()) {
             finishNoData(task, reason + " 没有能完整覆盖原问题的固定模板，未返回替代口径的数据。", requestId);
             return;
@@ -403,7 +405,18 @@ public class QueryTaskProcessor {
     private void ask(QueryTaskEntity task,com.boc.nl2sql.domain.nl2sql.ClarificationQuestion question,String requestId){
         if(task.getClarificationRound()>=maxClarifications){fail(task,"补充次数已达上限，仍需明确："+question.prompt(),requestId);return;}
         task.setQuestionJson(json.writeValueAsString(question));stage(task,QueryStatus.ASKING,30,question.prompt());
-        fact(QualityEventType.QUERY_ASKING,task,null,requestId,question.type(),Map.of("question",question));
+        fact(QualityEventType.QUERY_ASKING,task,null,requestId,"澄清提问：" + clarificationLabel(question.type()),
+                Map.of("question",question));
+    }
+
+    /** 澄清类型的中文释义，写入事实摘要，供数据回流页直接展示。 */
+    private static final Map<String,String> CLARIFICATION_LABELS = Map.of(
+            "CUSTOMER_SELECTION","请选择客户","CUSTOMER_CONFIRM","请确认客户","CUSTOMER_SCOPE","客户范围确认",
+            "FOLLOWUP_CONTEXT","追问缺少上下文","DISPLAY_CONFLICT","展示口径冲突",
+            "CONFLICT","条件冲突","TIME_BASIS","时间口径确认");
+    private static String clarificationLabel(String type){
+        if(type==null||type.isBlank())return "需要补充信息";
+        return CLARIFICATION_LABELS.getOrDefault(type,type);
     }
     private String modelText(QueryTaskEntity task){
         if(task.getCustomerIdsJson()!=null){

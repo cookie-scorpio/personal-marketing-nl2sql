@@ -510,6 +510,26 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .quality-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .quality-toolbar-hint { color: var(--muted); font-size: 12px; }
 .quality-pagination { margin-top: 12px; justify-content: flex-end; }
+/* 数据回流页筛选栏：固定宽度避免多选/下拉被内容撑开跳动。 */
+.filter-hours { width: 130px; }
+.filter-status { width: 220px; }
+.filter-type { width: 180px; }
+.filter-intent { width: 140px; }
+.filter-keyword { width: 240px; }
+/* 任务全链路事实时间线抽屉。 */
+.drawer-task { margin: 0 0 12px; color: var(--muted); font-size: 12px; word-break: break-all; }
+.task-timeline { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.task-timeline-item { padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+.task-timeline-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.task-timeline-head small { color: var(--muted); }
+.task-timeline-summary { margin: 6px 0 0; font-size: 13px; line-height: 1.5; word-break: break-all; }
+/* 评测管理页版本对比：运行选择器宽度与变化着色。 */
+.compare-select { width: 260px; }
+.delta-up { color: #2e7d32; font-weight: 600; }
+.delta-down { color: #c62828; font-weight: 600; }
+/* 草稿样本按意图的分布标签与报告明细过滤开关。 */
+.intent-distribution { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+.run-items-toolbar { margin-bottom: 8px; }
 
 .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
 .metric-card { display: grid; gap: 4px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px; background: #faf8f6; text-align: left; }

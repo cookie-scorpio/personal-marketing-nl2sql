@@ -55,20 +55,21 @@ public class AuthService {
                 .last("LIMIT 1"));
         // 账号不存在和密码错误使用同一提示，避免暴露有效用户名。
         if (account == null || !passwordEncoder.matches(password, account.getPasswordHash())) {
-            access(QualityEventType.ACCESS_LOGIN_FAILED, null, username, "invalid credentials");
+            access(QualityEventType.ACCESS_LOGIN_FAILED, null, username, "登录失败：用户名或密码不正确");
             throw new BusinessException(401001, "用户名或密码不正确");
         }
         // 仅在凭据正确后告知待审批状态，既满足用户提示要求，也不为外部探测提供账号状态。
         if (AccountStatus.PENDING.name().equals(account.getAccountStatus())) {
-            access(QualityEventType.ACCESS_LOGIN_FAILED, account.getId(), username, "account pending");
+            access(QualityEventType.ACCESS_LOGIN_FAILED, account.getId(), username, "登录失败：账号待审批");
             throw new BusinessException(403101, "账号待审批，暂不可登录");
         }
         if (!Boolean.TRUE.equals(account.getEnabled()) || !AccountStatus.ACTIVE.name().equals(account.getAccountStatus())) {
-            access(QualityEventType.ACCESS_LOGIN_FAILED, account.getId(), username, "account disabled");
+            access(QualityEventType.ACCESS_LOGIN_FAILED, account.getId(), username, "登录失败：账号已停用");
             throw new BusinessException(401001, "用户名或密码不正确");
         }
         CurrentUser user = roleGrants.currentUser(account, null);
-        access(QualityEventType.ACCESS_LOGIN_SUCCEEDED, account.getId(), username, user.role().name());
+        access(QualityEventType.ACCESS_LOGIN_SUCCEEDED, account.getId(), username,
+                "登录成功（" + roleLabel(user.role().name()) + "）");
         return new LoginResponse(jwtService.issue(user), "Bearer", jwtService.ttlSeconds(), user);
     }
 
@@ -81,7 +82,7 @@ public class AuthService {
         }
         CurrentUser switched = roleGrants.currentUser(account, target);
         access(QualityEventType.ACCESS_LOGIN_SUCCEEDED, account.getId(), account.getUsername(),
-                "identity switched to " + switched.role().name());
+                "身份切换为 " + roleLabel(switched.role().name()));
         return new LoginResponse(jwtService.issue(switched), "Bearer", jwtService.ttlSeconds(), switched);
     }
 
@@ -89,6 +90,18 @@ public class AuthService {
         if (qualityFacts == null) return;
         qualityFacts.publish(QualityFact.builder(type, "ACCESS").requestId(org.slf4j.MDC.get("requestId"))
                 .userId(userId).summary(outcome).detail("username", username).detail("outcome", outcome).build());
+    }
+
+    /** 角色编码的中文释义，写入登录事实摘要供数据回流页直接展示。 */
+    private static String roleLabel(String role) {
+        if (role == null) return "未知角色";
+        return switch (role) {
+            case "CUSTOMER_MANAGER" -> "客户经理";
+            case "QUALITY_AUDITOR" -> "质量审计员";
+            case "QUALITY_ADMIN" -> "质量管理员";
+            case "PERMISSION_ADMIN" -> "权限管理员";
+            default -> role;
+        };
     }
 
     static CurrentUser toCurrentUser(UserAccountEntity account) {

@@ -17,8 +17,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 后台日志中心：只允许读取 logback 配置的三个固定日志文件，按尾部行数返回。
- * 从文件末尾反向读取，避免大文件把内存占满；关键字过滤在读取结果内进行。
+ * 后台日志中心：只允许读取 logback 配置的固定日志文件（运行、SQL 复核、会话与大模型调用），
+ * 按尾部行数返回。从文件末尾反向读取，避免大文件把内存占满；关键字过滤在读取结果内进行。
  */
 @Service
 public class LogQueryService {
@@ -27,7 +27,8 @@ public class LogQueryService {
     private static final Map<String, String> FILES = Map.of(
             "application", "application.log",
             "sql-review", "sql-review.log",
-            "conversation", "conversation.log");
+            "conversation", "conversation.log",
+            "model", "model.log");
 
     private final Path logDir;
 

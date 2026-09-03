@@ -5,6 +5,7 @@ import { ArrowRight } from '@element-plus/icons-vue'
 import QChart from '../components/QChart.vue'
 import { fetchOverview } from '../api'
 import { usePolling } from '../usePolling'
+import { eventLabel } from '../eventLabels'
 import type { QualityModule } from '../types'
 
 defineEmits<{ navigate: [module: QualityModule] }>()
@@ -25,6 +26,8 @@ const uptimeLabel = computed(() => {
 })
 const trend = computed(() => data.value?.business.trend ?? [])
 const statusRows = computed(() => data.value?.business.status_counts ?? [])
+const eventRows = computed(() => data.value?.business.event_counts ?? [])
+const candidateRows = computed(() => data.value?.candidate_counts_24h ?? [])
 const successRate = computed(() => {
   const rows = statusRows.value
   const total = rows.reduce((sum, row) => sum + row.group_count, 0)
@@ -68,7 +71,8 @@ const statusName = (key: string) => STATUS_LABELS[key] ?? key
           <small>JVM 堆 {{ data.jvm_heap_used_mb }} / {{ data.jvm_heap_max_mb }} MB</small>
         </div>
         <div class="metric-card">
-          <span>在册客户</span><strong>{{ data.business.customers.toLocaleString() }}</strong><small>dim_customer 快照</small>
+          <span>在册客户</span><strong>{{ data.business.customers.toLocaleString() }}</strong>
+          <small>客户主档数据快照（含在册与 VIP）</small>
         </div>
         <div class="metric-card">
           <span>24 小时执行</span>
@@ -100,6 +104,29 @@ const statusName = (key: string) => STATUS_LABELS[key] ?? key
             <el-table-column label="数量" prop="group_count" width="100" align="right" />
           </el-table>
           <el-empty v-else description="窗口内暂无任务" :image-size="72" />
+        </section>
+      </div>
+
+      <div class="panel-grid">
+        <section class="panel-card">
+          <h3>质量事实分类（24 小时）</h3>
+          <el-table v-if="eventRows.length" :data="eventRows" size="small" height="260">
+            <el-table-column label="事实类型" prop="label">
+              <template #default="{ row }">{{ eventLabel(row.group_key) }}</template>
+            </el-table-column>
+            <el-table-column label="次数" prop="group_count" width="110" align="right" />
+          </el-table>
+          <el-empty v-else description="窗口内没有质量事实" :image-size="72" />
+        </section>
+        <section class="panel-card">
+          <h3>待回流候选构成（24 小时）</h3>
+          <el-table v-if="candidateRows.length" :data="candidateRows" size="small" height="260">
+            <el-table-column label="候选类型" prop="label">
+              <template #default="{ row }">{{ eventLabel(row.group_key) }}</template>
+            </el-table-column>
+            <el-table-column label="次数" prop="group_count" width="110" align="right" />
+          </el-table>
+          <el-empty v-else description="窗口内没有回流候选" :image-size="72" />
         </section>
       </div>
     </template>

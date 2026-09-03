@@ -76,7 +76,8 @@ public class GlobalExceptionHandler {
                 exception.getClass().getName(), exception.getMessage(), root.getClass().getName(), root.getMessage(),
                 java.util.Arrays.toString(exception.getStackTrace()));
         if (qualityFacts != null) qualityFacts.publish(QualityFact.builder(QualityEventType.RUNTIME_FAILURE, "COMMON")
-                .requestId(WebRequestSupport.requestId(request)).userId(currentUserId()).summary(exception.getClass().getSimpleName())
+                .requestId(WebRequestSupport.requestId(request)).userId(currentUserId())
+                .summary("运行异常：" + exception.getClass().getSimpleName())
                 .detail("method", request.getMethod()).detail("path", request.getRequestURI())
                 .detail("error_type", exception.getClass().getName()).detail("error_message", exception.getMessage()).build());
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)

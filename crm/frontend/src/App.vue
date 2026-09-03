@@ -135,6 +135,15 @@ function syncIdentityView() {
   currentView.value = defaultView()
   sidebarOpen.value = false
 }
+/**
+ * 质量审计员的后台管理是其唯一默认工作区：无论登录前停留在哪个页面、从哪个页面切换身份，
+ * 只要当前身份变为质量审计员，一律回到后台管理；其他身份保持原有"可访问则不跳转"的习惯。
+ */
+function applyRoleWorkspace() {
+  if (user.value?.role === 'QUALITY_AUDITOR') currentView.value = 'quality'
+  else if (!currentViewAvailable()) currentView.value = defaultView()
+  sidebarOpen.value = false
+}
 function currentViewAvailable() {
   if (currentView.value === 'query') return isQueryIdentity.value
   if (currentView.value === 'quality') return user.value?.role === 'QUALITY_AUDITOR'
@@ -167,11 +176,10 @@ async function changeIdentity(role: RoleCode) {
     await switchIdentity(role)
     /**
      * user.role 是会话组件 key 的一部分，令牌更新后 Vue 会销毁旧组件，从而终止旧身份的
-     * SSE、草稿和请求，再挂载新身份工作区。能访问当前工作区时保持原页面；仅当目标身份
-     * 无权访问当前工作区时才回到该身份的默认页，避免整页刷新造成视觉跳转。
+     * SSE、草稿和请求，再挂载新身份工作区。质量审计员固定回到后台管理；其他身份能访问
+     * 当前工作区时保持原页面，仅当目标身份无权访问时才回到该身份的默认页。
      */
-    if (!currentViewAvailable()) currentView.value = defaultView()
-    sidebarOpen.value = false
+    applyRoleWorkspace()
     sessionRevision.value++
     await nextTick()
     identitySwitching.value = false
@@ -188,8 +196,7 @@ async function changeIdentity(role: RoleCode) {
  */
 watch(() => user.value?.role, role => {
   if (!role || identitySwitching.value) return
-  if (!currentViewAvailable()) currentView.value = defaultView()
-  sidebarOpen.value = false
+  applyRoleWorkspace()
   sessionRevision.value++
 })
 

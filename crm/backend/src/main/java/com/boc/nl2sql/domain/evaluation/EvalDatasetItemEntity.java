@@ -16,6 +16,7 @@ public class EvalDatasetItemEntity {
     private String questionText;
     private String expectedSql;
     private String note;
+    private String intentCode;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -33,6 +34,8 @@ public class EvalDatasetItemEntity {
     public void setExpectedSql(String value) { expectedSql = value; }
     public String getNote() { return note; }
     public void setNote(String value) { note = value; }
+    public String getIntentCode() { return intentCode; }
+    public void setIntentCode(String value) { intentCode = value; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime value) { createdAt = value; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }

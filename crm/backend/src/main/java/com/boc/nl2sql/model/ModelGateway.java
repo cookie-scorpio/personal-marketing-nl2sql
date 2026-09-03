@@ -48,7 +48,7 @@ public class ModelGateway {
         ModelAdapter adapter = adapters.stream()
                 .filter(candidate -> candidate.provider().equalsIgnoreCase(configuredProvider))
                 .findFirst()
-                .orElseThrow(() -> new BusinessException(503101, "未找到已配置的大模型适配器"));
+                .orElseThrow(() -> new BusinessException(503101, "未找到已配置的大模型服务"));
         if (!adapter.available() || "mock".equalsIgnoreCase(adapter.provider())) {
             throw new BusinessException(503102,
                     "该问题超出规则快速查询范围，请配置已选用的模型（" + configuredProvider + "）后重试");
@@ -64,18 +64,18 @@ public class ModelGateway {
     /** 修复始终直达已配置模型，不再次走规则识别或无限重试。 */
     public QueryInterpretation repair(String text, CurrentUser user, String failedSql, String reason) {
         return adapters.stream().filter(adapter -> adapter.provider().equalsIgnoreCase(configuredProvider))
-                .findFirst().orElseThrow(() -> new BusinessException(503101, "模型适配器不可用"))
+                .findFirst().orElseThrow(() -> new BusinessException(503101, "大模型服务不可用"))
                 .repair(text, user, failedSql, reason);
     }
     public QueryInterpretation repair(String text,CurrentUser user,String sql,String reason,boolean thinking){
         return adapters.stream().filter(adapter->adapter.provider().equalsIgnoreCase(configuredProvider)).findFirst()
-                .orElseThrow(()->new BusinessException(503101,"模型适配器不可用")).repair(text,user,sql,reason,thinking);
+                .orElseThrow(()->new BusinessException(503101,"大模型服务不可用")).repair(text,user,sql,reason,thinking);
     }
 
     public SqlResultReview reviewResult(String text, CurrentUser user, String sql,
                                         java.util.Map<String,Object> resultSummary, boolean thinking) {
         return adapters.stream().filter(adapter->adapter.provider().equalsIgnoreCase(configuredProvider)).findFirst()
-                .orElseThrow(()->new BusinessException(503101,"模型适配器不可用"))
+                .orElseThrow(()->new BusinessException(503101,"大模型服务不可用"))
                 .reviewResult(text,user,sql,resultSummary,thinking);
     }
 }

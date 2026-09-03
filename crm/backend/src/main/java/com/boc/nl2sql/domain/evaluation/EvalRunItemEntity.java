@@ -23,6 +23,8 @@ public class EvalRunItemEntity {
     private Long elapsedMs;
     private String outcome;
     private String failureStage;
+    private String intentCode;
+    private String interpretationSource;
     private String errorMessage;
     private LocalDateTime createdAt;
 
@@ -54,6 +56,10 @@ public class EvalRunItemEntity {
     public void setOutcome(String value) { outcome = value; }
     public String getFailureStage() { return failureStage; }
     public void setFailureStage(String value) { failureStage = value; }
+    public String getIntentCode() { return intentCode; }
+    public void setIntentCode(String value) { intentCode = value; }
+    public String getInterpretationSource() { return interpretationSource; }
+    public void setInterpretationSource(String value) { interpretationSource = value; }
     public String getErrorMessage() { return errorMessage; }
     public void setErrorMessage(String value) { errorMessage = value; }
     public LocalDateTime getCreatedAt() { return createdAt; }

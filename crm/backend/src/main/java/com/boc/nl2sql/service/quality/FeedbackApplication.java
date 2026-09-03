@@ -54,11 +54,21 @@ public class FeedbackApplication {
         facts.publish(QualityFact.builder(QualityEventType.FEEDBACK_CHANGED, "QUALITY")
                 .requestId(command.requestId()).sessionId(command.sessionId()).taskId(command.taskId())
                 .messageId(command.messageId()).userId(command.userId())
-                .summary(previous + " -> " + command.feedback())
+                .summary("评价变化：" + feedbackLabel(previous) + " → " + feedbackLabel(command.feedback()))
                 .detail("previous_feedback", previous).detail("feedback", command.feedback())
                 .detail("reason_code", command.reasonCode()).detail("comment", command.comment())
                 .evaluationCandidate("DISLIKE".equals(command.feedback())).build());
         return new FeedbackState(command.messageId(), command.feedback(), command.reasonCode(), command.comment());
+    }
+
+    /** 反馈枚举的中文释义，用于事实摘要展示。 */
+    private String feedbackLabel(String feedback) {
+        if (feedback == null) return "无评价";
+        return switch (feedback) {
+            case "LIKE" -> "好评";
+            case "DISLIKE" -> "差评";
+            default -> "无评价";
+        };
     }
 
     /** 会话服务提交的反馈命令；reasonCode 和 comment 为可选补充信息。 */

@@ -25,6 +25,17 @@ public class ConversationFactRecorder {
         this.facts = facts;
     }
 
+    /** 任务状态的中文释义，写入事实摘要，供数据回流页直接展示。 */
+    private static final Map<String, String> STATUS_LABELS = Map.ofEntries(
+            Map.entry("RECEIVED", "已接收"), Map.entry("INTENT_ANALYZING", "意图识别"),
+            Map.entry("ASKING", "等待澄清"), Map.entry("SQL_GENERATING", "生成SQL"),
+            Map.entry("VALIDATING", "校验中"), Map.entry("CONFIRMING", "待确认"),
+            Map.entry("EXECUTING", "执行中"), Map.entry("REPAIRING", "修复中"),
+            Map.entry("FALLING_BACK", "模板兜底"), Map.entry("RESULT_REVIEWING", "结果复核"),
+            Map.entry("PACKAGING", "整理结果"), Map.entry("SUCCESS", "成功"),
+            Map.entry("DEGRADED", "降级完成"), Map.entry("FAILED", "失败"),
+            Map.entry("TIMED_OUT", "超时"), Map.entry("CANCELLED", "已取消"));
+
     /**
      * 保存一次消息或任务状态快照。
      *
@@ -50,9 +61,12 @@ public class ConversationFactRecorder {
 
         QualityEventType type = "ASSISTANT".equals(role)
                 ? QualityEventType.QUERY_STATE_CHANGED : QualityEventType.CONVERSATION_MESSAGE_RECORDED;
+        String roleLabel = "ASSISTANT".equals(role) ? "助手任务" : "用户消息";
+        String statusLabel = STATUS_LABELS.getOrDefault(status, status == null || status.isBlank() ? "" : status);
+        String summary = statusLabel.isBlank() ? roleLabel : roleLabel + "：" + statusLabel;
         facts.publish(QualityFact.builder(type, "CONVERSATION")
                 .requestId(requestId).sessionId(sessionId).taskId(taskId).userId(userId)
-                .summary(role + (status == null ? "" : " " + status))
+                .summary(summary)
                 .details(data).evaluationCandidate(isCandidate(status)).build());
     }
 

@@ -144,13 +144,19 @@ public class SystemHealthService {
         Map<String, Object> item = base("model_gateway", "模型网关");
         List<Map<String, Object>> adapters = new ArrayList<>();
         boolean anyAvailable = false;
+        boolean realModelAvailable = false;
         for (ModelAdapter adapter : modelAdapters) {
             boolean available = adapter.available();
             anyAvailable = anyAvailable || available;
+            // mock 适配器只服务本地规则演示，不在健康页展示；状态结论仅基于对外服务的大模型。
+            if ("mock".equalsIgnoreCase(adapter.provider())) continue;
+            realModelAvailable = realModelAvailable || available;
             adapters.add(Map.of("provider", adapter.provider(), "available", available));
         }
         item.put("healthy", anyAvailable);
-        item.put("detail", anyAvailable ? "存在可用的模型适配器" : "没有任何可用的模型适配器");
+        item.put("detail", realModelAvailable ? "存在可用的大模型服务"
+                : anyAvailable ? "大模型服务未配置，当前仅本地演示适配器可用"
+                : "没有可用的大模型服务");
         item.put("adapters", adapters);
         return item;
     }
@@ -285,7 +291,8 @@ public class SystemHealthService {
                 "customers", ((Map<?, ?>) business.get("customers")).get("total_customers"),
                 "trend", business.get("hourly_trend"),
                 "status_counts", business.get("status_counts"),
-                "duration", business.get("duration")));
+                "duration", business.get("duration"),
+                "event_counts", repository.auditEventTypeCounts(LocalDateTime.now().minusHours(24))));
         result.put("pending_candidates", repository.pendingCandidateCount());
         result.put("active_sessions", repository.activeSessionCount());
         result.put("candidate_counts_24h", repository.candidateTypeCounts(LocalDateTime.now().minusHours(24)));

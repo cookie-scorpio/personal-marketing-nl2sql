@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** SQL 健康度页：生成/校验/执行阶段事实、修复轨迹、模型调用与失败分类的窗口统计。 */
+/** SQL 健康度页：生成/校验/执行阶段事实、修复轨迹与模型调用的窗口统计。质量事实分类已移至总览页。 */
 import { computed, ref, watch } from 'vue'
 import QChart from '../components/QChart.vue'
 import { fetchSqlHealth } from '../api'
@@ -15,20 +15,14 @@ watch(windowHours, () => void refresh())
 const PHASE_LABELS: Record<string, string> = {
   GENERATED: 'SQL 生成', REJECTED: '校验拒绝', EXECUTING: '开始执行', EXECUTED: '执行成功',
   SQL_ERROR: '执行报错', RESULT_ALIGNED: '结果复核通过', RESULT_MISMATCH: '结果不一致',
-  TIMED_OUT: '执行超时', CANCELLED: '已取消', UNKNOWN: '未知阶段',
+  RESULT_REVIEW_UNAVAILABLE: '结果复核暂不可用', TOOL_RESULT: '工具预检',
+  TIMED_OUT: '执行超时', CANCELLED: '已取消', DATABASE_ERROR: '数据库执行错误', UNKNOWN: '未知阶段',
 }
 const REPAIR_LABELS: Record<string, string> = {
   STARTED: '修复启动', GENERATED: '产出候选', APPLIED: '修复生效', REJECTED: '候选被拒', MODEL_FAILED: '模型失败',
 }
-const EVENT_LABELS: Record<string, string> = {
-  QUERY_SUCCESS: '问数成功', QUERY_FAILED: '问数失败', QUERY_TIMED_OUT: '问数超时', QUERY_DEGRADED: '降级完成',
-  QUERY_SQL_ERROR: 'SQL 报错', QUERY_RESULT_MISMATCH: '结果不一致', QUERY_FALLBACK: '模板兜底', QUERY_CANCELLED: '用户取消',
-  MODEL_CALL_COMPLETED: '模型调用完成', MODEL_CALL_FAILED: '模型调用失败', MODEL_RESPONSE_REJECTED: '模型响应被拒',
-  SQL_ATTEMPT_RECORDED: 'SQL 尝试记录', REPAIR_STARTED: '修复启动', REPAIR_APPLIED: '修复生效',
-}
 const phaseRows = computed(() => withLabels(data.value?.phase_counts, PHASE_LABELS))
 const repairRows = computed(() => withLabels(data.value?.repair_counts, REPAIR_LABELS))
-const eventRows = computed(() => withLabels(data.value?.event_type_counts, EVENT_LABELS))
 const trend = computed(() => data.value?.hourly_trend ?? [])
 const modelCalls = computed(() => data.value?.model_calls)
 
@@ -105,12 +99,14 @@ function withLabels(rows: GroupCount[] | undefined, labels: Record<string, strin
           <el-empty v-else description="窗口内没有触发修复" :image-size="72" />
         </section>
         <section class="panel-card">
-          <h3>质量事实分类</h3>
-          <el-table v-if="eventRows.length" :data="eventRows" size="small" height="260">
-            <el-table-column label="事实类型" prop="label" />
-            <el-table-column label="次数" prop="group_count" width="110" align="right" />
-          </el-table>
-          <el-empty v-else description="窗口内没有质量事实" :image-size="72" />
+          <h3>模型调用</h3>
+          <el-descriptions v-if="modelCalls" :column="1" size="small" class="model-call-desc">
+            <el-descriptions-item label="调用总次数">{{ modelCalls.total_calls }}</el-descriptions-item>
+            <el-descriptions-item label="成功完成">{{ modelCalls.completed_calls }}</el-descriptions-item>
+            <el-descriptions-item label="失败或被拒">{{ modelCalls.failed_calls }}</el-descriptions-item>
+            <el-descriptions-item label="平均耗时">{{ Math.round(modelCalls.avg_elapsed_ms) }} ms</el-descriptions-item>
+          </el-descriptions>
+          <el-empty v-else description="窗口内没有模型调用" :image-size="72" />
         </section>
       </div>
     </template>

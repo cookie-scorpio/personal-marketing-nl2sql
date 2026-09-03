@@ -167,6 +167,9 @@ public class EvaluationRunner {
         boolean generatedByModel;
         try {
             QueryInterpretation interpretation = modelGateway.interpret(item.getQuestionText(), user, () -> true);
+            // 记录重放时的实际意图与计划来源，支撑意图准确率与生成链路分析；澄清返回时语义对象可能为空。
+            record.setInterpretationSource(interpretation.source());
+            if (interpretation.semantic() != null) record.setIntentCode(interpretation.semantic().intent().name());
             if (interpretation.clarification() != null) {
                 record.setOutcome(EvalOutcome.CLARIFICATION_NEEDED.name());
                 record.setFailureStage("INTERPRET");

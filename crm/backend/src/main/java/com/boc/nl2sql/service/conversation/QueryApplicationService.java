@@ -200,7 +200,7 @@ public class QueryApplicationService {
                 taskMapper.insert(task);
                 conversations.activate(task.getSessionId(),taskId);
                 conversations.userMessage(task,"query",visibleUserQuery);conversations.record(task);
-                fact(QualityEventType.QUERY_RECEIVED,requestId,task,user,"provider request accepted",taskDetails(task));
+                fact(QualityEventType.QUERY_RECEIVED,requestId,task,user,"查询已接收",taskDetails(task));
                 return new SubmitQueryResponse(taskId, request.sessionId(), QueryStatus.ASKING.name(), 30,
                         "/api/v1/queries/" + taskId + "/status");
             }
@@ -210,7 +210,7 @@ public class QueryApplicationService {
         taskMapper.insert(task);
         conversations.activate(task.getSessionId(),taskId);
         conversations.userMessage(task,"query",visibleUserQuery);conversations.record(task);
-        fact(QualityEventType.QUERY_RECEIVED,requestId,task,user,"provider request accepted",taskDetails(task));
+        fact(QualityEventType.QUERY_RECEIVED,requestId,task,user,"查询已接收",taskDetails(task));
         enqueue(taskId,user,requestId);
         return new SubmitQueryResponse(taskId, request.sessionId(), QueryStatus.RECEIVED.name(), 0,
                 "/api/v1/queries/" + taskId + "/status");

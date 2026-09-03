@@ -143,7 +143,7 @@ public class ResultAssembler {
         Object sample = rows.stream().map(row -> row.get(key)).filter(java.util.Objects::nonNull).findFirst().orElse(null);
         String type = inferType(sample);
         boolean id = key.matches(".*(?:_id|_code)$") || key.equals("id");
-        boolean time = "DATE".equals(type) || key.matches(".*(?:date|month|year|day|time).*");
+        boolean time = !"NUMBER".equals(type) && ("DATE".equals(type) || key.matches(".*(?:date|month|year|day|time).*"));
         String role = time ? "TIME" : id || key.equals("age") || !"NUMBER".equals(type) ? "DIMENSION" : "MEASURE";
         if (hint != null && !id) {
             if ("DIMENSION".equals(hint.role()) || "TIME".equals(hint.role())) role = hint.role();

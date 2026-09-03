@@ -36,4 +36,19 @@ class V13DisplayTest {
         assertThat(result.charts()).noneMatch(c->c.type().equals("PIE"));assertThat(result.rows()).hasSize(2);
         assertThat(result.analysis().insights()).anyMatch(s->s.contains("未绘制"));
     }
+    @Test void numericColumnWithTimeWordIsStillAMeasure(){
+        // 列名包含 month/year/daily 等时间词但值是数字的列，不应被识别为 TIME 维度。
+        // 否则月度趋势这类查询两个列都被打成 TIME，无 MEASURE，最终不出图。
+        var hints=List.of(new com.boc.nl2sql.domain.execution.ResultColumnHint("transaction_month","月份","TIME","","NONE",null),
+                new com.boc.nl2sql.domain.execution.ResultColumnHint("monthly_amount_wan","交易金额","MEASURE","万元","SUM",null));
+        List<Map<String,Object>> rows=List.of(
+                Map.of("transaction_month","2026-01","monthly_amount_wan",2727.74),
+                Map.of("transaction_month","2026-02","monthly_amount_wan",2323.29),
+                Map.of("transaction_month","2026-03","monthly_amount_wan",2813.03));
+        var result=new ResultAssembler(null).assemble(new PlannedQuery("",Map.of(),"LINE","月度趋势",false),rows,"DEEPSEEK",.95);
+        assertThat(result.columns().stream().filter(c->c.key().equals("monthly_amount_wan")).findFirst().orElseThrow().role())
+                .isEqualTo("MEASURE");
+        assertThat(result.charts()).anyMatch(c->c.type().equals("LINE"));
+        assertThat(result.analysis().insights()).noneMatch(s->s.contains("明细为主"));
+    }
 }

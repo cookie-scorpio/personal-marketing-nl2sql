@@ -48,7 +48,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--host", default=os.getenv("MYSQL_HOST", "127.0.0.1"))
     parser.add_argument("--port", type=int, default=int(os.getenv("MYSQL_PORT", "3306")))
     parser.add_argument("--database", default=os.getenv("MYSQL_DATABASE", "pf_nl2sql"))
-    parser.add_argument("--user", default=os.getenv("MYSQL_USER", "nl2sql_app"))
+    parser.add_argument("--user", default=os.getenv("MYSQL_USER", "root"))
     parser.add_argument("--password", default=os.getenv("MYSQL_PASSWORD"), required=os.getenv("MYSQL_PASSWORD") is None)
     parser.add_argument("--customers", type=int, default=10_000)
     parser.add_argument("--transactions", type=int, default=200_000)

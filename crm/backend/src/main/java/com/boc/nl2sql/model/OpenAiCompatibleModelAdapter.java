@@ -18,9 +18,11 @@ import com.boc.nl2sql.service.quality.ModelCallRecorder;
 import com.boc.nl2sql.service.quality.SqlFactRecorder;
 
 import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 /**
  * OpenAI兼容Chat Completions协议的通用规划适配器基类，DeepSeek、Qwen等共用。
@@ -28,6 +30,18 @@ import java.util.UUID;
  */
 public abstract class OpenAiCompatibleModelAdapter implements ModelAdapter {
     private static final Logger log = LoggerFactory.getLogger(OpenAiCompatibleModelAdapter.class);
+    /**
+     * 模型偶尔会把 SQL 字段、英文枚举或账号范围放进括号补充说明。括号中的业务信息
+     * （例如“近30天”“按日/按月”）仍然有选择价值，不能一概删除，因此先逐段识别括注，
+     * 仅移除命中内部技术标记的部分。
+     */
+    private static final Pattern PARENTHETICAL_TEXT = Pattern.compile("[（(]([^（）()]*)[）)]");
+    private static final Pattern INTERNAL_TECHNICAL_TEXT = Pattern.compile(
+            "(?i)(?:(?<![a-z0-9_])(?:SELECT|FROM|WHERE|JOIN|GROUP\\s+BY|ORDER\\s+BY|LIMIT|"
+                    + "EAST|WEST|SOUTH|NORTH|ACTIVE|INACTIVE|CLOSED)(?![a-z0-9_])|"
+                    + "(?<![a-z0-9_])[a-z][a-z0-9]*_[a-z0-9_]+(?![a-z0-9_])|"
+                    + "(?<![a-z0-9_])c\\.|"
+                    + "(?:数据|权限|账号)范围条件|服务端|数据库|SQL|字段名|英文枚举)");
     protected final ObjectMapper objectMapper;
     protected final Nl2SqlPrompts prompts;
     protected final RestClient restClient;
@@ -331,25 +345,19 @@ public abstract class OpenAiCompatibleModelAdapter implements ModelAdapter {
         ClarificationQuestion question = null;
         if (asking) {
             // 选项协议同时兼容字符串与 {label,value,recommended} 对象两种形态；
-            // recommended 项排到首位并在问题对象上标记，前端据此展示“推荐”。
-            var labels = new java.util.ArrayList<String>();
-            String recommended = null;
-            if (plan.clarificationOptions() != null) {
-                for (Object option : plan.clarificationOptions()) {
-                    if (option instanceof java.util.Map<?, ?> map) {
-                        String label = String.valueOf(map.get("label"));
-                        if (labels.size() == 0 || Boolean.TRUE.equals(map.get("recommended"))) recommended = label;
-                        labels.add(label);
-                    } else if (option != null) {
-                        labels.add(String.valueOf(option));
-                    }
-                }
-            }
+            // 展示前统一去除技术括注并按最终文字去重，避免模型的小幅格式漂移直接泄露到前端。
+            ClarificationOptions clarificationOptions = prepareClarificationOptions(plan.clarificationOptions());
+            String fallbackPrompt = confidence < 0.65
+                    ? "我对当前问题的理解置信度较低，请补充查询对象、指标或时间范围。"
+                    : "请补充查询所需的业务条件。";
+            // 若模型只返回了技术括注，清理后必须回退到完整问句，不能让前端出现空白反问。
+            String displayPrompt = nonBlank(
+                    normalizeClarificationText(nonBlank(plan.clarificationQuestion(), fallbackPrompt)),
+                    fallbackPrompt);
             question = new ClarificationQuestion(UUID.randomUUID().toString(), "MODEL_CLARIFICATION",
-                    nonBlank(plan.clarificationQuestion(), confidence < 0.65
-                            ? "我对当前问题的理解置信度较低，请补充查询对象、指标或时间范围。"
-                            : "请补充查询所需的业务条件。"),
-                    labels, slots).withRecommended(recommended);
+                    displayPrompt,
+                    clarificationOptions.labels(), slots)
+                    .withRecommended(clarificationOptions.recommended());
         }
         String sql = asking ? null : normalizeSql(plan.sql());
         if (!asking && (sql == null || sql.isBlank())) {
@@ -391,6 +399,76 @@ public abstract class OpenAiCompatibleModelAdapter implements ModelAdapter {
 
     private String nonBlank(String value, String fallback) {
         return value == null || value.isBlank() ? fallback : value.strip();
+    }
+
+    /**
+     * 将模型选项整理为前端可直接展示的业务文案。
+     *
+     * <p>这里使用有序映射而不是普通集合：键是清理后的展示文字，既能完成去重，也能稳定保留
+     * 模型给出的顺序。推荐项也在清理后参与匹配，因此同名项合并后，只要仍有多个选项可供选择，
+     * 前端就能在正确的业务文案上显示推荐标记。</p>
+     */
+    private ClarificationOptions prepareClarificationOptions(List<Object> rawOptions) {
+        if (rawOptions == null || rawOptions.isEmpty()) {
+            return new ClarificationOptions(List.of(), null);
+        }
+        Map<String, Boolean> uniqueOptions = new LinkedHashMap<>();
+        for (Object rawOption : rawOptions) {
+            String rawLabel;
+            boolean explicitlyRecommended = false;
+            if (rawOption instanceof Map<?, ?> option) {
+                Object label = option.get("label");
+                rawLabel = label == null ? "" : String.valueOf(label);
+                explicitlyRecommended = Boolean.TRUE.equals(option.get("recommended"));
+            } else {
+                rawLabel = rawOption == null ? "" : String.valueOf(rawOption);
+            }
+
+            String displayLabel = normalizeClarificationText(rawLabel);
+            if (displayLabel.isBlank()) {
+                continue;
+            }
+            uniqueOptions.merge(displayLabel, explicitlyRecommended, Boolean::logicalOr);
+            if (uniqueOptions.size() == 4) {
+                break;
+            }
+        }
+
+        List<String> labels = List.copyOf(uniqueOptions.keySet());
+        String recommended = uniqueOptions.entrySet().stream()
+                .filter(Map.Entry::getValue)
+                .map(Map.Entry::getKey)
+                .findFirst()
+                .orElse(labels.isEmpty() ? null : labels.get(0));
+        return new ClarificationOptions(labels, recommended);
+    }
+
+    /**
+     * 删除只服务于数据库执行或权限控制的括注，并保留会改变用户选择的业务括注。
+     * 清理后顺便收拢空白和悬空标点，保证问句、选项以及复制出的消息文本保持自然。
+     */
+    private String normalizeClarificationText(String text) {
+        if (text == null || text.isBlank()) {
+            return "";
+        }
+        var matcher = PARENTHETICAL_TEXT.matcher(text.strip());
+        var cleaned = new StringBuffer();
+        while (matcher.find()) {
+            String replacement = INTERNAL_TECHNICAL_TEXT.matcher(matcher.group(1)).find()
+                    ? ""
+                    : matcher.group();
+            matcher.appendReplacement(cleaned, java.util.regex.Matcher.quoteReplacement(replacement));
+        }
+        matcher.appendTail(cleaned);
+        return cleaned.toString()
+                .replaceAll("\\s+", " ")
+                .replaceAll("\\s+([，。；：！？])", "$1")
+                .replaceAll("[，,；;：:]$", "")
+                .strip();
+    }
+
+    /** 清理后的展示选项及其推荐项，两者始终使用同一份前端文案。 */
+    private record ClarificationOptions(List<String> labels, String recommended) {
     }
 
     /** 与提示词JSON字段一一对应的内部传输对象。 */

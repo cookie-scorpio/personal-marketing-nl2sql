@@ -52,7 +52,7 @@ app:
       # 成功执行后只发送列名、类型和行数等摘要复核结果结构，不发送业务数据值。
       result-review-enabled: ${DEEPSEEK_RESULT_REVIEW_ENABLED:true}
       # DeepSeek支持OpenAI兼容的/chat/completions接口；地址与密钥通过环境变量或application-local.yml提供。
-      base-url: ${DEEPSEEK_BASE_URL:}
+      base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
       api-key: ${DEEPSEEK_API_KEY:}
       model: ${DEEPSEEK_MODEL:deepseek-v4-flash}
       # V4默认开启思考；短JSON规划显式关闭，防止思考耗尽输出额度而无最终content。
@@ -65,10 +65,10 @@ app:
       # 当前使用阿里云DashScope的OpenAI兼容模式。
       # 如换成自建服务：vLLM用http://127.0.0.1:8000/v1，Ollama用http://127.0.0.1:11434/v1，
       # 并把thinking-param改为chat_template_kwargs（vLLM）或think（Ollama），自建服务密钥可留空。
-      base-url: ${QWEN_BASE_URL:}
+      base-url: ${QWEN_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
       # DashScope必须在阿里云百炼控制台申请API Key（sk-开头）；地址与密钥填在application-local.yml或环境变量QWEN_API_KEY。
-      api-key: ${QWEN_API_KEY:}
-      model: ${QWEN_MODEL:qwen3-32b}
+      api-key: ${QWEN_API_KEY:sk-ws-H.PMIRIHL.RRjt.MEQCICioxOVMk5c-aKxm_2t_jmDwzSx-UerHPslIoCw9vknhAiAZ5rwX0afjUnUWcyRZ9AG2uIuR5ut6FShEaPp4MWB3tQ}
+      model: ${QWEN_MODEL:qwen3.6-plus}
       # Qwen3为混合思考模型；短JSON规划建议关闭思考，防止思考耗尽输出额度而无最终content。
       thinking-enabled: ${QWEN_THINKING_ENABLED:true}
       # 思考开关的协议参数随部署方式不同：vLLM/SGLang用chat_template_kwargs，
@@ -92,10 +92,21 @@ app:
     max-sql-limit: ${QUERY_MAX_SQL_LIMIT:500}
     max-clarification-rounds: ${QUERY_MAX_CLARIFICATION_ROUNDS:2}
   rag:
-    # V1.0只保留外置RAG配置，不创建Milvus连接，也不调用Embedding服务。
-    enabled: ${RAG_ENABLED:false}
-    embedding-model: ${EMBEDDING_MODEL:BCG-E3}
+    # 检索增强：向量存MySQL vector_embedding表并在进程内做余弦检索，Embedding走OpenAI兼容/embeddings端点。
+    # embedding-base-url与api-key留空时回退app.model.qwen的同名配置，复用DashScope密钥；
+    # 服务不可用时自动降级为全量术语注入，不影响查询主链路。Milvus等外置向量库后续通过VectorStore接口切换。
+    enabled: ${RAG_ENABLED:true}
+    embedding-model: ${EMBEDDING_MODEL:text-embedding-v4}
     embedding-base-url: ${EMBEDDING_BASE_URL:}
+    embedding-api-key: ${EMBEDDING_API_KEY:}
+    embedding-dim: ${EMBEDDING_DIM:1024}
+    # 业务术语与相似问题示例各取多少条注入提示词，以及丢弃低相似命中的阈值。
+    term-top-k: ${RAG_TERM_TOP_K:5}
+    example-top-k: ${RAG_EXAMPLE_TOP_K:3}
+    min-score: ${RAG_MIN_SCORE:0.3}
+    # 向量索引刷新间隔；内容哈希未变的条目不会重复调用embedding。
+    index-refresh-ms: ${RAG_INDEX_REFRESH_MS:300000}
+    # 预留外置向量库切换；当前MySQL+内存实现不使用。
     milvus-uri: ${MILVUS_URI:}
     collection: ${MILVUS_COLLECTION:nl2sql_business_knowledge}
 

@@ -30,10 +30,67 @@ const serviceHealthy = ref<boolean | null>(null)
 const currentView = ref<WorkspaceView>('query')
 const identitySwitching = ref(false)
 const qualityModule = ref<QualityModule>('overview')
+const SERVICE_HEALTH_POLL_INTERVAL_MS = 10_000
+const SERVICE_HEALTH_REQUEST_TIMEOUT_MS = 4_000
+let serviceHealthTimer: number | undefined
+let serviceHealthRequest: AbortController | null = null
+let serviceHealthMonitoring = false
 
 function resizeSidebar(event: MediaQueryListEvent) { narrowScreen.value = event.matches; if (!event.matches) sidebarOpen.value = false }
 function openSidebar() { sidebarOpen.value = true; void nextTick(() => newSessionButton.value?.focus()) }
 function closeSidebar() { sidebarOpen.value = false; void nextTick(() => menuButton.value?.focus()) }
+
+/**
+ * 请求公开的轻量健康端点，并把每次结果覆盖到右上角状态标签。
+ *
+ * 后端重启时，已有请求可能直到浏览器网络超时才结束。这里为单次检查设置独立超时，并用
+ * serviceHealthRequest 阻止轮询产生并发请求；恢复后的下一次成功响应会立即把旧的失败状态改回正常。
+ */
+async function checkServiceHealth() {
+  if (!serviceHealthMonitoring || serviceHealthRequest || document.visibilityState === 'hidden') return
+  const request = new AbortController()
+  serviceHealthRequest = request
+  const timeout = window.setTimeout(() => request.abort(), SERVICE_HEALTH_REQUEST_TIMEOUT_MS)
+  try {
+    // 健康状态必须来自本次真实请求，禁用 HTTP 缓存，避免后端恢复后仍读到旧的失败或成功响应。
+    // 顶栏只回答“后端是否在线”；数据库、Redis、模型等依赖健康度由审计后台单独展示。
+    const response = await fetch('/actuator/health/liveness', { cache: 'no-store', signal: request.signal })
+    const health = response.ok ? await response.json() as { status?: string } : null
+    if (serviceHealthMonitoring) serviceHealthy.value = response.ok && health?.status === 'UP'
+  } catch {
+    if (serviceHealthMonitoring) serviceHealthy.value = false
+  } finally {
+    window.clearTimeout(timeout)
+    if (serviceHealthRequest === request) serviceHealthRequest = null
+  }
+}
+
+/** 页面从后台返回或浏览器报告网络恢复时立即复查，不必等待下一轮十秒定时器。 */
+function checkServiceHealthWhenAvailable() {
+  if (document.visibilityState === 'visible') void checkServiceHealth()
+}
+
+/**
+ * 健康监测与应用外壳同生命周期：启动时立刻检查，随后持续轮询；卸载时同时清理定时器、
+ * 事件监听和未完成请求，避免热更新或页面切换后留下重复探测。
+ */
+function startServiceHealthMonitoring() {
+  serviceHealthMonitoring = true
+  void checkServiceHealth()
+  serviceHealthTimer = window.setInterval(() => void checkServiceHealth(), SERVICE_HEALTH_POLL_INTERVAL_MS)
+  document.addEventListener('visibilitychange', checkServiceHealthWhenAvailable)
+  window.addEventListener('online', checkServiceHealthWhenAvailable)
+}
+
+function stopServiceHealthMonitoring() {
+  serviceHealthMonitoring = false
+  if (serviceHealthTimer !== undefined) window.clearInterval(serviceHealthTimer)
+  serviceHealthTimer = undefined
+  document.removeEventListener('visibilitychange', checkServiceHealthWhenAvailable)
+  window.removeEventListener('online', checkServiceHealthWhenAvailable)
+  serviceHealthRequest?.abort()
+  serviceHealthRequest = null
+}
 
 /**
  * 客户经理和质量审计员都可以进入智能问数，但后端会为两者应用不同的数据范围。
@@ -137,17 +194,14 @@ watch(() => user.value?.role, role => {
 
 onMounted(async () => {
   sidebarMedia.addEventListener('change', resizeSidebar)
+  startServiceHealthMonitoring()
   await restore()
   syncIdentityView()
-  try {
-    const response = await fetch('/actuator/health')
-    const health = await response.json()
-    serviceHealthy.value = response.ok && health.status === 'UP'
-  } catch {
-    serviceHealthy.value = false
-  }
 })
-onUnmounted(() => sidebarMedia.removeEventListener('change', resizeSidebar))
+onUnmounted(() => {
+  sidebarMedia.removeEventListener('change', resizeSidebar)
+  stopServiceHealthMonitoring()
+})
 </script>
 
 <template>

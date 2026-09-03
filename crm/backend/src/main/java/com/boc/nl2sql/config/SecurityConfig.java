@@ -57,8 +57,10 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .dispatcherTypeMatchers(jakarta.servlet.DispatcherType.ASYNC).permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        // 顶栏存活探针与整体健康端点都不包含业务数据，可在登录前后用于判断后端是否在线。
+                        // 其他健康分组和指标仍需相应身份，不能因开放 liveness 一并暴露运维详情。
                         .requestMatchers("/api/v1/auth/login", "/api/v1/auth/register", "/api/v1/auth/public-key",
-                                "/actuator/health").permitAll()
+                                "/actuator/health", "/actuator/health/liveness").permitAll()
                         .requestMatchers("/api/v1/auth/me", "/api/v1/auth/switch-identity").authenticated()
                         .requestMatchers("/api/v1/quality/**", "/actuator/metrics/**").hasAnyRole("QUALITY_AUDITOR", "QUALITY_ADMIN")
                         .requestMatchers("/api/v1/permission-admin/**").hasRole("PERMISSION_ADMIN")

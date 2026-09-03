@@ -37,6 +37,14 @@ test('客户浮窗锁定原条件并用空输入框自动附加筛选', async ()
   assert.match(styles, /\.clarify-search-icon/)
 })
 
+test('客户反问面板与消息阅读区各自在边界内滚动', async () => {
+  const styles = await readFile(new URL('../src/app/styles.css', import.meta.url), 'utf8')
+  // 候选客户较多时会压缩上方阅读区；父区裁切越界绘制，反问卡片则在受控高度内自行滚动。
+  assert.match(styles, /\.chat-reading-area \{[^}]*min-height: 0;[^}]*overflow: hidden;/)
+  assert.match(styles, /\.clarify-panel \{[^}]*max-height: min\(470px, 52dvh\);[^}]*overflow-y: auto;/)
+  assert.match(styles, /\.clarify-panel \{[^}]*overscroll-behavior: contain;[^}]*scrollbar-gutter: stable;/)
+})
+
 test('唯一客户显示只读卡片且用户气泡不由前端脱敏', async () => {
   const workspace = await readFile(new URL('../src/features/conversation/ConversationWorkspace.vue', import.meta.url), 'utf8')
   const styles = await readFile(new URL('../src/app/styles.css', import.meta.url), 'utf8')
@@ -61,6 +69,20 @@ test('审计身份保留智能问数并以组件重建代替整页刷新', async
   // 身份卡与退出按钮由同一网格行对齐，身份控件显式使用深色背景，避免浏览器默认白底。
   assert.match(styles, /\.sidebar-footer \{[^}]*grid-template-columns:/)
   assert.match(styles, /\.user-card \{[^}]*background: #302e2d;/)
+})
+
+test('后端重启后顶栏服务状态会持续复查并自动恢复', async () => {
+  const app = await readFile(new URL('../src/App.vue', import.meta.url), 'utf8')
+  // 首次失败不能成为永久状态：固定轮询负责恢复，重新显示页面或网络恢复时立即补查。
+  assert.match(app, /SERVICE_HEALTH_POLL_INTERVAL_MS = 10_000/)
+  assert.match(app, /setInterval\(\(\) => void checkServiceHealth\(\), SERVICE_HEALTH_POLL_INTERVAL_MS\)/)
+  assert.match(app, /addEventListener\('visibilitychange', checkServiceHealthWhenAvailable\)/)
+  assert.match(app, /addEventListener\('online', checkServiceHealthWhenAvailable\)/)
+  // 健康请求不能使用缓存或无限挂起，组件卸载后也不能留下定时器和在途请求。
+  assert.match(app, /fetch\('\/actuator\/health\/liveness', \{ cache: 'no-store', signal: request\.signal \}\)/)
+  assert.match(app, /setTimeout\(\(\) => request\.abort\(\), SERVICE_HEALTH_REQUEST_TIMEOUT_MS\)/)
+  assert.match(app, /clearInterval\(serviceHealthTimer\)/)
+  assert.match(app, /serviceHealthRequest\?\.abort\(\)/)
 })
 
 test('左下账号信息始终显示五位工号且不随身份改变', async () => {

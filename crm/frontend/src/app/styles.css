@@ -296,7 +296,12 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .chat-welcome > .chart-reason { margin-top: 16px; font-size: 12px; }
 @media (max-width: 560px) { .question-examples { grid-template-columns: 1fr; gap: 8px; margin-top: 18px; } .question-example { min-height: 56px; padding: 12px 14px; } }
 /* 阅读区延续红色强调和细边框，只增加必要的消息导航。 */
-.chat-reading-area { display: flex; flex: 1; min-height: 0; position: relative; gap: 8px; }
+/*
+ * 阅读区和反问面板是纵向相邻的弹性区域。客户候选较多时，反问面板会占用较高空间，
+ * 此处必须裁切阅读区自己的绘制范围；否则已被压缩的阶段文字仍会越过边界，覆盖到下方反问内容。
+ * 实际消息滚动继续由 .chat-messages 负责，因此这里隐藏越界内容不会截断可访问的会话记录。
+ */
+.chat-reading-area { display: flex; flex: 1; min-height: 0; position: relative; gap: 8px; overflow: hidden; }
 .chat-reading-area .chat-messages { min-width: 0; }
 .message-navigator { flex: 0 0 24px; overflow-y: auto; align-self: stretch; display: flex; flex-direction: column; align-items: flex-start; padding-top: 16px; scrollbar-width: none; }
 .message-anchor { border: 0; background: transparent; width: 24px; min-height: 22px; padding: 8px 0; cursor: pointer; display: flex; align-items: center; }
@@ -359,7 +364,11 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .agent-steps-done .agent-steps { margin: 8px 0 0; }
 
 /* 澄清浮窗位于输入框上方，客户名单以紧凑标签展示。 */
-.clarify-panel { margin: 0 16px 10px; padding: 12px; border: 1px solid #e7ddd7; border-radius: 10px; background: #fbfaf8; box-shadow: 0 -2px 10px rgba(64,56,53,.06); }
+/*
+ * 面板保持现有卡片视觉，但高度必须受视口约束。空间不足时由面板自身滚动，不能让问句、
+ * 搜索框或候选列表溢出到上方消息区；scrollbar-gutter 可避免滚动条出现时文字横向跳动。
+ */
+.clarify-panel { flex: 0 1 auto; min-height: 0; max-height: min(470px, 52dvh); margin: 0 16px 10px; padding: 12px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; border: 1px solid #e7ddd7; border-radius: 10px; background: #fbfaf8; box-shadow: 0 -2px 10px rgba(64,56,53,.06); }
 .clarify-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .clarify-chip { position: relative; padding: 8px 14px; border: 1px solid #d9cec8; border-radius: 999px; background: #fff; color: #4f4541; font-size: 13px; cursor: pointer; }
 .clarify-chip:hover:not(:disabled) { border-color: #b4232d; color: #b4232d; }

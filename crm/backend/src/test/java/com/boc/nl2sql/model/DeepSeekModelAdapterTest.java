@@ -152,6 +152,28 @@ class DeepSeekModelAdapterTest {
     }
 
     @Test
+    void removesTechnicalClarificationTextAndDeduplicatesDisplayedOptions() throws Exception {
+        String asking = """
+                {"intent":"CUSTOMER_FILTER","confidence":0.91,"needs_clarification":true,
+                 "clarification_question":"请选择查询范围（c.region_code='EAST' AND c.status_code='ACTIVE'）：",
+                 "clarification_options":[
+                   {"label":"查看全部客户名单（EAST区域且状态为ACTIVE）","value":"查看全部客户名单","recommended":true},
+                   {"label":"查看全部客户名单","value":"查看全部客户名单","recommended":false},
+                   {"label":"查看近30天有交易的客户（近30天）","value":"查看近30天有交易的客户","recommended":false}],
+                 "conflicts":[],"recognized_slots":{},"sql":""}
+                """;
+        try (var fixture = new Fixture(List.of(response("stop", asking, "")))) {
+            var clarification = fixture.adapter().interpret("查看客户名单", user()).clarification();
+
+            assertThat(clarification.prompt()).isEqualTo("请选择查询范围");
+            assertThat(clarification.options()).containsExactly(
+                    "查看全部客户名单",
+                    "查看近30天有交易的客户（近30天）");
+            assertThat(clarification.recommendedOption()).isEqualTo("查看全部客户名单");
+        }
+    }
+
+    @Test
     void doesNotRetryProviderRejection() throws Exception {
         try (var fixture = new Fixture(List.of(response("content_filter", "", "")))) {
             assertThatThrownBy(() -> fixture.adapter().interpret("查询", user()))

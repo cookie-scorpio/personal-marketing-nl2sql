@@ -23,7 +23,12 @@ class Nl2SqlPromptsTest {
         var prompts = new Nl2SqlPrompts(terms, null, null, 50);
         var user = new CurrentUser(3L, "director01", "演示负责人", RoleCode.ORG_MANAGER, "EAST", null, null);
 
-        assertThat(prompts.systemPrompt()).contains("JSON", "needs_clarification", "GENERIC_ANALYSIS");
+        assertThat(prompts.systemPrompt()).contains(
+                "JSON",
+                "needs_clarification",
+                "GENERIC_ANALYSIS",
+                "不得出现 SQL、表名、字段名、英文枚举值",
+                "按最终展示文字去重");
         assertThat(prompts.userPrompt("比较本季度不同渠道的营销转化率", user))
                 .contains("fct_customer_marketing", "不提供历史资产序列", "测试口径：按触达客户去重",
                         LocalDate.now().toString(), "分页由服务端统一处理", "不得超过：50", "c.region_code = 'EAST'",

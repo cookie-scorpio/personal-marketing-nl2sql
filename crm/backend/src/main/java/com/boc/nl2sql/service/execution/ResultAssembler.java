@@ -127,7 +127,7 @@ public class ResultAssembler {
                 : allZeroSingleRow(columns, normalized) ? "查询完成，但当前条件下没有匹配数据（计数与金额均为0）。"+coverageNote()
                 : page.total()>normalized.size() || page.page().offset()>0
                 ? "查询完成，共 " + page.total() + " 条；当前第 " + page.page().pageNo() + " 页返回 " + normalized.size() + " 条。"
-                : "查询完成，共返回 " + normalized.size() + " 行模拟业务数据。";
+                : "查询完成，共返回 " + normalized.size() + " 行业务数据。";
         var charts=buildCharts(planned,columns,normalized);
         var analysis=analyze(columns,normalized,summary);
         return new QueryResult(planned.resultType(), planned.title(), summary, columns, normalized, metrics,

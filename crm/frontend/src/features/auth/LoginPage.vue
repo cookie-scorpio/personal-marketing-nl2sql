@@ -4,6 +4,7 @@ import { computed, ref } from 'vue'
 import { Lock } from '@element-plus/icons-vue'
 import { ApiError } from '../../app/api'
 import { useAuth } from '../../app/auth'
+import bocLogoUrl from '../../assets/boc-logo.jpeg'
 
 const { login, register } = useAuth()
 const mode = ref<'login' | 'register'>('login')
@@ -96,14 +97,7 @@ async function submitRegistration() {
   <main class="login-page">
     <section class="login-intro">
       <div class="login-brand">
-        <span class="boc-logo" role="img" aria-label="中国银行标志">
-          <svg viewBox="0 0 48 48" aria-hidden="true">
-            <circle cx="24" cy="24" r="20" fill="currentColor" />
-            <path d="M20 11h8v26h-8z" fill="#fff8f5" />
-            <path d="M15 19h18v10H15z" fill="#fff8f5" />
-            <path d="M20 19h8v10h-8z" fill="currentColor" />
-          </svg>
-        </span>
+        <img class="boc-logo" :src="bocLogoUrl" alt="中国银行标志">
         <strong>中银智析</strong>
       </div>
       <div class="intro-copy">

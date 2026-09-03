@@ -278,7 +278,7 @@ onUnmounted(() => { destroyed = true; disconnect() })
     <div ref="listHost" class="chat-messages" :aria-busy="loading">
       <p v-if="loading" class="submission-progress" role="status"><Loading class="spinning" /> 正在加载会话…</p>
       <button v-if="hasMore" class="load-older" :disabled="loading" @click="openSession(sessionId, true)">加载更早的消息</button>
-      <div v-if="!messages.length && !loading" class="chat-welcome"><h3>从一个具体的业务问题开始</h3><p>可以查客户、看趋势、比较渠道，也可以在结果后继续追问。</p><div class="question-examples"><button v-for="example in examples" :key="example" type="button" class="question-example" @click="draft = example; composer?.focus()"><span>{{ example }}</span></button></div><p class="chart-reason">当前仅使用虚构客户数据。完整姓名仅用于定位，查询结果统一脱敏。</p></div>
+      <div v-if="!messages.length && !loading" class="chat-welcome"><h3>从一个具体的业务问题开始</h3><p>可以查客户、看趋势、比较渠道，也可以在结果后继续追问。</p><div class="question-examples"><button v-for="example in examples" :key="example" type="button" class="question-example" @click="draft = example; composer?.focus()"><span>{{ example }}</span></button></div><p class="chart-reason">客户姓名仅用于定位，查询结果统一脱敏。</p></div>
       <article v-for="message in messages" :key="message.message_id" :id="`message-${message.message_id}`" class="chat-message" tabindex="-1" :class="message.role_code === 'USER' ? 'user-message' : 'assistant-message'">
         <div v-if="message.role_code === 'USER'" class="user-message-body"><div class="user-bubble">{{ message.content }}</div><MessageActions :message="message" :session-id="sessionId" :edit-disabled="navigationBusy || active" @edit="editMessage" /></div>
         <template v-else><div class="assistant-avatar"><ChatDotRound /></div><div class="assistant-body">

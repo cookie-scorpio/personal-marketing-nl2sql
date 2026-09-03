@@ -7,6 +7,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ArrowDown, Close, Fold, Plus, SwitchButton } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useAuth } from './app/auth'
+import bocLogoUrl from './assets/boc-logo.jpeg'
 import type { RoleCode } from './app/types'
 import type { QualityModule } from './features/quality/types'
 import LoginPage from './features/auth/LoginPage.vue'
@@ -205,15 +206,13 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div v-if="restoring" class="app-loading"><span class="brand-seal">中</span><p>正在恢复工作台…</p></div>
+  <div v-if="restoring" class="app-loading"><img class="brand-seal" :src="bocLogoUrl" alt="中国银行标志"><p>正在恢复工作台…</p></div>
   <LoginPage v-else-if="!authenticated" />
   <div v-else class="app-shell">
     <div v-if="sidebarOpen" class="mobile-mask" @click="closeSidebar" />
     <aside id="conversation-sidebar" class="sidebar" :class="{ 'is-open': sidebarOpen }" :inert="narrowScreen && !sidebarOpen" @keydown.esc="closeSidebar">
       <div class="brand">
-        <span class="brand-boc-logo" role="img" aria-label="中国银行标志">
-          <svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="20" fill="currentColor" /><path d="M20 11h8v26h-8z" fill="#fff8f5" /><path d="M15 19h18v10H15z" fill="#fff8f5" /><path d="M20 19h8v10h-8z" fill="currentColor" /></svg>
-        </span>
+        <img class="brand-boc-logo" :src="bocLogoUrl" alt="中国银行标志">
         <div><strong>中银智析</strong><small>个金营销智能平台</small></div>
         <button class="sidebar-close mobile-only" type="button" aria-label="关闭会话侧栏" @click="closeSidebar"><Close /></button>
       </div>

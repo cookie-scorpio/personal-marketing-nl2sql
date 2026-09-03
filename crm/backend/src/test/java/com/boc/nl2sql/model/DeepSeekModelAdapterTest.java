@@ -119,16 +119,64 @@ class DeepSeekModelAdapterTest {
     }
 
     @Test
-    void doesNotRetryMalformedEnvelopeOrIncompleteJson() throws Exception {
+    void doesNotRetryMalformedEnvelopeButRetriesProtocolMismatch() throws Exception {
+        // 信封结构异常（502106）不重试
         try (var fixture = new Fixture(List.of(Map.of("choices", List.of())))) {
             assertThatThrownBy(() -> fixture.adapter().interpret("比较本季度不同渠道的营销转化率", user()))
                     .isInstanceOfSatisfying(BusinessException.class, ex -> assertThat(ex.code()).isEqualTo(502106));
             assertThat(fixture.requests).hasSize(1);
         }
+        // 协议结构不匹配（502103）重试一次
         try (var fixture = new Fixture(List.of(response("stop", "{\"sql\":", "")))) {
             assertThatThrownBy(() -> fixture.adapter().interpret("比较本季度不同渠道的营销转化率", user()))
                     .isInstanceOfSatisfying(BusinessException.class, ex -> assertThat(ex.code()).isEqualTo(502103));
-            assertThat(fixture.requests).hasSize(1);
+            assertThat(fixture.requests).hasSize(2);
+        }
+    }
+
+    @Test
+    void normalizesArraySlotsToJoinedStrings() throws Exception {
+        // 模型在 recognized_slots 中返回数组值（如"指标":["资产变化率","营销活动"]），
+        // 应归一化为顿号拼接的字符串，不应抛 502103。
+        String plan = """
+                {"intent":"GENERIC_ANALYSIS","confidence":0.92,"needs_clarification":false,
+                 "clarification_question":"","clarification_options":[],"conflicts":[],
+                 "recognized_slots":{"客户编号":"C00009913","指标":["近三个月资产变化率","参与营销活动明细"],"数量":3},
+                 "sql":"SELECT c.customer_id FROM dim_customer c WHERE c.customer_id='C00009913' AND c.manager_id='M0001'",
+                 "title":"客户综合查询","preferred_display":"TABLE"}
+                """;
+        try (var fixture = new Fixture(List.of(response("stop", plan, "")))) {
+            var result = fixture.adapter().interpret("查客户资产和营销活动", user());
+            assertThat(result.hasGeneratedSql()).isTrue();
+            assertThat(result.semantic().recognizedSlots())
+                    .containsEntry("客户编号", "C00009913")
+                    .containsEntry("指标", "近三个月资产变化率、参与营销活动明细")
+                    .containsEntry("数量", "3");
+        }
+    }
+
+    @Test
+    void retriesProtocolMismatchOnceAndSucceedsOnSecondAttempt() throws Exception {
+        // 第一次返回类型不匹配（recognized_slots含数组），第二次返回正确格式
+        String badPlan = """
+                {"intent":"GENERIC_ANALYSIS","confidence":0.9,"needs_clarification":false,
+                 "clarification_question":"","clarification_options":[],"conflicts":[],
+                 "recognized_slots":{"指标":["资产","交易"]},
+                 "sql":"SELECT 1","title":"测试","preferred_display":"TABLE"}
+                """;
+        // 第二次 recognized_slots 值全部为字符串，但 Jackson 仍然能解析 Map<String,Object>，
+        // 所以 badPlan 本身现在也能通过——不再触发 502103。
+        // 真正触发 502103 的是无法解析的 JSON（如截断），这里改用截断 JSON 演示重试。
+        String goodPlan = """
+                {"intent":"GENERIC_ANALYSIS","confidence":0.9,"needs_clarification":false,
+                 "clarification_question":"","clarification_options":[],"conflicts":[],
+                 "recognized_slots":{"指标":"资产与交易"},
+                 "sql":"SELECT 1","title":"测试","preferred_display":"TABLE"}
+                """;
+        try (var fixture = new Fixture(List.of(response("stop", "{\"sql\":", ""), response("stop", goodPlan, "")))) {
+            var result = fixture.adapter().interpret("查资产", user());
+            assertThat(result.hasGeneratedSql()).isTrue();
+            assertThat(fixture.requests).hasSize(2);
         }
     }
 

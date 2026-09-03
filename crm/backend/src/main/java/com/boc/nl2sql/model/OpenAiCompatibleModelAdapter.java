@@ -118,7 +118,7 @@ public abstract class OpenAiCompatibleModelAdapter implements ModelAdapter {
             try {
                 return requestPlan(messages, attempt, thinking, user, active, "INTERPRET");
             } catch (BusinessException exception) {
-                if (attempt == 2 || !List.of(502101, 502104, 502105).contains(exception.code())) throw exception;
+                if (attempt == 2 || !List.of(502101, 502103, 502104, 502105).contains(exception.code())) throw exception;
                 log.warn("{}计划未完整返回，将进行唯一一次重试：code={}, nextMaxTokens={}",
                         displayName(), exception.code(), retryMaxTokens);
             }
@@ -182,7 +182,7 @@ public abstract class OpenAiCompatibleModelAdapter implements ModelAdapter {
         } catch (ResourceAccessException exception) {
             throw new BusinessException(502107, displayName() + "结果结构复核连接失败或响应超时");
         } catch (Exception exception) {
-            throw new BusinessException(502103, displayName() + "结果结构复核不是有效JSON");
+            throw new BusinessException(502103, displayName() + "结果结构复核不符合协议：" + exception.getClass().getSimpleName());
         }
     }
 
@@ -279,7 +279,8 @@ public abstract class OpenAiCompatibleModelAdapter implements ModelAdapter {
         } catch (ResourceAccessException exception) {
             throw new BusinessException(502107, displayName() + "连接失败或响应超时，请检查网络后重试");
         } catch (Exception exception) {
-            throw new BusinessException(502103, displayName() + "查询计划不是有效的JSON格式，请调整问题后重试");
+            log.warn("{}查询计划协议异常：{}", displayName(), exception.getClass().getSimpleName(), exception);
+            throw new BusinessException(502103, displayName() + "查询计划结构不符合协议，请调整问题后重试");
         }
     }
 
@@ -337,7 +338,7 @@ public abstract class OpenAiCompatibleModelAdapter implements ModelAdapter {
     private QueryInterpretation toInterpretation(ModelPlan plan) {
         if (plan == null) throw new BusinessException(502103, displayName() + "未返回有效查询计划");
         List<String> conflicts = plan.conflicts() == null ? List.of() : List.copyOf(plan.conflicts());
-        Map<String, String> slots = plan.recognizedSlots() == null ? Map.of() : Map.copyOf(plan.recognizedSlots());
+        Map<String, String> slots = plan.recognizedSlots() == null ? Map.of() : normalizeSlots(plan.recognizedSlots());
         SemanticQuery semantic = new SemanticQuery(parseIntent(plan.intent()), null, null, null, null, null, null,
                 null, null, false, false, conflicts, slots);
         double confidence = plan.confidence() == null ? 0.5 : Math.max(0, Math.min(1, plan.confidence()));
@@ -399,6 +400,37 @@ public abstract class OpenAiCompatibleModelAdapter implements ModelAdapter {
 
     private String nonBlank(String value, String fallback) {
         return value == null || value.isBlank() ? fallback : value.strip();
+    }
+
+    /**
+     * 将模型可能返回的灵活类型归一化为展示字符串。
+     * 模型偶尔在 recognized_slots 中放入数组（如"指标":["资产变化率","营销活动"]）
+     * 或数字/布尔值，Jackson 严格反序列化 Map&lt;String,String&gt; 会直接失败。
+     * 此方法在解析边界统一转为 String：数组用顿号拼接，其余类型 toString()。
+     */
+    private Map<String, String> normalizeSlots(Map<String, Object> raw) {
+        var result = new java.util.LinkedHashMap<String, String>();
+        for (var entry : raw.entrySet()) {
+            if (entry.getKey() == null || entry.getKey().isBlank()) continue;
+            Object value = entry.getValue();
+            String display;
+            if (value == null) {
+                continue;
+            } else if (value instanceof String s) {
+                display = s.isBlank() ? null : s.strip();
+            } else if (value instanceof List<?> list) {
+                var items = list.stream()
+                        .filter(java.util.Objects::nonNull)
+                        .map(Object::toString)
+                        .filter(s -> !s.isBlank())
+                        .toList();
+                display = items.isEmpty() ? null : String.join("、", items);
+            } else {
+                display = value.toString();
+            }
+            if (display != null) result.put(entry.getKey().strip(), display);
+        }
+        return Map.copyOf(result);
     }
 
     /**
@@ -475,7 +507,7 @@ public abstract class OpenAiCompatibleModelAdapter implements ModelAdapter {
     private record ModelPlan(
             String intent, Double confidence, Boolean needsClarification,
             String clarificationQuestion, List<Object> clarificationOptions,
-            List<String> conflicts, Map<String, String> recognizedSlots,
+            List<String> conflicts, Map<String, Object> recognizedSlots,
             String sql, String title, String preferredDisplay,
             List<com.boc.nl2sql.domain.execution.ResultColumnHint> columns
     ) {

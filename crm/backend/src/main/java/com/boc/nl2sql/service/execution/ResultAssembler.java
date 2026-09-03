@@ -25,7 +25,7 @@ public class ResultAssembler {
     private static final Map<String, String> LABELS = Map.ofEntries(
             // 客户画像
             Map.entry("customer_id", "客户编号"), Map.entry("customer_name", "客户姓名"),
-            Map.entry("customer_name_masked", "客户姓名"), Map.entry("customer_level", "客户等级"),
+            Map.entry("customer_level", "客户等级"),
             Map.entry("customer_level_code", "客户等级"), Map.entry("gender_code", "性别"),
             Map.entry("age", "年龄"), Map.entry("age_band_code", "年龄段"),
             Map.entry("mobile_masked", "手机号"), Map.entry("vip_flag", "贵宾客户"),
@@ -389,12 +389,10 @@ public class ResultAssembler {
         });
     }
 
-    /** 两行对比时附脱敏姓名（若结果含姓名列）。 */
+    /** 两行对比时附姓名（若结果含姓名列）。 */
     private String attachedName(Map<String, Object> row) {
-        for (String key : new String[]{"customer_name", "customer_name_masked"}) {
-            Object value = row.get(key);
-            if (value != null && !String.valueOf(value).isBlank()) return String.valueOf(value);
-        }
+        Object value = row.get("customer_name");
+        if (value != null && !String.valueOf(value).isBlank()) return String.valueOf(value);
         return "";
     }
 
@@ -407,8 +405,9 @@ public class ResultAssembler {
             String normalized = key.toLowerCase(java.util.Locale.ROOT);
             Object masked = value;
             if(value instanceof String text) {
-                if(Set.of("customer_name", "customer_name_masked").contains(normalized)) masked=com.boc.nl2sql.common.privacy.CustomerMasking.name(text);
-                if(Set.of("mobile", "mobile_masked", "phone").contains(normalized)) masked=com.boc.nl2sql.common.privacy.CustomerMasking.mobile(text);
+                // customer_name 直接展示全名；customer_name_masked 仅做兜底脱敏（该列已不再主动查询）
+                if("customer_name_masked".equals(normalized)) masked=com.boc.nl2sql.common.privacy.CustomerMasking.name(text);
+                // mobile_masked 列存完整手机号，不再应用层脱敏
                 var enumLabels = VALUE_LABELS.get(normalized);
                 if (enumLabels != null) masked = enumLabels.getOrDefault(text, text);
             }

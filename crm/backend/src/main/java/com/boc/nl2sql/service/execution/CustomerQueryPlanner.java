@@ -26,12 +26,12 @@ public class CustomerQueryPlanner {
         args.put("resolvedCustomerId", customer);
         if (Set.of("资产信息", "资产情况", "总资产", "资产").contains(simple))
             return Optional.of(new PlannedQuery(
-                    "SELECT c.customer_id,c.customer_name_masked AS customer_name,ROUND(c.total_asset_amount/10000,2) AS asset_wan,c.snapshot_date FROM dim_customer c WHERE "
+                    "SELECT c.customer_id,c.customer_name,ROUND(c.total_asset_amount/10000,2) AS asset_wan,c.snapshot_date FROM dim_customer c WHERE "
                             + where + " LIMIT 1",
                     args, "METRIC", "客户当前资产", false));
         if (Set.of("产品持有", "产品持有情况", "持有产品", "持仓").contains(simple))
             return Optional.of(new PlannedQuery(
-                    "SELECT c.customer_id,c.customer_name_masked AS customer_name,h.product_name,h.product_category_code,ROUND(h.market_value_amount/10000,2) AS market_value_wan,h.snapshot_date FROM dim_customer c JOIN fct_product_holding h ON h.customer_id=c.customer_id WHERE "
+                    "SELECT c.customer_id,c.customer_name,h.product_name,h.product_category_code,ROUND(h.market_value_amount/10000,2) AS market_value_wan,h.snapshot_date FROM dim_customer c JOIN fct_product_holding h ON h.customer_id=c.customer_id WHERE "
                             + where + " ORDER BY h.market_value_amount DESC,h.holding_id",
                     args, "AUTO", "客户产品持有", false));
         return Optional.empty();

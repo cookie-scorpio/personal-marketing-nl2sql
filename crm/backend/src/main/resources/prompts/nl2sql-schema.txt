@@ -1,6 +1,6 @@
 可查询的 MySQL 8.4 数据对象如下：
-1. dim_customer c：客户画像快照。customer_id客户编号，customer_name_masked脱敏姓名，gender_code性别，age年龄，
-   age_band_code年龄段，mobile_masked脱敏手机号，customer_level_code客户等级，vip_flag贵宾标识，
+1. dim_customer c：客户画像快照。customer_id客户编号，customer_name客户姓名，gender_code性别，age年龄，
+   age_band_code年龄段，mobile_masked手机号，customer_level_code客户等级，vip_flag贵宾标识，
    risk_level_code风险等级，occupation_code职业，region_code区域，branch_id机构，manager_id客户经理，
    total_asset_amount总资产(元)，asset_change_3m_rate近三个月资产变化率(小数)，open_date开户日期，
    status_code状态，snapshot_date快照日期。
@@ -47,4 +47,4 @@
 
 - 存款余额：fct_product_holding中product_category_code='DEPOSIT'的market_value_amount按客户合计（元）；holding_amount为份额，不等于统一金额口径。无存款持有的客户可按存款余额0处理，使用受限客户LEFT JOIN后COALESCE；该表按customer_id、product_id、snapshot_date唯一，查询当前持有情况时直接使用服务端注入的最新快照日期，不得把它当作交易流水。
 
-字段边界：数据库物理上还存在dim_customer.customer_name（虚构完整姓名），但该字段仅供后端客户定位使用，不属于自由SQL字段白名单；不得在模型生成的SQL中读取或通过别名、子查询绕过限制。dim_customer_manager和business_term也属于数据库表，但前者不在自由SQL查询白名单，后者由后端读取后作为业务术语上下文提供给模型。
+

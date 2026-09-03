@@ -24,7 +24,7 @@ def main():
             customer = 'C%08d' % (91000001+i)
             name = '方验'+'甲乙丙丁戊己庚辛壬癸子丑寅卯辰巳午未'[i]
             c.execute("""INSERT INTO dim_customer(customer_id,customer_name,customer_name_masked,gender_code,age,age_band_code,mobile_masked,customer_level_code,vip_flag,risk_level_code,occupation_code,region_code,branch_id,manager_id,total_asset_amount,asset_change_3m_rate,open_date,status_code,snapshot_date)
-              VALUES(%s,%s,'方**','M',35,'A26_35','900****0000','NORMAL',FALSE,'R2','TECH','EAST','B001','M0001',12345,0,CURRENT_DATE,'ACTIVE',CURRENT_DATE)
+              VALUES(%s,%s,'方**','M',35,'A26_35','90000000000','NORMAL',FALSE,'R2','TECH','EAST','B001','M0001',12345,0,CURRENT_DATE,'ACTIVE',CURRENT_DATE)
               ON DUPLICATE KEY UPDATE customer_name=VALUES(customer_name),total_asset_amount=12345""", (customer,name))
             if Decimal(balance) > 0:
                 first = (Decimal(balance)*Decimal('.6')).quantize(Decimal('.01'))
@@ -36,7 +36,7 @@ def main():
                          VALUES(%s,%s,'虚构存款边界样例','DEPOSIT',1,%s,0,'R1',CURRENT_DATE)""",(customer,product,amount))
         # 对权限外的大额客户按相同编号规则固定添加，保证越权统计会改变答案。
         c.execute("""INSERT INTO dim_customer(customer_id,customer_name,customer_name_masked,gender_code,age,age_band_code,mobile_masked,customer_level_code,vip_flag,risk_level_code,occupation_code,region_code,branch_id,manager_id,total_asset_amount,asset_change_3m_rate,open_date,status_code,snapshot_date)
-          VALUES('C91999999','方验外','方**','F',35,'A26_35','900****9999','NORMAL',FALSE,'R2','TECH','SOUTH','B008','M0024',99000000,0,CURRENT_DATE,'ACTIVE',CURRENT_DATE)
+          VALUES('C91999999','方验外','方**','F',35,'A26_35','90099999999','NORMAL',FALSE,'R2','TECH','SOUTH','B008','M0024',99000000,0,CURRENT_DATE,'ACTIVE',CURRENT_DATE)
           ON DUPLICATE KEY UPDATE customer_id=VALUES(customer_id)""")
     db.commit();db.close();print('已准备18名金额边界客户及1名权限外客户，保留其他数据。')
 

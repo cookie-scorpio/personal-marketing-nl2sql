@@ -17,7 +17,7 @@ class TaskSnapshotsTest {
     void resolvedSingleCustomerIsExposedAsAReadOnlyMaskedCard(){
         var customers=mock(CustomerResolver.class);
         when(customers.card("C00000697")).thenReturn(Optional.of(
-                new CustomerResolver.Candidate("C00000697","王*明","B001","900****0697")));
+                new CustomerResolver.Candidate("C00000697","王小明","B001","90000000697")));
         var task=new QueryTaskEntity();
         task.setTaskId("task");task.setSessionId("session");task.setStatusCode("SQL_GENERATING");task.setProgress(45);
         task.setStageMessage("客户已确认，正在生成查询计划");task.setStateVersion(2L);task.setClarificationRound(0);
@@ -27,6 +27,6 @@ class TaskSnapshotsTest {
 
         assertThat(snapshot.resolvedCustomer()).isEqualTo(
                 new com.boc.nl2sql.controller.conversation.TaskStatusResponse.CustomerCard(
-                        "C00000697","王*明","B001","900****0697"));
+                        "C00000697","王小明","B001","90000000697"));
     }
 }

@@ -22,7 +22,7 @@ public final class SqlAstValidatorOld {
 
     private static final Map<String, Set<String>> SCHEMA = Map.of(
             "dim_customer",
-            words("customer_id customer_name_masked gender_code age age_band_code mobile_masked customer_level_code vip_flag risk_level_code occupation_code region_code branch_id manager_id total_asset_amount asset_change_3m_rate open_date status_code snapshot_date"),
+            words("customer_id customer_name gender_code age age_band_code mobile_masked customer_level_code vip_flag risk_level_code occupation_code region_code branch_id manager_id total_asset_amount asset_change_3m_rate open_date status_code snapshot_date"),
             "fct_transaction",
             words("transaction_id customer_id product_id transaction_time transaction_date transaction_type_code debit_credit_flag currency_code amount_cny branch_id status_code"),
             "fct_product_holding",

@@ -73,13 +73,13 @@ class SqlSafetyValidatorTest {
         "SELECT q.customer_count FROM (SELECT COUNT(*) AS customer_count FROM dim_customer) q LIMIT 10",
         "SELECT c.age_band_code,SUM(CASE WHEN c.total_asset_amount BETWEEN 1000000 AND 5000000 THEN 1 ELSE 0 END) AS customer_count FROM dim_customer c WHERE c.open_date BETWEEN DATE('2025-01-01') AND DATE('2026-08-28') GROUP BY c.age_band_code HAVING COUNT(c.customer_id)>0 ORDER BY customer_count DESC LIMIT 100",
         "SELECT c.customer_id,DATE_FORMAT(c.snapshot_date,'%Y-%m') AS snapshot_month,ROW_NUMBER() OVER(PARTITION BY c.branch_id ORDER BY c.total_asset_amount DESC) AS ranking FROM dim_customer c WHERE c.customer_level_code IN('GOLD','PLATINUM') LIMIT 100",
-        "WITH scoped AS(SELECT c.customer_id,c.age_band_code FROM dim_customer c WHERE c.manager_id='M0001') SELECT s.age_band_code,COUNT(DISTINCT s.customer_id) AS customer_count FROM scoped s GROUP BY s.age_band_code UNION ALL SELECT c.customer_level_code,COUNT(c.customer_id) AS customer_count FROM dim_customer c WHERE c.manager_id='M0001' GROUP BY c.customer_level_code LIMIT 100"
+        "WITH scoped AS(SELECT c.customer_id,c.age_band_code FROM dim_customer c WHERE c.manager_id='M0001') SELECT s.age_band_code,COUNT(DISTINCT s.customer_id) AS customer_count FROM scoped s GROUP BY s.age_band_code UNION ALL SELECT c.customer_level_code,COUNT(c.customer_id) AS customer_count FROM dim_customer c WHERE c.manager_id='M0001' GROUP BY c.customer_level_code LIMIT 100",
+        "SELECT c.customer_name AS harmless FROM dim_customer c LIMIT 10",
+        "SELECT CONCAT(c.customer_name,'x') AS label FROM dim_customer c LIMIT 10"
     })
     void acceptsComplexReadOnlyMysqlShapes(String sql){assertThatCode(()->validator.validate(sql)).doesNotThrowAnyException();}
     @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.ValueSource(strings={
-        "SELECT c.customer_name AS harmless FROM dim_customer c LIMIT 10",
-        "SELECT CONCAT(c.customer_name,'x') AS label FROM dim_customer c LIMIT 10",
         "SELECT customer_id FROM dim_customer WHERE customer_id IN(SELECT user_id FROM sys_user_account) LIMIT 10",
         "SELECT c.customer_id AS selected_id FROM dim_customer c JOIN dim_customer d ON c.customer_id=d.customer_id ORDER BY customer_id LIMIT 10",
         "SELECT c.unknown_column FROM dim_customer c LIMIT 10",

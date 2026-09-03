@@ -95,13 +95,22 @@ def mask_name(value: str) -> str:
     return value[:1] + "*" * (len(value) - 2) + value[-1:]
 
 
-# 经理 manager01 范围内的稳定演示锚点。编号、姓名、尾号和资产跨重建保持不变。
+def mask_mobile(value: str) -> str:
+    """与后端 CustomerMasking.mobile() 对齐：前3位+****+后4位。"""
+    if not value or not value.strip():
+        return "未提供"
+    if len(value) >= 8:
+        return value[:3] + "****" + value[-4:]
+    return "****"
+
+
+# 经理 manager01 范围内的稳定演示锚点。编号、姓名、手机号和资产跨重建保持不变。
 DEMO_CUSTOMERS = {
-    241: {"name": "李小红", "mobile": "900****0241", "asset": Decimal("917000.00")},
-    265: {"name": "李小兰", "mobile": "900****0265", "asset": Decimal("1286000.00")},
-    697: {"name": "王小明", "mobile": "900****0697", "asset": Decimal("2253000.00")},
-    721: {"name": "王小明", "mobile": "900****0721", "asset": Decimal("1688000.00")},
-    9361: {"name": "陈小满", "mobile": "900****0697", "asset": Decimal("683000.00")},
+    241: {"name": "李小红", "mobile": "90000000241", "asset": Decimal("917000.00")},
+    265: {"name": "李小兰", "mobile": "90000000265", "asset": Decimal("1286000.00")},
+    697: {"name": "王小明", "mobile": "90000000697", "asset": Decimal("2253000.00")},
+    721: {"name": "王小明", "mobile": "90000000721", "asset": Decimal("1688000.00")},
+    9361: {"name": "陈小满", "mobile": "90000000697", "asset": Decimal("683000.00")},
 }
 
 
@@ -133,13 +142,13 @@ def build_customers(settings: Settings, rng: random.Random) -> list[tuple]:
         if anchor:
             full_name = anchor["name"]
         synthetic_name = mask_name(full_name)
-        # 900 开头不构造真实中国手机号，末四位只用于演示脱敏格式。
-        mobile_masked = anchor["mobile"] if anchor else f"900****{index % 10_000:04d}"
+        # mobile_masked 列保留列名但存完整手机号；900 开头为虚构号段，不对应真实中国手机号。
+        full_mobile = anchor["mobile"] if anchor else f"900{index % 10_000:07d}"
         asset = anchor["asset"] if anchor else money_by_level(rng, level)
         change_rate = Decimal(str(round(rng.uniform(-0.42, 0.35), 4)))
         rows.append((
             f"C{index:08d}", synthetic_name, rng.choice(["M", "F", "U"]), age, age_band,
-            mobile_masked, level, level == "PLATINUM", rng.choice(RISK_LEVELS),
+            full_mobile, level, level == "PLATINUM", rng.choice(RISK_LEVELS),
             rng.choice(OCCUPATIONS), region_code, branch_id, manager_id, asset, change_rate,
             today - timedelta(days=rng.randint(30, 5000)), "ACTIVE", today, full_name,
         ))

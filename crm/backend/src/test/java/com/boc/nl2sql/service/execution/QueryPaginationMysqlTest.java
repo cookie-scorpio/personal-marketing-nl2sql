@@ -33,10 +33,10 @@ class QueryPaginationMysqlTest {
         jdbc.update("DELETE FROM dim_customer WHERE manager_id=?",MANAGER);
         try{
             List<Object[]> batch=new ArrayList<>();
-            for(int i=1;i<=205;i++)batch.add(new Object[]{String.format("P%08d",i),"分页客户*","U",30,"A26_35",
-                    "900****0000","NORMAL",false,"R2","OTHER","EAST","BPAGE",MANAGER,
+            for(int i=1;i<=205;i++)batch.add(new Object[]{String.format("P%08d",i),"分页测试客户"+i,"分页客户*","U",30,"A26_35",
+                    "90000000000","NORMAL",false,"R2","OTHER","EAST","BPAGE",MANAGER,
                     new BigDecimal(i),BigDecimal.ZERO,Date.valueOf(LocalDate.of(2026,1,1)),"ACTIVE",Date.valueOf(LocalDate.of(2026,8,31))});
-            jdbc.batchUpdate("INSERT INTO dim_customer(customer_id,customer_name_masked,gender_code,age,age_band_code,mobile_masked,customer_level_code,vip_flag,risk_level_code,occupation_code,region_code,branch_id,manager_id,total_asset_amount,asset_change_3m_rate,open_date,status_code,snapshot_date) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",batch);
+            jdbc.batchUpdate("INSERT INTO dim_customer(customer_id,customer_name,customer_name_masked,gender_code,age,age_band_code,mobile_masked,customer_level_code,vip_flag,risk_level_code,occupation_code,region_code,branch_id,manager_id,total_asset_amount,asset_change_3m_rate,open_date,status_code,snapshot_date) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",batch);
             var plan=new PlannedQuery("SELECT c.customer_id FROM dim_customer c WHERE c.manager_id=:manager ORDER BY c.customer_id LIMIT 100",
                     Map.of("manager",MANAGER),"TABLE","分页验收",false);
             var first=execution.execute("page-1",plan,new QueryPage(1,100,0),()->true);

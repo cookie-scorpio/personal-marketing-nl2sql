@@ -91,12 +91,13 @@ public class CustomerResolver {
         Map<String,Object> params=new LinkedHashMap<>();String condition=scope.condition("c",user,params)+" AND c.status_code='ACTIVE'";
         if(id!=null){condition+=" AND c.customer_id=:customerId";params.put("customerId",id);}
         if(mention!=null){
-            condition+=mention.surname()?" AND (c.customer_name LIKE :customerName OR (c.customer_name IS NULL AND c.customer_name_masked LIKE :customerName))":" AND c.customer_name=:customerName";
+            condition+=mention.surname()?" AND c.customer_name LIKE :customerName":" AND c.customer_name=:customerName";
             params.put("customerName",mention.name()+(mention.surname()?"%":""));
         }else if(id==null && suffix==null)return List.of();
         if(suffix!=null){condition+=" AND RIGHT(c.mobile_masked,4)=:suffix";params.put("suffix",suffix);}
-        return jdbc.query("SELECT c.customer_id,c.customer_name,c.customer_name_masked,c.branch_id,c.mobile_masked FROM dim_customer c WHERE "+condition+" ORDER BY c.customer_id LIMIT 11",params,
-                (rs,n)->new Candidate(rs.getString(1),mask(rs.getString(2)==null?rs.getString(3):rs.getString(2)),rs.getString(4),com.boc.nl2sql.common.privacy.CustomerMasking.mobile(rs.getString(5))));
+        return jdbc.query("SELECT c.customer_id,c.customer_name,c.branch_id,c.mobile_masked FROM dim_customer c WHERE "+condition+" ORDER BY c.customer_id LIMIT 11",params,
+                // mobile_masked 列存完整手机号，不再应用层脱敏
+                (rs,n)->new Candidate(rs.getString(1),rs.getString(2),rs.getString(3),rs.getString(4)));
     }
 
     /** 客户检索范围由服务端当前澄清任务生成，前端只能提交附加筛选。 */
@@ -129,7 +130,7 @@ public class CustomerResolver {
         }
         if(!searchScope.customerName().isBlank()){
             String operator=searchScope.surname()?" LIKE ":"=";
-            cond+=" AND (c.customer_name"+operator+":baseCustomerName OR (c.customer_name IS NULL AND c.customer_name_masked"+operator+":baseCustomerName))";
+            cond+=" AND c.customer_name"+operator+":baseCustomerName";
             params.put("baseCustomerName",searchScope.customerName()+(searchScope.surname()?"%":""));
         }
         String extra=filter==null?"":filter.trim();
@@ -143,24 +144,26 @@ public class CustomerResolver {
                 cond+=" AND c.customer_id LIKE :extra";params.put("extra",extra.toUpperCase()+"%");
             }else{
                 // 包含匹配：输入“小明”能命中“王小明”，输入全名亦可。
-                cond+=" AND (c.customer_name LIKE :extra OR (c.customer_name IS NULL AND c.customer_name_masked LIKE :extra))";
+                cond+=" AND c.customer_name LIKE :extra";
                 params.put("extra","%"+extra+"%");
             }
         }
         Integer total=jdbc.queryForObject("SELECT COUNT(*) FROM dim_customer c WHERE "+cond,params,Integer.class);
         params.put("limit",size);params.put("offset",(page-1)*size);
-        List<Candidate> items=jdbc.query("SELECT c.customer_id,c.customer_name,c.customer_name_masked,c.branch_id,c.mobile_masked FROM dim_customer c WHERE "+cond+" ORDER BY c.customer_id LIMIT :limit OFFSET :offset",params,
-                (rs,n)->new Candidate(rs.getString(1),mask(rs.getString(2)==null?rs.getString(3):rs.getString(2)),rs.getString(4),com.boc.nl2sql.common.privacy.CustomerMasking.mobile(rs.getString(5))));
+        List<Candidate> items=jdbc.query("SELECT c.customer_id,c.customer_name,c.branch_id,c.mobile_masked FROM dim_customer c WHERE "+cond+" ORDER BY c.customer_id LIMIT :limit OFFSET :offset",params,
+                // mobile_masked 列存完整手机号，不再应用层脱敏
+                (rs,n)->new Candidate(rs.getString(1),rs.getString(2),rs.getString(3),rs.getString(4)));
         return new SearchResult(total==null?0:total,page,size,items);
     }
 
-    /** 已完成权限校验的单客只读卡片；仅供所属任务状态展示，所有字段仍按展示口径脱敏。 */
+    /** 已完成权限校验的单客只读卡片；仅供所属任务状态展示。 */
     public Optional<Candidate> card(String customerId){
         if(customerId==null||customerId.isBlank())return Optional.empty();
-        List<Candidate> rows=jdbc.query("SELECT c.customer_id,c.customer_name,c.customer_name_masked,c.branch_id,c.mobile_masked FROM dim_customer c WHERE c.customer_id=:customerId LIMIT 1",
+        List<Candidate> rows=jdbc.query("SELECT c.customer_id,c.customer_name,c.branch_id,c.mobile_masked FROM dim_customer c WHERE c.customer_id=:customerId LIMIT 1",
                 Map.of("customerId",customerId),(rs,n)->new Candidate(rs.getString(1),
-                        mask(rs.getString(2)==null?rs.getString(3):rs.getString(2)),rs.getString(4),
-                        com.boc.nl2sql.common.privacy.CustomerMasking.mobile(rs.getString(5))));
+                        rs.getString(2),rs.getString(3),
+                        // mobile_masked 列存完整手机号，不再应用层脱敏
+                        rs.getString(4)));
         return rows.stream().findFirst();
     }
 
@@ -235,7 +238,7 @@ public class CustomerResolver {
 
     private String selectionPrompt(Mention mention,String suffix){
         List<String> constraints=new ArrayList<>();
-        if(mention!=null)constraints.add(mention.surname()?mention.text():"姓名“"+mask(mention.name())+"”");
+        if(mention!=null)constraints.add(mention.surname()?mention.text():"姓名\""+mention.name()+"\"");
         if(suffix!=null&&!suffix.isBlank())constraints.add("手机号后四位 "+suffix);
         String subject=constraints.isEmpty()?"当前条件":String.join("且",constraints);
         return subject+"对应多位客户，请选择具体客户；选择前不会查询资产或交易信息。";

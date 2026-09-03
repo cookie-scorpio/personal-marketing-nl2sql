@@ -40,7 +40,7 @@ public class SqlPlanner {
         boolean detail = query.detailRequested();
         String sql = detail
                 ? """
-                        SELECT c.customer_id, c.customer_name_masked AS customer_name,
+                        SELECT c.customer_id, c.customer_name,
                                c.customer_level_code AS customer_level,
                                ROUND(c.total_asset_amount / 10000, 2) AS asset_wan,
                                ROUND(c.asset_change_3m_rate * 100, 2) AS asset_change_rate,
@@ -93,7 +93,7 @@ public class SqlPlanner {
         }
         String sql = query.detailRequested()
                 ? """
-                        SELECT c.customer_id, c.customer_name_masked AS customer_name,
+                        SELECT c.customer_id, c.customer_name,
                                h.product_name, h.product_category_code,
                                ROUND(h.market_value_amount / 10000, 2) AS market_value_wan,
                                h.maturity_date, c.branch_id

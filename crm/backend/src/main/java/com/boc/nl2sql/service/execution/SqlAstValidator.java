@@ -115,10 +115,10 @@ public final class SqlAstValidator {
     private static final String DIM_MARKETING_CAMPAIGN = "dim_marketing_campaign";
     private static final String FCT_CUSTOMER_MARKETING = "fct_customer_marketing";
 
-    /** 可查询的物理表及其列。屏蔽类命名（customer_name_masked 等）即隐私控制本身，原始敏感列不在名单内。 */
+    /** 可查询的物理表及其列。customer_name 已纳入白名单，前端直接展示完整姓名。 */
     private static final Map<String, Set<String>> SCHEMA = Map.of(
             DIM_CUSTOMER,
-            columns("customer_id customer_name_masked gender_code age age_band_code mobile_masked customer_level_code "
+            columns("customer_id customer_name gender_code age age_band_code mobile_masked customer_level_code "
                     + "vip_flag risk_level_code occupation_code region_code branch_id manager_id total_asset_amount "
                     + "asset_change_3m_rate open_date status_code snapshot_date"),
             "fct_transaction",

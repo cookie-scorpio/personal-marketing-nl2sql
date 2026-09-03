@@ -146,12 +146,12 @@ class QueryLifecycleMysqlTest {
     @Test
     void customerSelectionPersistsMessagesAndRestoresPronounContextWithoutModel() throws Exception {
         var manager=new CurrentUser(1L,"manager01","经理",RoleCode.CUSTOMER_MANAGER,"EAST","B001","M0001");
-        for(String id:java.util.List.of("C99000001","C99000002"))jdbc.update("INSERT INTO dim_customer(customer_id,customer_name,customer_name_masked,gender_code,age,age_band_code,mobile_masked,customer_level_code,vip_flag,risk_level_code,occupation_code,region_code,branch_id,manager_id,total_asset_amount,asset_change_3m_rate,open_date,status_code,snapshot_date) VALUES(?, '李验甲','李**','M',35,'A26_35','900****8877','NORMAL',false,'R2','OTHER','EAST','B001','M0001',100000,0,CURRENT_DATE,'ACTIVE',CURRENT_DATE) ON DUPLICATE KEY UPDATE customer_name='李验甲'",id);
+        for(String id:java.util.List.of("C99000001","C99000002"))jdbc.update("INSERT INTO dim_customer(customer_id,customer_name,customer_name_masked,gender_code,age,age_band_code,mobile_masked,customer_level_code,vip_flag,risk_level_code,occupation_code,region_code,branch_id,manager_id,total_asset_amount,asset_change_3m_rate,open_date,status_code,snapshot_date) VALUES(?, '李验甲','李**','M',35,'A26_35','90000008877','NORMAL',false,'R2','OTHER','EAST','B001','M0001',100000,0,CURRENT_DATE,'ACTIVE',CURRENT_DATE) ON DUPLICATE KEY UPDATE customer_name='李验甲'",id);
         String session=UUID.randomUUID().toString();
         String id=service.submit(new SubmitQueryRequest(session,"查询李验甲的资产信息","AUTO",true, null),manager,"identity",UUID.randomUUID().toString()).taskId();
         TaskStatusResponse asking=waitForUser(id,manager,"ASKING");
         assertThat(asking.question().type()).isEqualTo("CUSTOMER_SELECTION");assertThat(asking.question().candidates()).hasSize(2);
-        assertThat(asking.question().candidates()).allSatisfy(c->assertThat(c.name()).isEqualTo("李**"));
+        assertThat(asking.question().candidates()).allSatisfy(c->assertThat(c.name()).isEqualTo("李验甲"));
         var workers=java.util.concurrent.Executors.newFixedThreadPool(8);
         try {
             var actions=new java.util.ArrayList<java.util.concurrent.Callable<Boolean>>();
@@ -228,7 +228,8 @@ class QueryLifecycleMysqlTest {
     }
 
     @Test void rejectedSqlIsLoggedButOnlySafeFallbackIsExecuted()throws Exception{
-        String sql="SELECT c.customer_name FROM dim_customer c WHERE c.region_code='EAST' LIMIT 10";
+        // 使用真正不在白名单中的列，验证拒绝后走降级模板
+        String sql="SELECT c.customer_secret FROM dim_customer c WHERE c.region_code='EAST' LIMIT 10";
         when(model.interpret(anyString(),eq(director),any(),anyBoolean())).thenReturn(plan(sql));
         String id=submit();var state=awaitState(id,"DEGRADED");
         assertThat(state.repairAttempts()).isEqualTo(1);

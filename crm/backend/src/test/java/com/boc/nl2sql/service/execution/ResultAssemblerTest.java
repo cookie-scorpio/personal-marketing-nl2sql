@@ -19,10 +19,11 @@ class ResultAssemblerTest {
         assertThat(result.pageSize()).isEqualTo(100);assertThat(result.hasMore()).isTrue();
         assertThat(result.summary()).contains("共 205 条","当前第 1 页返回 100 条");
     }
-    @Test void masksCustomerFieldsBeforeRowsAndAnalysisAreBuilt(){
+    @Test void preservesCustomerNameAndMobileBeforeRowsAndAnalysisAreBuilt(){
         var result=assemble("TABLE",List.of(Map.of("CUSTOMER_NAME","李验甲","mobile_masked","90000008877","asset_wan",10)));
-        assertThat(result.rows().get(0)).containsEntry("customer_name","李*甲").containsEntry("mobile_masked","900****8877");
-        assertThat(result.analysis().insights().toString()).doesNotContain("李验甲");
+        // customer_name 和 mobile_masked 均直接展示原值，不再应用层脱敏
+        assertThat(result.rows().get(0)).containsEntry("customer_name","李验甲").containsEntry("mobile_masked","90000008877");
+        assertThat(result.analysis().insights().toString()).doesNotContain("李*甲");
     }
     @Test void comparesGroupsOverTimeWithoutAggregatingMissingPoints(){
         var result=assemble("AUTO",List.of(Map.of("month","2026-01","channel_code","APP","transaction_count",2),Map.of("month","2026-02","channel_code","BRANCH","transaction_count",4)));

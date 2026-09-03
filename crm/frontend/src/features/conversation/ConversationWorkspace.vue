@@ -34,6 +34,8 @@ const phases = ref<Record<string, string[]>>({})
 // 任务阶段轨迹记录每个状态的首次到达时间，供分步进度展示和耗时计算使用。
 const stepLog = ref<Record<string, { key: string; label: string; at: string }[]>>({})
 const failedSubmission = ref('')
+// 仅记录本次实时查询刚刚产生结果的任务；历史会话恢复时保持完整展示，不重复播放流式动画。
+const streamingResultTaskId = ref('')
 const composer = ref<HTMLTextAreaElement>()
 const navigationBusy = computed(() => loading.value || sending.value || cancelling.value || !!failedSubmission.value)
 type Pending = { key: string; text: string; session: string; thinking: boolean; ids?: string[]; display?: string }
@@ -67,10 +69,15 @@ function assistant(status: TaskStatus) {
   if (!message) { message = { message_id: key, task_id: status.task_id, role_code: 'ASSISTANT', content: status.message, created_at: new Date().toISOString() }; messages.value.push(message); message = messages.value[messages.value.length - 1]! }
   if (!message.payload || status.state_version >= message.payload.state_version) { message.payload = status; message.content = status.message; message.updated_at = status.updated_at || message.updated_at || new Date().toISOString() }
 }
-function update(status: TaskStatus) {
+function update(status: TaskStatus, animateResult = false) {
   if (destroyed) return
   const previous = task.value
+  const existingAssistant = messages.value.find(message => message.role_code === 'ASSISTANT'
+    && message.task_id === status.task_id
+    && message.payload?.clarification_round === status.clarification_round)
+  const resultJustArrived = animateResult && !!status.result && !existingAssistant?.payload?.result
   assistant(status)
+  if (resultJustArrived) streamingResultTaskId.value = status.task_id
   const submitted = messages.value.find(m => m.role_code === 'USER' && !m.task_id)
   if (submitted) { submitted.task_id = status.task_id; submitted.created_at = status.created_at || submitted.created_at }
   const history = phases.value[status.task_id] ||= []
@@ -115,7 +122,7 @@ async function subscribe(id: string) {
           let status: TaskStatus
           try { status = JSON.parse(data) as TaskStatus } catch { continue }
           if (epoch !== generation || signal.aborted) return
-          update(status); failures = 0
+          update(status, true); failures = 0
           const eventId = event.split('\n').find(line => line.startsWith('id:'))?.slice(3).trim()
           if (eventId && Number(eventId) > after) { after = Number(eventId); sessionStorage.setItem(`nl2sql-event-${ownerId}-${id}`, String(after)) }
         }
@@ -127,7 +134,7 @@ async function subscribe(id: string) {
     try {
       const status = await apiRequest<TaskStatus>(`/api/v1/queries/${id}/status`, { signal })
       if (epoch !== generation) return
-      update(status)
+      update(status, true)
       if (stopped.has(status.status) || waiting.has(status.status)) { connectionNote.value = ''; return }
     } catch (error) {
       if (error instanceof ApiError && error.code === 401001) { connectionNote.value = '登录已失效，请重新登录后恢复会话。'; return }
@@ -142,7 +149,7 @@ function errorText(error: unknown) { return error instanceof ApiError ? error.me
 async function send() {
   if (!canSend.value) return
   if (task.value?.status === 'ASKING') { const text = draft.value.trim(); draft.value = ''; await clarify(text); return }
-  const text = draft.value.trim(); draft.value = ''; editing.value = false; task.value = null; cancelRequested = false
+  const text = draft.value.trim(); draft.value = ''; editing.value = false; task.value = null; cancelRequested = false; streamingResultTaskId.value = ''
   const ids = [...new Set(text.match(/C\d{8}/gi) || [])].map(v => v.toUpperCase())
   const collapsed = ids.length >= 2
   pending = { key: uuid(), text: collapsed ? text : text, session: sessionId.value, thinking: thinking.value, ids: collapsed ? ids : undefined,
@@ -162,7 +169,7 @@ async function submitPending() {
     accepted = true
     emit('sessions-changed')
     if (destroyed || sessionId.value !== operation.session) return
-    update(await apiRequest<TaskStatus>(`/api/v1/queries/${result.task_id}/status`))
+    update(await apiRequest<TaskStatus>(`/api/v1/queries/${result.task_id}/status`), true)
     pending = null; sessionStorage.removeItem(`${storageKey}-pending`)
     if (cancelRequested) await cancel()
     else void subscribe(result.task_id)
@@ -190,7 +197,7 @@ async function clarify(text = answer.value.trim() || selected.value) {
   try {
     await apiRequest(`/api/v1/conversations/${sessionId.value}/messages`, { method: 'POST', headers: { 'Idempotency-Key': operationKey('clarify', current.task_id, current.question.question_id) }, body: JSON.stringify({ task_id: current.task_id, question_id: current.question.question_id, answer_text: text }) })
     answer.value = ''; selected.value = ''
-    update(await apiRequest<TaskStatus>(`/api/v1/queries/${current.task_id}/status`)); void subscribe(current.task_id)
+    update(await apiRequest<TaskStatus>(`/api/v1/queries/${current.task_id}/status`), true); void subscribe(current.task_id)
   } catch (error) { inlineError(errorText(error), current.task_id); await refreshTask() }
   finally { sending.value = false }
 }
@@ -201,11 +208,11 @@ async function decide(decision: 'CONFIRM' | 'REJECT') {
   sending.value = true
   try {
     const status = await apiRequest<TaskStatus>(`/api/v1/queries/${current.task_id}/confirmations`, { method: 'POST', headers: { 'Idempotency-Key': operationKey('confirm', current.task_id, current.confirmation.confirm_token) }, body: JSON.stringify({ confirm_token: current.confirmation.confirm_token, decision }) })
-    userMessage('确认并执行', current.task_id); update(status); void subscribe(current.task_id)
+    userMessage('确认并执行', current.task_id); update(status, true); void subscribe(current.task_id)
   } catch (error) { inlineError(errorText(error), current.task_id); await refreshTask() }
   finally { sending.value = false }
 }
-async function refreshTask() { if (!task.value) return; try { update(await apiRequest<TaskStatus>(`/api/v1/queries/${task.value.task_id}/status`)) } catch { /* 原错误保留在会话中 */ } }
+async function refreshTask() { if (!task.value) return; try { update(await apiRequest<TaskStatus>(`/api/v1/queries/${task.value.task_id}/status`), true) } catch { /* 原错误保留在会话中 */ } }
 async function openSession(id: string, older = false) {
   if (loading.value || sending.value || cancelling.value) return false
   if (pending && id !== pending.session) { ElMessage.warning('请先确认本次提交结果，再切换会话'); return false }
@@ -215,7 +222,7 @@ async function openSession(id: string, older = false) {
     const result = await apiRequest<ConversationDetail>(`/api/v1/conversations/${id}?before_message_id=${before || 0}`)
     if (destroyed) return false
     if (!older) disconnect()
-    sessionId.value = id; localStorage.setItem(storageKey, id)
+    sessionId.value = id; streamingResultTaskId.value = ''; localStorage.setItem(storageKey, id)
     messages.value = older ? [...result.messages, ...messages.value] : result.messages
     hasMore.value = result.has_more
     if (!older) {
@@ -242,10 +249,15 @@ function editMessage(message: ConversationMessage) {
 function newConversation() {
   if (loading.value || cancelling.value) return false
   if (sending.value || pending) { ElMessage.warning('请先确认本次提交结果，再新建会话'); return false }
-  disconnect(); sessionId.value = uuid(); messages.value = []; task.value = null; draft.value = ''; editing.value = false; thinking.value = true; phases.value = {}; hasMore.value = false; connectionNote.value = ''; failedSubmission.value = ''
+  disconnect(); sessionId.value = uuid(); messages.value = []; task.value = null; draft.value = ''; editing.value = false; thinking.value = true; phases.value = {}; hasMore.value = false; connectionNote.value = ''; failedSubmission.value = ''; streamingResultTaskId.value = ''
   localStorage.removeItem(storageKey)
   void nextTick(() => composer.value?.focus())
   return true
+}
+/** 子组件结束视觉流式后释放任务标记，并做最后一次“仅在用户位于底部附近时”的跟随滚动。 */
+function finishResultStream(taskId: string) {
+  if (streamingResultTaskId.value === taskId) streamingResultTaskId.value = ''
+  void scroll()
 }
 function enter(event: KeyboardEvent) { if (event.isComposing || event.shiftKey) return; event.preventDefault(); if (canSend.value) void send() }
 defineExpose({ newConversation, openSession, sessionId, navigationBusy })
@@ -286,7 +298,7 @@ onUnmounted(() => { destroyed = true; disconnect() })
             </template>
             <div v-if="message.payload.confirmation && task?.task_id === message.task_id && task.status === 'CONFIRMING' && task.confirmation?.confirm_token === message.payload.confirmation.confirm_token" class="chat-confirm"><ul><li v-for="reason in task.confirmation.reasons" :key="reason">{{ reason }}</li></ul><el-button :disabled="navigationBusy" @click="decide('REJECT')">取消查询</el-button><el-button type="danger" :loading="sending" @click="decide('CONFIRM')">确认并执行</el-button></div>
             <p v-if="message.payload.legacy_notice" class="chart-reason">{{ message.payload.legacy_notice }}</p>
-              <QueryResultView v-if="message.payload.result" :result="message.payload.result" />
+              <QueryResultView v-if="message.payload.result" :result="message.payload.result" :stream="streamingResultTaskId === message.task_id" @stream-progress="scroll()" @stream-complete="finishResultStream(message.task_id)" />
             <p v-if="['FAILED','TIMED_OUT','CANCELLED'].includes(message.payload.status)" class="chart-reason">{{ message.payload.status === 'CANCELLED' ? '查询已停止推进，不会继续修复或降级执行。' : '可以调整条件后重新提问。' }} 任务编号：{{ message.task_id }}</p>
           </template><p v-else class="assistant-text inline-error" role="alert">{{ message.content }}</p>
           <MessageActions :message="message" :session-id="sessionId" :edit-disabled="true" @feedback="message.feedback = $event" />

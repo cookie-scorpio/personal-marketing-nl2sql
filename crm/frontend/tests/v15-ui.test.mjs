@@ -85,6 +85,28 @@ test('后端重启后顶栏服务状态会持续复查并自动恢复', async ()
   assert.match(app, /serviceHealthRequest\?\.abort\(\)/)
 })
 
+test('业务主页面使用混合流式展示且不影响历史会话', async () => {
+  const workspace = await readFile(new URL('../src/features/conversation/ConversationWorkspace.vue', import.meta.url), 'utf8')
+  const result = await readFile(new URL('../src/features/conversation/QueryResultView.vue', import.meta.url), 'utf8')
+  const styles = await readFile(new URL('../src/app/styles.css', import.meta.url), 'utf8')
+  // 只有 SSE 或当前任务状态接口首次带回结果时才播放；打开历史会话会清空标记，避免重复打字。
+  assert.match(workspace, /const streamingResultTaskId = ref\(''\)/)
+  assert.match(workspace, /update\(status, true\)/)
+  assert.match(workspace, /sessionId\.value = id; streamingResultTaskId\.value = '';/)
+  assert.match(workspace, /:stream="streamingResultTaskId === message\.task_id"/)
+  // 摘要与分析共享字符进度，长文本限制总帧数；表格、图表等待文字结束后一次挂载。
+  assert.match(result, /const STREAM_MAX_FRAMES = 48/)
+  assert.match(result, /const narrativeSegments = computed/)
+  assert.match(result, /Array\.from\(segment\)/)
+  assert.match(result, /<ResultChart v-else class="result-structured-enter"/)
+  assert.match(result, /<el-table v-else class="result-structured-enter"/)
+  // 动画尊重系统减少动态效果设置，逐帧文本不向读屏软件重复播报。
+  assert.match(result, /prefers-reduced-motion: reduce/)
+  assert.match(result, /class="result-stream-reader"/)
+  assert.match(styles, /\.result-stream-reader/)
+  assert.match(styles, /@media \(prefers-reduced-motion: reduce\)[^{]*\{[^}]*\.stream-caret/)
+})
+
 test('左下账号信息始终显示五位工号且不随身份改变', async () => {
   const app = await readFile(new URL('../src/App.vue', import.meta.url), 'utf8')
   // 工号读取账号级 employee_no，不再根据当前身份拼接区域、网点、经理或审计范围。

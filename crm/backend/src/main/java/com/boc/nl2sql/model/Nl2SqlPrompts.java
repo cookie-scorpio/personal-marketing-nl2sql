@@ -62,7 +62,8 @@ public class Nl2SqlPrompts {
                   .append("\nSQL：").append(example.sql());
             }
         }
-        sb.append("\n必须使用的数据范围条件：").append(scopeCondition(user))
+        sb.append("\nSQL 标识符直接写表名与列名，不要用反引号包裹，不要写注释或分号。")
+          .append("\n必须使用的数据范围条件：").append(scopeCondition(user))
           .append("\n用户问题：").append(question);
         return sb.toString();
     }

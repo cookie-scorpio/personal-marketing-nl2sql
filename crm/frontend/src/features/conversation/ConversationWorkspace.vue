@@ -46,6 +46,8 @@ let cancelRequested = false
 let destroyed = false
 const stopped = new Set(['SUCCESS', 'FAILED', 'CANCELLED', 'TIMED_OUT', 'DEGRADED'])
 const waiting = new Set(['ASKING', 'CONFIRMING'])
+// 对话中的宽表默认每页 20 条，兼顾浏览密度与滚动距离；用户可在结果下方切换为 10/50/100 条。
+const QUERY_RESULT_DEFAULT_PAGE_SIZE = 20
 const active = computed(() => !!task.value?.cancellable)
 const running = computed(() => sending.value || (active.value && !waiting.has(task.value!.status)))
 const canSend = computed(() => !!draft.value.trim() && !navigationBusy.value && (!active.value || task.value?.status === 'ASKING'))
@@ -165,7 +167,19 @@ async function submitPending() {
   const operation = pending
   let accepted = false
   try {
-    const result = await apiRequest<SubmitQueryResponse>('/api/v1/queries', { method: 'POST', headers: { 'Idempotency-Key': operation.key }, body: JSON.stringify({ session_id: operation.session, query_text: operation.text, thinking_enabled: operation.thinking, preferred_display: 'AUTO', customer_ids: operation.ids }) })
+    const result = await apiRequest<SubmitQueryResponse>('/api/v1/queries', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': operation.key },
+      body: JSON.stringify({
+        session_id: operation.session,
+        query_text: operation.text,
+        thinking_enabled: operation.thinking,
+        preferred_display: 'AUTO',
+        customer_ids: operation.ids,
+        page_no: 1,
+        page_size: QUERY_RESULT_DEFAULT_PAGE_SIZE,
+      }),
+    })
     accepted = true
     emit('sessions-changed')
     if (destroyed || sessionId.value !== operation.session) return
@@ -298,7 +312,14 @@ onUnmounted(() => { destroyed = true; disconnect() })
             </template>
             <div v-if="message.payload.confirmation && task?.task_id === message.task_id && task.status === 'CONFIRMING' && task.confirmation?.confirm_token === message.payload.confirmation.confirm_token" class="chat-confirm"><ul><li v-for="reason in task.confirmation.reasons" :key="reason">{{ reason }}</li></ul><el-button :disabled="navigationBusy" @click="decide('REJECT')">取消查询</el-button><el-button type="danger" :loading="sending" @click="decide('CONFIRM')">确认并执行</el-button></div>
             <p v-if="message.payload.legacy_notice" class="chart-reason">{{ message.payload.legacy_notice }}</p>
-              <QueryResultView v-if="message.payload.result" :result="message.payload.result" :stream="streamingResultTaskId === message.task_id" @stream-progress="scroll()" @stream-complete="finishResultStream(message.task_id)" />
+            <QueryResultView
+              v-if="message.payload.result"
+              :result="message.payload.result"
+              :task-id="message.task_id"
+              :stream="streamingResultTaskId === message.task_id"
+              @stream-progress="scroll()"
+              @stream-complete="finishResultStream(message.task_id)"
+            />
             <p v-if="['FAILED','TIMED_OUT','CANCELLED'].includes(message.payload.status)" class="chart-reason">{{ message.payload.status === 'CANCELLED' ? '查询已停止推进，不会继续修复或降级执行。' : '可以调整条件后重新提问。' }} 任务编号：{{ message.task_id }}</p>
           </template><p v-else class="assistant-text inline-error" role="alert">{{ message.content }}</p>
           <MessageActions :message="message" :session-id="sessionId" :edit-disabled="true" @feedback="message.feedback = $event" />

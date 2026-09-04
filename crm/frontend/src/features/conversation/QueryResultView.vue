@@ -2,13 +2,22 @@
 /** 以服务端列语义展示结果；页面展示和 CSV 导出只接触已经过脱敏的响应数据。 */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { apiRequest, ApiError } from '../../app/api'
 import type { QueryResult } from '../../app/types'
 import ResultChart from './ResultChart.vue'
-import { normalizeResult } from './messageText'
-const props = withDefaults(defineProps<{ result: QueryResult; stream?: boolean }>(), { stream: false })
+import { normalizeResult, QUERY_RESULT_MAX_PAGES } from './messageText'
+const props = withDefaults(defineProps<{ result: QueryResult; taskId: string; stream?: boolean }>(), { stream: false })
 const emit = defineEmits<{ 'stream-progress': []; 'stream-complete': [] }>()
-const result = computed(() => normalizeResult(props.result))
+// 首次结果仍来自任务快照；用户翻页后只在本组件内替换展示页，不修改会话中已持久化的原始消息。
+const pageResult = ref<QueryResult | null>(null)
+const result = computed(() => normalizeResult(pageResult.value ?? props.result))
 const tab = ref(props.result.result_type === 'TABLE' ? 'table' : 'analysis')
+const pageLoading = ref(false)
+const pageError = ref('')
+const retryTarget = ref<{ pageNo: number; pageSize: number } | null>(null)
+const pageSizes = [10, 20, 50, 100]
+let pageRequest: AbortController | null = null
+let pageRequestVersion = 0
 const STREAM_FRAME_MS = 32
 const STREAM_MAX_FRAMES = 48
 const revealedCharacters = ref(Number.MAX_SAFE_INTEGER)
@@ -16,6 +25,71 @@ const streaming = ref(false)
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
 let streamTimer: number | undefined
 let progressFrames = 0
+
+const resultTotal = computed(() => (
+  typeof result.value.total === 'number' ? result.value.total : result.value.rows.length
+))
+const currentPage = computed(() => result.value.page_no || 1)
+const currentPageSize = computed(() => result.value.page_size || Math.max(1, result.value.rows.length))
+// Element Plus 根据 total 计算页数；传入可查看条数而非真实总数，保证控件永远不会生成第 51 页。
+const paginationTotal = computed(() => Math.min(
+  resultTotal.value,
+  currentPageSize.value * QUERY_RESULT_MAX_PAGES,
+))
+const resultPageLimited = computed(() => resultTotal.value > paginationTotal.value)
+const showPagination = computed(() => paginationTotal.value > currentPageSize.value || currentPage.value > 1)
+
+/**
+ * 从已完成任务读取目标页。后端会重新核对当前身份和 SQL 数据范围；快速连续点击时仅接收最后一次响应，
+ * 防止较慢的旧请求覆盖用户后来选择的页码。
+ */
+async function loadPage(pageNo: number, pageSize: number) {
+  const requestVersion = ++pageRequestVersion
+  pageRequest?.abort()
+  const request = new AbortController()
+  pageRequest = request
+  pageLoading.value = true
+  pageError.value = ''
+  retryTarget.value = { pageNo, pageSize }
+  try {
+    const page = await apiRequest<QueryResult>(
+      `/api/v1/queries/${props.taskId}/results?page_no=${pageNo}&page_size=${pageSize}`,
+      { signal: request.signal },
+    )
+    if (request.signal.aborted || requestVersion !== pageRequestVersion) return
+    const totalPages = Math.min(QUERY_RESULT_MAX_PAGES,
+      Math.max(1, Math.ceil((page.total ?? page.rows.length) / pageSize)))
+    if (pageNo > totalPages) {
+      // 数据在两次翻页之间减少时，自动退回新的最后一页，避免留下一个无法操作的空白页。
+      await loadPage(totalPages, pageSize)
+      return
+    }
+    pageResult.value = page
+    retryTarget.value = null
+  } catch (error) {
+    if (request.signal.aborted || requestVersion !== pageRequestVersion) return
+    pageError.value = error instanceof ApiError ? error.message : '结果页加载失败，请稍后重试。'
+  } finally {
+    if (requestVersion === pageRequestVersion) {
+      pageLoading.value = false
+      pageRequest = null
+    }
+  }
+}
+
+function changePage(pageNo: number) {
+  void loadPage(pageNo, currentPageSize.value)
+}
+
+function changePageSize(pageSize: number) {
+  // 改变每页条数后回到第一页，避免旧页码对应的起始记录突然跳到结果集后部。
+  void loadPage(1, pageSize)
+}
+
+function retryPage() {
+  const target = retryTarget.value ?? { pageNo: currentPage.value, pageSize: currentPageSize.value }
+  void loadPage(target.pageNo, target.pageSize)
+}
 
 /**
  * 摘要、概览和洞察共用一条字符进度，保证文字按阅读顺序依次出现，而不是多段同时闪动。
@@ -91,11 +165,28 @@ function handleMotionPreference() {
 
 // SSE 阶段会原位替换 payload；展示类型变化时页签跟随，避免停留在与内容不符的页面。
 watch(() => props.result.result_type, type => { tab.value = type === 'TABLE' ? 'table' : 'analysis' })
+// 任务快照真正发生变化时丢弃旧翻页响应；常规的页内切换不会触碰父组件消息状态。
+watch(() => props.result, () => {
+  pageRequestVersion += 1
+  pageRequest?.abort()
+  pageRequest = null
+  pageResult.value = null
+  pageLoading.value = false
+  pageError.value = ''
+  retryTarget.value = null
+})
 // 只在父组件改变本次实时结果标记时启动；同一终态经 SSE 重放时即使对象引用变化，也不能从头播放。
 watch(() => props.stream, startStream, { immediate: true })
 onMounted(() => reducedMotion.addEventListener('change', handleMotionPreference))
+onMounted(() => {
+  // 兼容限制上线前保存的第 51 页以后历史快照；打开会话时自动回到允许查看的最后一页。
+  if (currentPage.value > QUERY_RESULT_MAX_PAGES) {
+    void loadPage(QUERY_RESULT_MAX_PAGES, currentPageSize.value)
+  }
+})
 onBeforeUnmount(() => {
   clearStreamTimer()
+  pageRequest?.abort()
   reducedMotion.removeEventListener('change', handleMotionPreference)
 })
 const labels: Record<string, string> = { BAR: '柱状图', LINE: '折线图', AREA: '面积图', PIE: '构成图', SCATTER: '散点图', HEATMAP: '热力图' }
@@ -121,7 +212,7 @@ function exportCsv() {
   link.download = `查询结果-${new Date().toISOString().slice(0, 10)}.csv`
   link.click()
   URL.revokeObjectURL(url)
-  ElMessage.success('已导出（数据与界面一致，均已脱敏）')
+  ElMessage.success(showPagination.value ? '已导出当前页（数据与界面一致，均已脱敏）' : '已导出（数据与界面一致，均已脱敏）')
 }
 </script>
 <template>
@@ -138,7 +229,8 @@ function exportCsv() {
     </header>
     <p v-if="typeof result.total === 'number'" class="chart-reason result-structured-content" :class="{ 'is-stream-pending': streaming }" role="status">
       共 {{ format(result.total) }} 条 · 第 {{ result.page_no || 1 }} 页 · 每页 {{ result.page_size || result.rows.length }} 条
-      <strong v-if="result.has_more"> · 后续仍有数据，本页不是全部结果</strong>
+      <strong v-if="resultPageLimited"> · 最多查看前 {{ format(paginationTotal) }} 条（{{ QUERY_RESULT_MAX_PAGES }} 页）</strong>
+      <strong v-else-if="result.has_more"> · 后续仍有数据，本页不是全部结果</strong>
       <span v-else> · 已到最后一页</span>
     </p>
     <div v-if="result.fallback" class="fallback-notice result-structured-content" :class="{ 'is-stream-pending': streaming }"><strong>{{ result.fallback.data_available ? '已使用受控模板完成查询' : '本次未获得可用数据' }}</strong><p>{{ result.fallback.reason }}</p></div>
@@ -151,7 +243,14 @@ function exportCsv() {
     <div class="result-tabs" role="tablist" aria-label="查询结果">
       <button role="tab" :aria-selected="tab === 'analysis'" :class="{ active: tab === 'analysis' }" @click="tab = 'analysis'">图表与分析 <span v-if="result.charts.length">· {{ result.charts.length }} 张图</span></button>
       <button role="tab" :aria-selected="tab === 'table'" :class="{ active: tab === 'table' }" @click="tab = 'table'">数据明细</button>
-      <button v-if="tab === 'table' && result.rows.length && !streaming" type="button" class="export-csv" aria-label="导出CSV（已脱敏）" title="导出数据与界面一致，均已脱敏" @click="exportCsv">导出 CSV</button>
+      <button
+        v-if="tab === 'table' && result.rows.length && !streaming"
+        type="button"
+        class="export-csv"
+        aria-label="导出当前页CSV（已脱敏）"
+        title="导出当前页中与界面一致的脱敏数据"
+        @click="exportCsv"
+      >{{ showPagination ? '导出本页 CSV' : '导出 CSV' }}</button>
     </div>
     <div v-if="tab === 'analysis'" class="analysis-layout" role="tabpanel">
       <section v-for="(chart, index) in result.charts" :key="index" class="chart-card">
@@ -175,9 +274,45 @@ function exportCsv() {
         <span v-if="streaming" class="result-stream-reader">{{ [analysisOverview, ...result.analysis.insights].filter(Boolean).join('。') }}</span>
       </section>
     </div>
-    <div v-else class="table-wrap" role="tabpanel">
+    <div v-else class="result-table-section" role="tabpanel" :aria-busy="pageLoading">
       <div v-if="streaming" class="result-table-placeholder" aria-hidden="true"><span>正在准备数据明细…</span></div>
-      <el-table v-else class="result-structured-enter" :data="result.rows" stripe empty-text="当前条件下没有匹配数据"><el-table-column v-for="column in result.columns" :key="column.key" :prop="column.key" :label="column.label + (column.unit && !column.label.includes(column.unit) ? `（${column.unit}）` : '')" min-width="128" show-overflow-tooltip /></el-table>
+      <template v-else>
+        <div class="table-wrap" v-loading="pageLoading" element-loading-text="正在读取结果页…">
+          <el-table
+            class="result-structured-enter"
+            :data="result.rows"
+            stripe
+            empty-text="当前条件下没有匹配数据"
+          >
+            <el-table-column
+              v-for="column in result.columns"
+              :key="column.key"
+              :prop="column.key"
+              :label="column.label + (column.unit && !column.label.includes(column.unit) ? `（${column.unit}）` : '')"
+              min-width="128"
+              show-overflow-tooltip
+            />
+          </el-table>
+        </div>
+        <div v-if="pageError" class="result-page-error" role="alert">
+          <span>{{ pageError }}</span>
+          <el-button link type="primary" :disabled="pageLoading" @click="retryPage">重新加载</el-button>
+        </div>
+        <el-pagination
+          v-if="showPagination"
+          class="result-pagination"
+          background
+          :current-page="currentPage"
+          :page-size="currentPageSize"
+          :page-sizes="pageSizes"
+          :total="paginationTotal"
+          :disabled="pageLoading"
+          layout="sizes, prev, pager, next, jumper"
+          aria-label="查询结果分页"
+          @current-change="changePage"
+          @size-change="changePageSize"
+        />
+      </template>
     </div>
     <p class="result-meta result-structured-content" :class="{ 'is-stream-pending': streaming }">{{ result.data_as_of ? `结果生成于 ${result.data_as_of}` : '旧版未记录结果日期' }}</p>
   </section>

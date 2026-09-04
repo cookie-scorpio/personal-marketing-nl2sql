@@ -42,6 +42,7 @@ public class QueryApplicationService {
     private final int timeoutSeconds;
     private final int defaultPageSize;
     private final int maxPageSize;
+    private final int maxResultPages;
     private final long maxOffset;
     @org.springframework.beans.factory.annotation.Autowired private ConversationStore conversations;
     @org.springframework.beans.factory.annotation.Autowired private TaskSnapshots snapshots;
@@ -54,19 +55,25 @@ public class QueryApplicationService {
     public QueryApplicationService(QueryTaskMapper taskMapper, QueryTaskProcessor processor,
                                     QualityFacts qualityFacts, ObjectMapper objectMapper, TaskStateStore states,
                                     com.boc.nl2sql.dao.execution.QueryExecutionGateway execution,
-                                   @org.springframework.beans.factory.annotation.Value("${app.query.execution-timeout-seconds:60}") int timeoutSeconds,
-                                   @org.springframework.beans.factory.annotation.Value("${app.query.default-page-size:100}") int defaultPageSize,
-                                   @org.springframework.beans.factory.annotation.Value("${app.query.max-page-size:500}") int maxPageSize,
-                                   @org.springframework.beans.factory.annotation.Value("${app.query.max-offset:100000}") long maxOffset) {
-        if (defaultPageSize < 1 || maxPageSize < defaultPageSize || maxOffset < 0) {
+                                    @org.springframework.beans.factory.annotation.Value("${app.query.execution-timeout-seconds:60}") int timeoutSeconds,
+                                    @org.springframework.beans.factory.annotation.Value("${app.query.default-page-size:100}") int defaultPageSize,
+                                    @org.springframework.beans.factory.annotation.Value("${app.query.max-page-size:500}") int maxPageSize,
+                                    @org.springframework.beans.factory.annotation.Value("${app.query.max-result-pages:50}") int maxResultPages,
+                                    @org.springframework.beans.factory.annotation.Value("${app.query.max-offset:100000}") long maxOffset) {
+        if (defaultPageSize < 1 || maxPageSize < defaultPageSize || maxResultPages < 1 || maxOffset < 0) {
             throw new IllegalArgumentException("查询分页默认值、上限或最大偏移量配置无效");
         }
         this.taskMapper = taskMapper;
         this.processor = processor;
         this.qualityFacts = qualityFacts;
         this.objectMapper = objectMapper;
-        this.states = states; this.execution = execution; this.timeoutSeconds = timeoutSeconds;
-        this.defaultPageSize = defaultPageSize; this.maxPageSize = maxPageSize; this.maxOffset = maxOffset;
+        this.states = states;
+        this.execution = execution;
+        this.timeoutSeconds = timeoutSeconds;
+        this.defaultPageSize = defaultPageSize;
+        this.maxPageSize = maxPageSize;
+        this.maxResultPages = maxResultPages;
+        this.maxOffset = maxOffset;
     }
 
     public SubmitQueryResponse submit(SubmitQueryRequest request, CurrentUser user, String requestId) {
@@ -127,6 +134,10 @@ public class QueryApplicationService {
             pageNo=request.pageNo()==null?1:request.pageNo();
             if(pageNo<1)throw new BusinessException(400001,"page_no必须大于等于1");
             try{offset=Math.multiplyExact((long)pageNo-1,size);}catch(ArithmeticException overflow){throw new BusinessException(400001,"分页偏移量过大");}
+        }
+        // 限制页数而不是固定总行数：用户调大 page_size 后，仍可在最多 50 页内查看更多明细。
+        if (pageNo > maxResultPages) {
+            throw new BusinessException(400001, "查询结果最多只能查看前" + maxResultPages + "页");
         }
         if(offset<0||offset>maxOffset)throw new BusinessException(400001,"offset必须在0至"+maxOffset+"之间；大结果集请缩小条件范围");
         return new QueryPage(pageNo,size,offset);

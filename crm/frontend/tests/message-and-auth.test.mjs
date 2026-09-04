@@ -15,6 +15,18 @@ test('旧结果仅补齐空容器，保留原行值', () => {
   const value = text.normalizeResult(old)
   assert.deepEqual(value.rows, [{ n: 42 }]); assert.deepEqual(value.charts, []); assert.deepEqual(value.analysis.insights, [])
 })
+test('分页明细的主要结果使用完整总数而不是当前页行数', () => {
+  const value = text.normalizeResult({
+    title: '客户名单',
+    summary: '共1681条',
+    total: 1681,
+    rows: Array.from({ length: 20 }, (_, index) => ({ id: index })),
+    columns: [{ key: 'id', label: '编号' }],
+    metrics: [{ key: 'row_count', label: '结果行数', value: 20, unit: '行', note: '当前返回结果' }],
+  })
+  assert.equal(value.metrics[0].value, 1681)
+  assert.equal(value.metrics[0].note, '符合条件的全部结果')
+})
 test('复制回复包括历史结果与明细，不只复制阶段说明', () => {
   const copied = text.messageText({ role_code: 'ASSISTANT', content: '完成', payload: { result: { title: '旧回答', summary: '42人', columns: [{ key: 'n', label: '人数' }], rows: [{ n: 42 }] } } })
   assert.match(copied, /旧回答/); assert.match(copied, /人数\n42/)

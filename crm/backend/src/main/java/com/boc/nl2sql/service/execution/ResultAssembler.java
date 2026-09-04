@@ -120,7 +120,7 @@ public class ResultAssembler {
         var keys = new java.util.LinkedHashSet<String>();
         normalized.forEach(row -> keys.addAll(row.keySet()));
         List<ColumnMeta> columns = keys.stream().map(key -> column(key, normalized, planned.columnHints())).toList();
-        List<Map<String, Object>> metrics = buildMetrics(columns, normalized);
+        List<Map<String, Object>> metrics = buildMetrics(columns, normalized, page.total());
         String summary = normalized.isEmpty() ? (page.total()>0
                 ? "查询完成，共 " + page.total() + " 条，当前分页位置没有数据。"
                 : emptySummary())
@@ -201,7 +201,8 @@ public class ResultAssembler {
         return columns.stream().filter(column -> "MEASURE".equals(column.role())).toList();
     }
 
-    private List<Map<String, Object>> buildMetrics(List<ColumnMeta> columns, List<Map<String, Object>> rows) {
+    private List<Map<String, Object>> buildMetrics(List<ColumnMeta> columns, List<Map<String, Object>> rows,
+                                                   long totalRows) {
         if (rows.isEmpty()) return List.of();
         List<Map<String, Object>> result = new ArrayList<>();
         for (ColumnMeta column : measures(columns)) {
@@ -214,7 +215,18 @@ public class ResultAssembler {
             metric.put("note", rows.size() == 1 ? "当前返回值" : aggregationLabel(column));
             result.add(metric);
         }
-        if (result.isEmpty()) result.add(Map.of("key", "row_count", "label", "结果行数", "value", rows.size(), "unit", "行", "note", "当前返回结果"));
+        if (result.isEmpty()) {
+            /*
+             * 明细查询没有可汇总的数值列时，用结果行数作为主要指标。totalRows 来自去除分页后的 COUNT，
+             * 不能使用 rows.size()，否则每页 20 条时会把“当前页条数”误写成“完整查询结果”。
+             */
+            result.add(Map.of(
+                    "key", "row_count",
+                    "label", "结果行数",
+                    "value", totalRows,
+                    "unit", "行",
+                    "note", "符合条件的全部结果"));
+        }
         return result;
     }
 

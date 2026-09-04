@@ -88,6 +88,8 @@ app:
     # QUERY_MAX_RESULT_ROWS保留为旧部署兼容别名；它现在只决定默认单页大小，不再静默截断总结果。
     default-page-size: ${QUERY_DEFAULT_PAGE_SIZE:${QUERY_MAX_RESULT_ROWS:100}}
     max-page-size: ${QUERY_MAX_PAGE_SIZE:500}
+    # 无论每页条数如何选择，结果明细最多开放前50页，避免低价值的深分页持续占用数据库资源。
+    max-result-pages: ${QUERY_MAX_RESULT_PAGES:50}
     max-offset: ${QUERY_MAX_OFFSET:100000}
     max-sql-limit: ${QUERY_MAX_SQL_LIMIT:500}
     max-clarification-rounds: ${QUERY_MAX_CLARIFICATION_ROUNDS:2}

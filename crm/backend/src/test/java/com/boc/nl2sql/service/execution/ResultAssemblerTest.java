@@ -19,6 +19,24 @@ class ResultAssemblerTest {
         assertThat(result.pageSize()).isEqualTo(100);assertThat(result.hasMore()).isTrue();
         assertThat(result.summary()).contains("共 205 条","当前第 1 页返回 100 条");
     }
+    @Test
+    void usesCompleteTotalForRowCountMetricInsteadOfCurrentPageSize() {
+        var rows = java.util.stream.IntStream.range(0, 20)
+                .mapToObj(index -> Map.<String, Object>of("customer_id", String.format("C%08d", index)))
+                .toList();
+        var page = new com.boc.nl2sql.domain.execution.PagedQueryRows(rows, 1_681,
+                new com.boc.nl2sql.domain.execution.QueryPage(1, 20, 0));
+
+        var result = new ResultAssembler(null).assemble(
+                new PlannedQuery("SELECT customer_id FROM dim_customer", Map.of(), "TABLE", "客户名单", false),
+                page, "RULE", 1.0);
+
+        assertThat(result.metrics()).singleElement().satisfies(metric -> {
+            assertThat(metric.get("key")).isEqualTo("row_count");
+            assertThat(metric.get("value")).isEqualTo(1_681L);
+            assertThat(metric.get("note")).isEqualTo("符合条件的全部结果");
+        });
+    }
     @Test void preservesCustomerNameAndMobileBeforeRowsAndAnalysisAreBuilt(){
         var result=assemble("TABLE",List.of(Map.of("CUSTOMER_NAME","李验甲","mobile_masked","90000008877","asset_wan",10)));
         // customer_name 和 mobile_masked 均直接展示原值，不再应用层脱敏

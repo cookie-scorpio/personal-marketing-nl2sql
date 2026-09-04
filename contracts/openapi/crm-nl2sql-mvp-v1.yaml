@@ -340,6 +340,28 @@ paths:
                     properties:
                       data: { $ref: "#/components/schemas/TaskStatus" }
         "404": { description: 任务不存在或不属于当前用户 }
+  /api/v1/queries/{taskId}/results:
+    get:
+      summary: 分页读取已完成任务的全部查询结果
+      description: 不创建新任务或会话消息，也不再次调用模型；复用已校验的查询计划，并按当前登录身份重新检查资源归属、SQL安全性和数据范围后读取指定页。total保留真实总数，但最多允许查看前50页。仅SUCCESS或DEGRADED且保留查询计划的任务可用。
+      parameters:
+        - $ref: "#/components/parameters/TaskId"
+        - { name: page_no, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 20 } }
+      responses:
+        "200":
+          description: 指定结果页；total为当前完整结果条数
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/QueryResult" }
+        "400": { description: 页码、每页条数或偏移量超出配置范围 }
+        "404": { description: 任务不存在或不属于当前用户 }
+        "409": { description: 任务未完成，或旧任务没有可复用的查询计划 }
   /api/v1/conversations/{sessionId}/messages:
     post:
       summary: 补充缺失条件或澄清矛盾
@@ -463,7 +485,7 @@ components:
           type: string
           description: 非AUTO时优先采用请求展示形式；否则使用模型建议及实际数据适配，非法数据形态不会强行绘图。
           example: AUTO
-        page_no: { type: integer, minimum: 1, default: 1, description: 与page_size配套；不能和limit/offset同时传入 }
+        page_no: { type: integer, minimum: 1, maximum: 50, default: 1, description: 与page_size配套；不能和limit/offset同时传入，查询结果最多查看前50页 }
         page_size: { type: integer, minimum: 1, maximum: 500, default: 100 }
         limit: { type: integer, minimum: 1, maximum: 500, description: 与offset配套；不能和page_no/page_size同时传入 }
         offset: { type: integer, format: int64, minimum: 0, maximum: 100000, default: 0 }
@@ -545,7 +567,7 @@ components:
       required: [total, page_no, page_size, items]
       properties:
         total: { type: integer, minimum: 0 }
-        page_no: { type: integer, minimum: 1 }
+        page_no: { type: integer, minimum: 1, maximum: 50 }
         page_size: { type: integer, minimum: 1, maximum: 20 }
         items: { type: array, items: { $ref: "#/components/schemas/CustomerCandidate" } }
     ConversationSummary:

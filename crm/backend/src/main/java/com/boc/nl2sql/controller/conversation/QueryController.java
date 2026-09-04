@@ -3,7 +3,9 @@ package com.boc.nl2sql.controller.conversation;
 import com.boc.nl2sql.domain.authorization.CurrentUser;
 import com.boc.nl2sql.common.api.ApiResponse;
 import com.boc.nl2sql.common.web.WebRequestSupport;
+import com.boc.nl2sql.domain.execution.QueryResult;
 import com.boc.nl2sql.service.conversation.QueryApplicationService;
+import com.boc.nl2sql.service.conversation.QueryResultPageService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -12,6 +14,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -22,9 +25,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1")
 public class QueryController {
     private final QueryApplicationService service;
+    private final QueryResultPageService resultPages;
 
-    public QueryController(QueryApplicationService service) {
+    public QueryController(QueryApplicationService service, QueryResultPageService resultPages) {
         this.service = service;
+        this.resultPages = resultPages;
     }
 
     @PostMapping("/queries")
@@ -40,6 +45,20 @@ public class QueryController {
                                                   @AuthenticationPrincipal CurrentUser user,
                                                   HttpServletRequest request) {
         return ApiResponse.success(service.status(taskId, user), WebRequestSupport.requestId(request));
+    }
+
+    /**
+     * 读取已完成任务的指定结果页。翻页不创建新会话消息，也不会再次调用大模型。
+     */
+    @GetMapping("/queries/{taskId}/results")
+    public ApiResponse<QueryResult> resultPage(
+            @PathVariable String taskId,
+            @RequestParam(name = "page_no", defaultValue = "1") int pageNo,
+            @RequestParam(name = "page_size", defaultValue = "20") int pageSize,
+            @AuthenticationPrincipal CurrentUser user,
+            HttpServletRequest request) {
+        return ApiResponse.success(resultPages.page(taskId, pageNo, pageSize, user),
+                WebRequestSupport.requestId(request));
     }
 
     @PostMapping("/conversations/{sessionId}/messages")

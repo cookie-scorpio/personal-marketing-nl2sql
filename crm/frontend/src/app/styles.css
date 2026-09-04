@@ -153,9 +153,18 @@ svg { width: 1em; height: 1em; }
 .analysis-card li::before { position: absolute; top: .55em; left: 0; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); content: ''; }
 .table-wrap { max-width: 100%; overflow: hidden; border: 1px solid var(--border); border-radius: 9px; }
 .table-wrap .el-table { --el-table-header-bg-color: #f7f5f2; --el-table-border-color: #eee8e4; font-size: 11px; }
+.result-table-section { min-width: 0; }
+/* 分页紧贴其控制的数据表；上边线在视觉上区分数据区和导航区，不再增加额外卡片。 */
+.result-pagination { justify-content: flex-end; margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee8e4; }
+.result-page-error { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 8px; color: var(--danger); font-size: 12px; }
 .mobile-mask { display: none; }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+@media (max-width: 760px) {
+  /* 小屏保留总数、每页条数和前后翻页，隐藏页码跳转以免分页栏挤出消息宽度。 */
+  .result-pagination .el-pager, .result-pagination .el-pagination__jump { display: none; }
+  .result-pagination { justify-content: space-between; }
+}
 @media (min-width: 1400px) { .workspace-grid { padding: 30px 36px; } .conversation-card { padding: 32px 36px 23px; } }
 @media (max-width: 1260px) { .analysis-layout { grid-template-columns: 1fr; } }
 @media (max-width: 820px) {
